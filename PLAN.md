@@ -544,7 +544,7 @@ Por ordem de facilidade de adição — **não implementar antes do MVP correr v
 - [x] Passo 3 — ✅ aprovado (2026-04-19). Refresh token flow explicit, search_track devolve list[dict], bootstrap com httpx. Micro-fix: usar spotipy.cache_handler.MemoryCacheHandler em vez de um caseiro.
 - [x] Passo 4 — ✅ aprovado v2 (2026-04-19). Feed URL corrigido para /feed/rss, filtro por category 'Reviews / Tracks', artist extraído de URL slug via subtracção do title-slug, 14 testes passam com fixture real.
   - Tech-debt anotada: (1) linha redundante em _slugify (char class); (2) apostrofo curly U+2019 vira hyphen quando devia desaparecer — pode causar slug_mismatch em títulos com apóstrofes. Rever quando warnings aparecerem em prod.
-- [ ] Passo 5 — pendente
-- [ ] Passo 6 — pendente
-- [ ] Passo 7 — pendente
+- [x] Passo 5 — ✅ aprovado (2026-04-19). normalize+score+is_match+best_match, 25 testes no matcher, total 42 na suite. Notas (não-bloq): duplicação subtil is_match↔best_match; test_similar_strings acoplado a rapidfuzz interno.
+- [x] Passo 6 — ✅ aprovado (2026-04-19). DB SQLite com 3 tabelas, PK composta em tracks, ISO 8601 UTC, 17 testes. Tech-debt: adicionar close() método para fechar conn limpamente antes do git commit do .db no workflow.
+- [x] Passo 7 — ✅ aprovado após fix (2026-04-19). main.py com run() end-to-end, try/finally com db.close(), structlog JSON. Tech-debt: inconsistência DB vs playlist em caso de falha no add_to_playlist (documentada no código).
 - [ ] Passo 8 — pendente
