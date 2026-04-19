@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.env
+dist/
+*.egg-info/
+# Nota: data/peel.db é committed propositadamente (estado entre runs)
