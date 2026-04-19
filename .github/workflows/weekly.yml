@@ -30,6 +30,14 @@ jobs:
         run: uv sync --all-groups
 
       - name: run tests
+        # Dummy env vars: config.py instancia Settings() a nível de módulo e
+        # valida os secrets ao importar. Testes não precisam dos valores reais
+        # (tudo está mockado), mas precisam que o import não rebente.
+        env:
+          SPOTIFY_CLIENT_ID: dummy
+          SPOTIFY_CLIENT_SECRET: dummy
+          SPOTIFY_REFRESH_TOKEN: dummy
+          PEEL_PLAYLIST_ID: dummy
         run: uv run pytest
         # Se os testes falharem, o workflow para aqui (não corre peel)
 
