@@ -12,7 +12,7 @@ modifica um Track à passagem.
 
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class Track(BaseModel):
@@ -28,10 +28,12 @@ class Track(BaseModel):
     """Identificador estável da fonte, ex.: 'pitchfork_bnt' ou 'bbc6music_recommends'."""
 
     artist: str
-    """Nome do artista. Nunca vazio — pydantic garante isto."""
+    """Nome do artista. Validado por @field_validator — rejeita strings em branco,
+    devolve versão .strip()ped."""
 
     title: str
-    """Título da faixa. Nunca vazio."""
+    """Título da faixa. Validado por @field_validator — rejeita strings em branco,
+    devolve versão .strip()ped."""
 
     source_url: str | None = None
     """URL opcionalmente útil para logging (link para a review, episódio, etc.)."""
@@ -42,3 +44,16 @@ class Track(BaseModel):
     raw_title: str | None = None
     """Título original antes de split artist/title, em caso de parsing complexo.
     Útil para debugging quando o split foi mal feito."""
+
+    @field_validator("artist", "title")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        """Rejeita strings em branco (após .strip()). Devolve versão stripped.
+
+        Isto garante que artist e title nunca são strings vazias ou apenas whitespace.
+        ValidationError é levantado ao tentar criar Track(artist="  ", ...).
+        """
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("artist and title must not be blank or whitespace-only")
+        return stripped
