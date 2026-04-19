@@ -241,8 +241,13 @@ class SpotifyClient:
         # spotipy suporta passar refresh_token directo via .refresh_access_token()
         ...
 
-    def search_track(self, artist: str, title: str) -> str | None:
-        """Procura "artist title" e devolve o spotify:track:URI mais provável, ou None."""
+    def search_track(self, artist: str, title: str, limit: int = 5) -> list[dict]:
+        """Procura no Spotify e devolve até `limit` candidatos em formato cru.
+
+        Cada candidato é um dict com: uri, name, artists (list[str]).
+        NORMALIZAÇÃO E ESCOLHA DO MELHOR SÃO RESPONSABILIDADE DO MATCHER, não daqui.
+        Devolve [] se não encontrar nada.
+        """
         ...
 
     def add_to_playlist(self, playlist_id: str, uris: list[str]) -> None:
@@ -534,10 +539,11 @@ Por ordem de facilidade de adição — **não implementar antes do MVP correr v
 
 ## Notas de revisão (Opus escreve aqui feedback por passo)
 
-- [ ] Passo 1 — pendente
-- [ ] Passo 2 — pendente
-- [ ] Passo 3 — pendente
-- [ ] Passo 4 — pendente
+- [x] Passo 1 — ✅ aprovado (2026-04-19). Layout src/, uv.lock committed, 32 deps resolvidas.
+- [x] Passo 2 — ✅ aprovado + fix aplicado (2026-04-19). field_validator non-blank a strip+rejeitar whitespace.
+- [x] Passo 3 — ✅ aprovado (2026-04-19). Refresh token flow explicit, search_track devolve list[dict], bootstrap com httpx. Micro-fix: usar spotipy.cache_handler.MemoryCacheHandler em vez de um caseiro.
+- [x] Passo 4 — ✅ aprovado v2 (2026-04-19). Feed URL corrigido para /feed/rss, filtro por category 'Reviews / Tracks', artist extraído de URL slug via subtracção do title-slug, 14 testes passam com fixture real.
+  - Tech-debt anotada: (1) linha redundante em _slugify (char class); (2) apostrofo curly U+2019 vira hyphen quando devia desaparecer — pode causar slug_mismatch em títulos com apóstrofes. Rever quando warnings aparecerem em prod.
 - [ ] Passo 5 — pendente
 - [ ] Passo 6 — pendente
 - [ ] Passo 7 — pendente

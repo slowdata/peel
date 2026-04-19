@@ -1,18 +1,20 @@
 """Fontes baseadas em RSS feed (Pitchfork, Stereogum, KEXP, etc.).
 
-Decisão: classe genérica RSSSource que parseia RSS e extrai artist/title.
-Razão: a maioria dos feeds tem padrão similar (título, link, date).
-Subclasses apenas definem ID, nome e URL.
+Decisão: classe genérica RSSSource que parseia RSS mas deixa extraction de
+artist/title para subclasses (cada feed tem seu formato).
 
-Parse de título é delicado — Pitchfork usa "Artist: 'Track Title'",
-mas pode ser diferente noutros feeds. Cada subclasse pode override
-_parse_entry() se precisa de lógica especial.
+Subclasses:
+- Definem id, name, url
+- Implementam _extract_artist_title(entry) -> tuple[str, str] | None
+  (retorna (artist, title) ou None se não conseguir extrair)
 """
 
 from __future__ import annotations
 
 import re
+from abc import abstractmethod
 from datetime import datetime
+from urllib.parse import urlparse
 
 import feedparser
 import structlog
@@ -88,27 +90,24 @@ class RSSSource(Source):
     def _parse_entry(self, entry: dict) -> Track | None:
         """Parseia uma entry RSS e devolve Track ou None.
 
-        Pode ser overridden por subclasses para lógica específica.
-        Default: assume título em formato "Artist: 'Track Title'" ou "Artist - Track Title".
+        Extrai artist/title chamando self._extract_artist_title() que é
+        implementado por subclasses.
         """
         title = entry.get("title", "").strip()
         if not title:
             return None
 
-        artist, track_title = self._split_artist_title(title)
-        if not artist or not track_title:
-            log.warning(
-                "rss.could_not_parse_title",
-                source_id=self.id,
-                title=title,
-            )
+        # Subclasses implementam a extraction
+        result = self._extract_artist_title(entry)
+        if result is None:
             return None
+
+        artist, track_title = result
 
         # Extrai published_at se disponível
         published_at = None
         if entry.get("published"):
             try:
-                # feedparser converte para struct_time; convertemos a datetime
                 parsed_time = entry.published_parsed
                 if parsed_time:
                     published_at = datetime(*parsed_time[:6])
@@ -124,45 +123,154 @@ class RSSSource(Source):
             raw_title=title,
         )
 
-    def _split_artist_title(self, s: str) -> tuple[str, str]:
-        """Extrai artist e title de uma string.
+    @abstractmethod
+    def _extract_artist_title(self, entry: dict) -> tuple[str, str] | None:
+        """Extrai artist e title de uma entry RSS.
 
-        Tenta padrões comuns:
-        - "Artist: 'Track Title'"
-        - "Artist – 'Track Title'"
-        - "Artist - Track Title"
-        - "Artist • Track Title"
+        Implementado por cada subclasse conforme seu formato.
 
-        Retorna (artist, title) ou ("", "") se não conseguir.
+        Returns:
+            (artist, title) ou None se não conseguir extrair.
         """
-        # Padrão 1: "Artist: 'Track Title'" (com aspas)
-        match = re.match(r"([^:]+?):\s*['\"]([^'\"]+)['\"]", s)
-        if match:
-            return match.group(1).strip(), match.group(2).strip()
-
-        # Padrão 2: "Artist – 'Track Title'" ou "Artist: Track Title" (sem aspas)
-        for sep in [":", "–", "—", " - ", " • "]:
-            if sep in s:
-                parts = s.split(sep, 1)
-                if len(parts) == 2:
-                    artist = parts[0].strip()
-                    title = parts[1].strip()
-                    # Remove aspas se estiverem presentes
-                    title = re.sub(r"^['\"]|['\"]$", "", title)
-                    if artist and title:
-                        return artist, title
-
-        # Nenhum padrão casou
-        return "", ""
+        ...
 
 
 class PitchforkBNT(RSSSource):
-    """Pitchfork — Best New Tracks.
+    """Pitchfork — Reviews / Tracks.
 
-    Feed: https://pitchfork.com/rss/reviews/best/tracks/
-    Título típico: "The Smile: 'A Light for Attracting Attention'"
+    Feed: https://pitchfork.com/feed/rss (feed geral, não só tracks)
+    Filtro: apenas entries com category == "Reviews / Tracks"
+
+    URL format: https://pitchfork.com/reviews/tracks/<artist-slug>-<title-slug>/
+    Título: entre aspas curly ("..." ou "...")
+
+    Estratégia de extraction:
+    1. Filtrar por category == "Reviews / Tracks"
+    2. Title vem no entry.title, remove aspas curly
+    3. Artist extrai de entry.link:
+       - Extrai o slug completo (último segmento do path)
+       - Slugifica o título
+       - Subtrai o title-slug do artist-slug
+       - Converte hyphens em espaços + title-case
     """
 
     id = "pitchfork_bnt"
-    name = "Pitchfork Best New Tracks"
-    url = "https://pitchfork.com/rss/reviews/best/tracks/"
+    name = "Pitchfork Reviews / Tracks"
+    url = "https://pitchfork.com/feed/rss"
+
+    def _parse_entry(self, entry: dict) -> Track | None:
+        """Override para filtrar apenas "Reviews / Tracks"."""
+        category = entry.get("category", "").strip()
+        if category != "Reviews / Tracks":
+            return None
+
+        # Chama parent (que vai chamar _extract_artist_title)
+        return super()._parse_entry(entry)
+
+    def _extract_artist_title(self, entry: dict) -> tuple[str, str] | None:
+        """Extrai artist e title do entry Pitchfork."""
+        # Título: vem no entry.title entre aspas (retas ou curly)
+        title = entry.get("title", "").strip()
+        if not title:
+            return None
+
+        # Remove aspas no início e fim (retas " ', ou curly " ")
+        title = re.sub(r'^["\'\u201c\u201d]|["\'\u201c\u201d]$', "", title).strip()
+        if not title:
+            return None
+
+        # Artist: extrai da URL
+        link = entry.get("link", "").strip()
+        if not link:
+            log.warning(
+                "pitchfork.no_link",
+                title=title,
+            )
+            return None
+
+        artist = self._extract_artist_from_link(link, title)
+        if not artist:
+            return None
+
+        return artist, title
+
+    def _extract_artist_from_link(self, link: str, title: str) -> str | None:
+        """Extrai artist da URL usando o title como referência.
+
+        URL format: https://pitchfork.com/reviews/tracks/<artist-slug>-<title-slug>/
+
+        Estratégia:
+        1. Extrai o slug completo (último segmento não-vazio do path)
+        2. Slugifica o título
+        3. Se slug-completo termina com "-" + title-slug, remove para obter artist-slug
+        4. Converte artist-slug (hyphens) em title-case
+        5. Se a subtracção não bater, retorna None (e loga warning)
+        """
+        try:
+            parsed = urlparse(link)
+            # Path típico: /reviews/tracks/artist-slug-title-slug/
+            path = parsed.path.rstrip("/")
+            segments = [s for s in path.split("/") if s]
+
+            if not segments:
+                return None
+
+            # Slug completo é o último segmento
+            full_slug = segments[-1]
+
+            # Slugifica o título
+            title_slug = self._slugify(title)
+
+            # Tenta remover o title-slug do final
+            if full_slug.endswith(f"-{title_slug}"):
+                artist_slug = full_slug[: -(len(title_slug) + 1)]
+            else:
+                # Slug divergiu — não adivinhamos
+                log.warning(
+                    "pitchfork.slug_mismatch",
+                    full_slug=full_slug,
+                    title_slug=title_slug,
+                    title=title,
+                    link=link,
+                )
+                return None
+
+            # Converte slug para title-case
+            artist = self._slug_to_titlecase(artist_slug)
+            return artist if artist else None
+
+        except Exception as e:
+            log.warning(
+                "pitchfork.artist_extraction_failed",
+                link=link,
+                title=title,
+                error=str(e),
+            )
+            return None
+
+    def _slugify(self, s: str) -> str:
+        """Converte string em slug.
+
+        Lowercase, remove aspas/curly-quotes, substitui não-alfanuméricos por hyphen,
+        colapsa hyphens repetidos.
+        """
+        s = s.lower()
+
+        # Remove aspas (retas e curly)
+        s = re.sub(r'["\'\'\"]', "", s)
+
+        # Substitui não-alfanuméricos por hyphen
+        s = re.sub(r"[^a-z0-9]+", "-", s)
+
+        # Colapsa hyphens repetidos
+        s = re.sub(r"-+", "-", s)
+
+        # Remove hyphens no início/fim
+        s = s.strip("-")
+
+        return s
+
+    def _slug_to_titlecase(self, slug: str) -> str:
+        """Converte slug (artist-name) em title case."""
+        # Substitui hyphens por espaços e aplica title case
+        return slug.replace("-", " ").title()

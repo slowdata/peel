@@ -7,52 +7,90 @@ import pytest
 from peel.sources.rss import PitchforkBNT
 
 
-class TestRSSSplitArtistTitle:
-    """Testa o parsing de artist/title de strings de título."""
+class TestPitchforkSlugify:
+    """Testa a função de slugify do Pitchfork."""
 
-    def test_colon_with_quotes(self) -> None:
-        """Padrão: "Artist: 'Track Title'"""
+    def test_simple_lowercase(self) -> None:
+        """Caso simples: lowercase."""
         source = PitchforkBNT()
-        artist, title = source._split_artist_title("The Smile: 'A Light for Attracting Attention'")
-        assert artist == "The Smile"
-        assert title == "A Light for Attracting Attention"
+        assert source._slugify("High Rollers") == "high-rollers"
 
-    def test_dash_with_accents(self) -> None:
-        """Padrão: "Björk – 'Track'" com acentos."""
+    def test_curly_quotes(self) -> None:
+        """Remove aspas curly."""
         source = PitchforkBNT()
-        artist, title = source._split_artist_title("Björk – 'Arisen My Senses'")
-        assert artist == "Björk"
-        assert title == "Arisen My Senses"
+        # Aspas curly: unicode U+201C e U+201D
+        result = source._slugify("\u201cTape 05\u201d")
+        assert result == "tape-05"
 
-    def test_hyphen_no_quotes(self) -> None:
-        """Padrão: "Artist - Track Title" sem aspas."""
+    def test_straight_quotes(self) -> None:
+        """Remove aspas retas."""
         source = PitchforkBNT()
-        artist, title = source._split_artist_title("Radiohead - Creep")
-        assert artist == "Radiohead"
-        assert title == "Creep"
+        assert source._slugify('"Dum Maro Dum"') == "dum-maro-dum"
 
-    def test_empty_string(self) -> None:
-        """String vazia retorna ("", "")."""
+    def test_apostrophes(self) -> None:
+        """Remove apóstrofos."""
         source = PitchforkBNT()
-        artist, title = source._split_artist_title("")
-        assert artist == ""
-        assert title == ""
+        assert source._slugify("It's Working") == "its-working"
 
-    def test_no_separator(self) -> None:
-        """Sem separador retorna ("", "")."""
+    def test_special_chars(self) -> None:
+        """Substitui pontuação/special chars por hyphen."""
         source = PitchforkBNT()
-        artist, title = source._split_artist_title("Just A Title")
-        assert artist == ""
-        assert title == ""
+        assert source._slugify("Hello, World!") == "hello-world"
+
+    def test_collapse_hyphens(self) -> None:
+        """Colapsa hyphens repetidos."""
+        source = PitchforkBNT()
+        assert source._slugify("Something---Else") == "something-else"
 
 
-class TestPitchforkBNTFixture:
-    """Testa o parsing do fixture XML do Pitchfork."""
+class TestPitchforkExtractArtistFromSlug:
+    """Testa a extraction de artista a partir do slug."""
+
+    def test_simple_case(self) -> None:
+        """Caso simples: boards-of-canada-tape-05 -> Boards Of Canada."""
+        source = PitchforkBNT()
+        artist = source._extract_artist_from_link(
+            "https://pitchfork.com/reviews/tracks/boards-of-canada-tape-05/",
+            "Tape 05",
+        )
+        assert artist == "Boards Of Canada"
+
+    def test_single_word_artist(self) -> None:
+        """Artist com uma palavra: tiga-high-rollers -> Tiga."""
+        source = PitchforkBNT()
+        artist = source._extract_artist_from_link(
+            "https://pitchfork.com/reviews/tracks/tiga-high-rollers/",
+            "High Rollers",
+        )
+        assert artist == "Tiga"
+
+    def test_multi_word_artist_and_title(self) -> None:
+        """Artist e titulo com varias palavras: asha-bhosle-dum-maro-dum."""
+        source = PitchforkBNT()
+        artist = source._extract_artist_from_link(
+            "https://pitchfork.com/reviews/tracks/asha-bhosle-dum-maro-dum/",
+            "Dum Maro Dum",
+        )
+        assert artist == "Asha Bhosle"
+
+    def test_slug_mismatch_returns_none(self) -> None:
+        """Se a slugification diverges, retorna None."""
+        source = PitchforkBNT()
+        # Slug completo nao termina com o title-slug esperado
+        artist = source._extract_artist_from_link(
+            "https://pitchfork.com/reviews/tracks/some-artist-wrong-title/",
+            "Correct Title",
+        )
+        assert artist is None
+
+
+class TestPitchforkFetchFixture:
+    """Testa o fetch do feed real do Pitchfork."""
 
     @pytest.fixture
     def fixture_path(self) -> Path:
         """Retorna o path do fixture XML."""
-        return Path(__file__).parent / "fixtures" / "pitchfork_bnt.xml"
+        return Path(__file__).parent / "fixtures" / "pitchfork_feed.xml"
 
     def test_fixture_exists(self, fixture_path: Path) -> None:
         """Valida que o fixture existe."""
@@ -67,39 +105,66 @@ class TestPitchforkBNTFixture:
         source = PitchforkBNT()
         tracks = source.fetch()
 
-        # Valida que temos tracks
+        # Valida que temos pelo menos 3 tracks (feed real tem 7)
         assert len(tracks) >= 3, f"Expected >=3 tracks, got {len(tracks)}"
 
-        # Valida primeira track (The Smile)
-        t1 = tracks[0]
-        assert t1.artist == "The Smile"
-        assert t1.title == "A Light for Attracting Attention"
-        assert t1.source_id == "pitchfork_bnt"
-        assert t1.source_url is not None
+        # Valida propriedades comuns
+        for track in tracks:
+            assert track.source_id == "pitchfork_bnt"
+            assert track.artist, f"Track {track.raw_title} has empty artist"
+            assert track.title, f"Track {track.raw_title} has empty title"
+            assert track.source_url.startswith("https://pitchfork.com/reviews/tracks/"), (
+                f"Invalid URL: {track.source_url}"
+            )
 
-        # Valida segunda track (Björk) — verifica acentos
-        t2 = tracks[1]
-        assert t2.artist == "Björk"
-        assert t2.title == "Arisen My Senses"
-
-        # Valida terceira track (Radiohead)
-        t3 = tracks[2]
-        assert t3.artist == "Radiohead"
-        assert t3.title == "Creep Remastered"
-
-    def test_no_empty_artist_or_title(
+    def test_known_tracks_in_fixture(
         self, fixture_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Valida que todas as tracks têm artist e title não-vazios."""
+        """Valida que tracks conhecidas estao no fixture."""
         fixture_url = fixture_path.as_uri()
         monkeypatch.setattr(PitchforkBNT, "url", fixture_url)
 
         source = PitchforkBNT()
         tracks = source.fetch()
 
+        # Cria dict para lookup rapido
+        tracks_dict = {(t.artist.lower(), t.title.lower()): t for t in tracks}
+
+        # Caso 1: Boards Of Canada - Tape 05
+        assert ("boards of canada", "tape 05") in tracks_dict
+        t1 = tracks_dict[("boards of canada", "tape 05")]
+        assert "boards-of-canada-tape-05" in t1.source_url
+
+        # Caso 2: Tiga - High Rollers
+        assert ("tiga", "high rollers") in tracks_dict
+        t2 = tracks_dict[("tiga", "high rollers")]
+        assert "tiga-high-rollers" in t2.source_url
+
+        # Caso 3: Asha Bhosle - Dum Maro Dum
+        assert ("asha bhosle", "dum maro dum") in tracks_dict
+        t3 = tracks_dict[("asha bhosle", "dum maro dum")]
+        assert "asha-bhosle-dum-maro-dum" in t3.source_url
+
+    def test_only_reviews_tracks_category(
+        self, fixture_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Valida que apenas entries com category 'Reviews / Tracks' sao incluidas."""
+        fixture_url = fixture_path.as_uri()
+        monkeypatch.setattr(PitchforkBNT, "url", fixture_url)
+
+        source = PitchforkBNT()
+        tracks = source.fetch()
+
+        # Nenhuma track deve ter titles de News ou Albums
+        # (estas aparecem no fixture mas sao filtradas)
+        news_album_titles = [
+            "listen to madonna's new song",
+            "life for rent",
+            "nine inch noize",
+        ]
+
         for track in tracks:
-            assert track.artist, f"Track {track.raw_title} has empty artist"
-            assert track.title, f"Track {track.raw_title} has empty title"
-            # Track validator também testa isto, mas verificamos aqui por clareza
-            assert len(track.artist.strip()) > 0
-            assert len(track.title.strip()) > 0
+            for bad_title in news_album_titles:
+                assert bad_title.lower() not in track.raw_title.lower(), (
+                    f"Non-track category item leaked: {track.raw_title}"
+                )
