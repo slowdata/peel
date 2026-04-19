@@ -21,7 +21,7 @@ import structlog
 from peel.config import settings
 from peel.db import DB, iso_week
 from peel.matcher import best_match
-from peel.sources.rss import PitchforkBestAlbums, PitchforkBNT, StereogumNewMusic
+from peel.sources.rss import GorillaVsBear, PitchforkBNT, StereogumNewMusic, TheQuietus
 from peel.spotify_client import SpotifyClient
 from peel.telegram import send_digest
 
@@ -66,7 +66,7 @@ def run() -> None:
         db.init_schema()
 
         # Sources a processar (hardcoded por agora, virá de config v2)
-        sources = [PitchforkBNT(), StereogumNewMusic(), PitchforkBestAlbums()]
+        sources = [PitchforkBNT(), StereogumNewMusic(), TheQuietus(), GorillaVsBear()]
 
         for source in sources:
             sources_processed += 1

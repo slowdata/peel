@@ -5,10 +5,14 @@ from pathlib import Path
 import pytest
 
 from peel.sources.rss import (
+    GorillaVsBear,
     PitchforkBestAlbums,
     PitchforkBNT,
     StereogumNewMusic,
+    TheQuietus,
     _slugify_pitchfork,
+    _split_artist_title_dash,
+    _strip_html_tags,
 )
 
 
@@ -464,3 +468,251 @@ class TestStereogumFetchFixture:
                 assert narrative.lower() not in track.raw_title.lower(), (
                     f"Narrative leaked into tracks: {track.raw_title}"
                 )
+
+
+class TestHelpers:
+    """Testes dos helpers partilhados de RSS."""
+
+    def test_strip_html_tags_italic(self) -> None:
+        assert _strip_html_tags("Smerz drop <i>Big city life EDITS</i>") == (
+            "Smerz drop Big city life EDITS"
+        )
+
+    def test_strip_html_tags_entity_passthrough(self) -> None:
+        # Não toca em entities HTML (deixa para o feedparser decidificar)
+        assert _strip_html_tags("A &amp; B") == "A &amp; B"
+
+    def test_split_artist_title_en_dash(self) -> None:
+        assert _split_artist_title_dash("Abigail Snail – Rad Berms") == (
+            "Abigail Snail",
+            "Rad Berms",
+        )
+
+    def test_split_artist_title_em_dash(self) -> None:
+        assert _split_artist_title_dash("Artist — Song") == ("Artist", "Song")
+
+    def test_split_artist_title_rejects_ascii_hyphen(self) -> None:
+        # Evita falsos positivos com hyphens em nomes ("Lo-Fi", "X-Files")
+        assert _split_artist_title_dash("Lo-Fi Band - Track") is None
+
+    def test_split_artist_title_no_dash(self) -> None:
+        assert _split_artist_title_dash("Just a narrative title") is None
+
+
+class TestTheQuietusExtractArtistTitle:
+    """Testes do parser do The Quietus."""
+
+    def _entry(self, title: str, path: str) -> dict:
+        return {"title": title, "link": f"https://thequietus.com{path}"}
+
+    def test_direct_review_extracts(self) -> None:
+        source = TheQuietus()
+        result = source._extract_artist_title(
+            self._entry("Abigail Snail – Rad Berms", "/quietus-reviews/abigail-snail-rad-berms-review/")
+        )
+        assert result == ("Abigail Snail", "Rad Berms")
+
+    def test_review_with_ampersand_artist(self) -> None:
+        source = TheQuietus()
+        result = source._extract_artist_title(
+            self._entry(
+                "Radwan Ghazi Moumneh & Frédéric D. Oberland – Eternal Life No End",
+                "/quietus-reviews/radwan-ghazi-moumneh-frederic-d-oberland-review/",
+            )
+        )
+        assert result == (
+            "Radwan Ghazi Moumneh & Frédéric D. Oberland",
+            "Eternal Life No End",
+        )
+
+    def test_nested_review_path_rejected(self) -> None:
+        # /quietus-reviews/reissue-of-the-week/... → listicle/reissue, skip
+        source = TheQuietus()
+        result = source._extract_artist_title(
+            self._entry(
+                "Reissue of the Week: The Beastie Boys",
+                "/quietus-reviews/reissue-of-the-week/beastie-boys-to-the-5-boroughs-review/",
+            )
+        )
+        assert result is None
+
+    def test_news_path_rejected(self) -> None:
+        source = TheQuietus()
+        result = source._extract_artist_title(
+            self._entry(
+                "Boards Of Canada Share New Track, 'Tape 05'",
+                "/news/boards-of-canada-share-new-track-tape-05/",
+            )
+        )
+        assert result is None
+
+    def test_interviews_path_rejected(self) -> None:
+        source = TheQuietus()
+        result = source._extract_artist_title(
+            self._entry(
+                "The Strange World Of… Spacemen 3",
+                "/interviews/strange-world-of/spacemen-3-best-music/",
+            )
+        )
+        assert result is None
+
+    def test_title_without_dash_rejected(self) -> None:
+        # URL é review directa mas título não tem o formato Artist – Title
+        source = TheQuietus()
+        result = source._extract_artist_title(
+            self._entry("Some Weird Title", "/quietus-reviews/some-slug-review/")
+        )
+        assert result is None
+
+
+class TestTheQuietusFetchFixture:
+    """Fetch do feed real do Quietus (fixture)."""
+
+    @pytest.fixture
+    def fixture_path(self) -> Path:
+        return Path(__file__).parent / "fixtures" / "thequietus.xml"
+
+    def test_fixture_exists(self, fixture_path: Path) -> None:
+        assert fixture_path.exists(), f"Fixture not found: {fixture_path}"
+
+    def test_fetch_extracts_reviews(
+        self, fixture_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fixture_url = fixture_path.as_uri()
+        monkeypatch.setattr(TheQuietus, "url", fixture_url)
+
+        source = TheQuietus()
+        tracks = source.fetch()
+
+        assert len(tracks) >= 3, f"Expected >=3 reviews, got {len(tracks)}"
+
+        tracks_dict = {(t.artist.lower(), t.title.lower()): t for t in tracks}
+
+        # Reviews directas conhecidas no fixture
+        assert ("abigail snail", "rad berms") in tracks_dict
+        assert ("adult.", "kissing luck goodbye") in tracks_dict
+        assert ("drass", "on the hill") in tracks_dict
+
+        # Todos os tracks devem vir de /quietus-reviews/ não aninhado
+        for t in tracks:
+            assert "/quietus-reviews/" in t.source_url
+            assert t.source_id == "thequietus"
+
+    def test_fetch_filters_out_news_and_interviews(
+        self, fixture_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fixture_url = fixture_path.as_uri()
+        monkeypatch.setattr(TheQuietus, "url", fixture_url)
+
+        source = TheQuietus()
+        tracks = source.fetch()
+
+        leaked = [
+            "kraftwerk lose",  # news
+            "spacemen 3",  # interview / strange world of
+            "björk reveals",  # news
+            "rough trade",  # news
+            "portraits of the artist",  # culture/books
+        ]
+        for t in tracks:
+            for bad in leaked:
+                assert bad not in t.raw_title.lower(), f"Ruído passou: {t.raw_title}"
+
+
+class TestGorillaVsBearExtractArtistTitle:
+    """Testes do parser do Gorilla vs. Bear."""
+
+    def _entry(self, title: str) -> dict:
+        return {"title": title, "link": "https://www.gorillavsbear.net/example/"}
+
+    def test_simple_track(self) -> None:
+        source = GorillaVsBear()
+        result = source._extract_artist_title(self._entry("Carla Dal Forno – Going Out"))
+        assert result == ("Carla Dal Forno", "Going Out")
+
+    def test_track_with_features_kept_in_title(self) -> None:
+        source = GorillaVsBear()
+        result = source._extract_artist_title(
+            self._entry("Ms Ray – Miss You (feat. Nourished By Time)")
+        )
+        assert result == ("Ms Ray", "Miss You (feat. Nourished By Time)")
+
+    def test_album_italic_tags_stripped(self) -> None:
+        source = GorillaVsBear()
+        result = source._extract_artist_title(
+            self._entry("Nashpaints – <i>Everyone Good is Called Molly</i>")
+        )
+        assert result == ("Nashpaints", "Everyone Good is Called Molly")
+
+    def test_editorial_list_rejected(self) -> None:
+        source = GorillaVsBear()
+        result = source._extract_artist_title(
+            self._entry("Gorilla vs. Bear's Songs of 2025")
+        )
+        assert result is None
+
+    def test_photos_post_rejected(self) -> None:
+        source = GorillaVsBear()
+        result = source._extract_artist_title(
+            self._entry("photos: Oklou – live in Los Angeles")
+        )
+        assert result is None
+
+    def test_live_review_rejected(self) -> None:
+        source = GorillaVsBear()
+        result = source._extract_artist_title(
+            self._entry("shinetiac – live at café blue gelato")
+        )
+        assert result is None
+
+    def test_no_dash_rejected(self) -> None:
+        source = GorillaVsBear()
+        result = source._extract_artist_title(self._entry("Just a random post title"))
+        assert result is None
+
+
+class TestGorillaVsBearFetchFixture:
+    """Fetch do feed real do GvB (fixture)."""
+
+    @pytest.fixture
+    def fixture_path(self) -> Path:
+        return Path(__file__).parent / "fixtures" / "gorillavsbear.xml"
+
+    def test_fixture_exists(self, fixture_path: Path) -> None:
+        assert fixture_path.exists(), f"Fixture not found: {fixture_path}"
+
+    def test_fetch_extracts_tracks(
+        self, fixture_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fixture_url = fixture_path.as_uri()
+        monkeypatch.setattr(GorillaVsBear, "url", fixture_url)
+
+        source = GorillaVsBear()
+        tracks = source.fetch()
+
+        assert len(tracks) >= 5, f"Expected >=5 tracks, got {len(tracks)}"
+
+        tracks_dict = {(t.artist.lower(), t.title.lower()): t for t in tracks}
+
+        # Tracks conhecidos no fixture
+        assert ("carla dal forno", "going out") in tracks_dict
+        assert ("molina", "golden brown sugar") in tracks_dict
+
+        for t in tracks:
+            assert t.source_id == "gorillavsbear"
+
+    def test_fetch_filters_out_noise(
+        self, fixture_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fixture_url = fixture_path.as_uri()
+        monkeypatch.setattr(GorillaVsBear, "url", fixture_url)
+
+        source = GorillaVsBear()
+        tracks = source.fetch()
+
+        for t in tracks:
+            raw_lower = t.raw_title.lower()
+            assert not raw_lower.startswith("photos"), f"Photos post leaked: {t.raw_title}"
+            assert not raw_lower.startswith("gorilla vs. bear"), (
+                f"Editorial list leaked: {t.raw_title}"
+            )

@@ -31,6 +31,9 @@ class RSSSource(Source):
     url: str
     """URL do feed RSS."""
 
+    request_headers: dict[str, str] | None = None
+    """Headers HTTP opcionais (ex: User-Agent) para feeds que bloqueiam defaults."""
+
     def __init__(self) -> None:
         """Inicializa a fonte (subclasses definem id, name, url)."""
         if not hasattr(self, "id") or not hasattr(self, "name"):
@@ -45,7 +48,10 @@ class RSSSource(Source):
         Se o feed todo falhar (HTTP erro, XML inválido), levanta exceção.
         """
         try:
-            feed = feedparser.parse(self.url)
+            if self.request_headers:
+                feed = feedparser.parse(self.url, request_headers=self.request_headers)
+            else:
+                feed = feedparser.parse(self.url)
         except Exception as e:
             log.exception(
                 "rss.fetch_failed",
@@ -447,3 +453,136 @@ class StereogumNewMusic(RSSSource):
             return None
 
         return artist, track_title
+
+
+# User-Agent de browser usado por feeds que bloqueiam defaults (ex: Quietus/Cloudflare)
+_BROWSER_UA = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
+
+
+def _strip_html_tags(s: str) -> str:
+    """Remove tags HTML simples (ex: <i>, <b>, <em>) de um título."""
+    return re.sub(r"<[^>]+>", "", s)
+
+
+def _split_artist_title_dash(title: str) -> tuple[str, str] | None:
+    """Separa um título no formato 'Artist – Title' em tuplo.
+
+    Aceita en-dash (U+2013) e em-dash (U+2014) como separadores. NÃO aceita
+    hyphen ASCII para evitar falsos positivos com títulos que contêm hyphens
+    (ex: 'X-Files', 'Lo-Fi').
+    """
+    pattern = r"^(?P<artist>.+?)\s+[–—]\s+(?P<title>.+)$"
+    match = re.match(pattern, title)
+    if not match:
+        return None
+    artist = match.group("artist").strip()
+    track = match.group("title").strip()
+    if not artist or not track:
+        return None
+    return artist, track
+
+
+class TheQuietus(RSSSource):
+    """The Quietus — reviews de tracks/álbuns.
+
+    Feed: https://thequietus.com/feed/
+    Bloqueia User-Agents não-browser (retorna 403), por isso passamos um UA
+    de Chrome via request_headers.
+
+    Estratégia de filtro (alta precisão, baixo recall — preferimos sinal):
+    - Apenas processamos URLs de review directa: /quietus-reviews/<slug>-review/
+    - Ignoramos paths aninhados (/quietus-reviews/metal/..., /reissue-of-the-week/,
+      /live-reviews/, /album-of-the-week/) que tipicamente são listicles, reissues
+      ou reviews não-musicais (livros).
+    - Ignoramos news, interviews, culture, opinion — onde extrair tracks é ruidoso.
+
+    Título format: 'Artist – Track/Album Title' (en-dash ou em-dash).
+    """
+
+    id = "thequietus"
+    name = "The Quietus"
+    url = "https://thequietus.com/feed/"
+    request_headers = {"User-Agent": _BROWSER_UA}
+
+    def _extract_artist_title(self, entry: dict) -> tuple[str, str] | None:
+        """Extrai artist/title se a URL for de review directa."""
+        link = entry.get("link", "").strip()
+        if not link or not self._is_direct_review(link):
+            return None
+
+        title = _strip_html_tags(entry.get("title", "").strip())
+        if not title:
+            return None
+
+        result = _split_artist_title_dash(title)
+        if result is None:
+            log.warning("quietus.title_no_match", title=title, link=link)
+            return None
+
+        return result
+
+    def _is_direct_review(self, link: str) -> bool:
+        """True se o path for /quietus-reviews/<slug>-review/ (não aninhado)."""
+        try:
+            parsed = urlparse(link)
+        except Exception:
+            return False
+        segments = [s for s in parsed.path.split("/") if s]
+        if len(segments) != 2:
+            return False
+        if segments[0] != "quietus-reviews":
+            return False
+        if not segments[1].endswith("-review"):
+            return False
+        return True
+
+
+class GorillaVsBear(RSSSource):
+    """Gorilla vs. Bear — indie electrónico, hip hop, leftfield.
+
+    Feed: https://www.gorillavsbear.net/feed/
+
+    Formato do título: 'Artist – Track' (en-dash), com variantes:
+    - Álbuns têm <i>Title</i> (removemos tags HTML antes do parse)
+    - Features vêm como '(feat. X)' no título — mantemos no track title
+    - Posts não-musicais a filtrar:
+      * Listas anuais ('Gorilla vs. Bear\\'s Songs of 2025')
+      * Fotos ao vivo ('photos: Artist – live in X')
+      * Reviews ao vivo (track title começa com 'live ')
+    """
+
+    id = "gorillavsbear"
+    name = "Gorilla vs. Bear"
+    url = "https://www.gorillavsbear.net/feed/"
+
+    def _extract_artist_title(self, entry: dict) -> tuple[str, str] | None:
+        """Extrai artist/title, filtrando ruído conhecido."""
+        raw = entry.get("title", "").strip()
+        if not raw:
+            return None
+
+        title = _strip_html_tags(raw)
+
+        # Listas editoriais com o nome da publicação
+        if title.lower().startswith("gorilla vs. bear"):
+            return None
+
+        # Fotos/live reviews — prefixo 'photos:' claro
+        if re.match(r"^photos?\s*:", title, re.IGNORECASE):
+            return None
+
+        result = _split_artist_title_dash(title)
+        if result is None:
+            log.warning("gvb.title_no_match", title=title)
+            return None
+
+        artist, track = result
+
+        # Filtros extra no track title: reviews de concertos
+        if re.match(r"^live\b", track, re.IGNORECASE):
+            return None
+
+        return artist, track

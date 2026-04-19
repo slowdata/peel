@@ -2,8 +2,9 @@ name: weekly peel run
 
 on:
   schedule:
-    # Domingo às 22:00 UTC (antes da segunda-feira)
-    - cron: "0 22 * * 0"
+    # Sexta-feira às 22:00 UTC — lançamentos globais são 00:00 sexta,
+    # por isso damos tempo aos blogs para publicarem as picks semanais.
+    - cron: "0 22 * * 5"
   # Dispatch manual para testes durante desenvolvimento
   workflow_dispatch:
 
