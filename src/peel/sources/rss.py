@@ -135,19 +135,42 @@ class RSSSource(Source):
         ...
 
 
-class PitchforkBNT(RSSSource):
-    """Pitchfork — Reviews / Tracks.
+def _slugify_pitchfork(s: str) -> str:
+    """Converte string em slug (helper partilhado entre classes Pitchfork).
 
-    Feed: https://pitchfork.com/feed/rss (feed geral, não só tracks)
-    Filtro: apenas entries com category == "Reviews / Tracks"
+    Lowercase, remove aspas/curly-quotes, substitui não-alfanuméricos por hyphen,
+    colapsa hyphens repetidos.
+    """
+    s = s.lower()
+
+    # Remove aspas (retas e curly)
+    s = re.sub(r'["\'\'\"]', "", s)
+
+    # Substitui não-alfanuméricos por hyphen
+    s = re.sub(r"[^a-z0-9]+", "-", s)
+
+    # Colapsa hyphens repetidos
+    s = re.sub(r"-+", "-", s)
+
+    # Remove hyphens no início/fim
+    s = s.strip("-")
+
+    return s
+
+
+class PitchforkBNT(RSSSource):
+    """Pitchfork Best New Tracks.
+
+    Feed: https://pitchfork.com/feed/reviews/best/tracks/rss
+
+    Todas as entries são BNT — sem filtro de category necessário.
 
     URL format: https://pitchfork.com/reviews/tracks/<artist-slug>-<title-slug>/
     Título: entre aspas curly ("..." ou "...")
 
     Estratégia de extraction:
-    1. Filtrar por category == "Reviews / Tracks"
-    2. Title vem no entry.title, remove aspas curly
-    3. Artist extrai de entry.link:
+    1. Title vem no entry.title, remove aspas curly
+    2. Artist extrai de entry.link:
        - Extrai o slug completo (último segmento do path)
        - Slugifica o título
        - Subtrai o title-slug do artist-slug
@@ -155,17 +178,8 @@ class PitchforkBNT(RSSSource):
     """
 
     id = "pitchfork_bnt"
-    name = "Pitchfork Reviews / Tracks"
-    url = "https://pitchfork.com/feed/rss"
-
-    def _parse_entry(self, entry: dict) -> Track | None:
-        """Override para filtrar apenas "Reviews / Tracks"."""
-        category = entry.get("category", "").strip()
-        if category != "Reviews / Tracks":
-            return None
-
-        # Chama parent (que vai chamar _extract_artist_title)
-        return super()._parse_entry(entry)
+    name = "Pitchfork Best New Tracks"
+    url = "https://pitchfork.com/feed/reviews/best/tracks/rss"
 
     def _extract_artist_title(self, entry: dict) -> tuple[str, str] | None:
         """Extrai artist e title do entry Pitchfork."""
@@ -218,8 +232,8 @@ class PitchforkBNT(RSSSource):
             # Slug completo é o último segmento
             full_slug = segments[-1]
 
-            # Slugifica o título
-            title_slug = self._slugify(title)
+            # Slugifica o título (usa função helper de módulo)
+            title_slug = _slugify_pitchfork(title)
 
             # Tenta remover o title-slug do final
             if full_slug.endswith(f"-{title_slug}"):
@@ -248,29 +262,188 @@ class PitchforkBNT(RSSSource):
             )
             return None
 
-    def _slugify(self, s: str) -> str:
-        """Converte string em slug.
-
-        Lowercase, remove aspas/curly-quotes, substitui não-alfanuméricos por hyphen,
-        colapsa hyphens repetidos.
-        """
-        s = s.lower()
-
-        # Remove aspas (retas e curly)
-        s = re.sub(r'["\'\'\"]', "", s)
-
-        # Substitui não-alfanuméricos por hyphen
-        s = re.sub(r"[^a-z0-9]+", "-", s)
-
-        # Colapsa hyphens repetidos
-        s = re.sub(r"-+", "-", s)
-
-        # Remove hyphens no início/fim
-        s = s.strip("-")
-
-        return s
-
     def _slug_to_titlecase(self, slug: str) -> str:
         """Converte slug (artist-name) em title case."""
         # Substitui hyphens por espaços e aplica title case
         return slug.replace("-", " ").title()
+
+
+class PitchforkBestAlbums(RSSSource):
+    """Pitchfork Best New Albums.
+
+    Feed: https://pitchfork.com/feed/reviews/best/albums/rss
+
+    IMPORTANTE: O Peel trabalha com tracks, não álbuns. Esta source produz
+    Track objects onde o `title` é o NOME DO ÁLBUM. A conversão álbum→tracks
+    para a playlist é decidida downstream (em main.py) — esta classe só
+    estrutura o input.
+
+    URL format: https://pitchfork.com/reviews/albums/<artist-slug>-<album-slug>/
+    Título: nome do álbum (sem aspas)
+
+    Estratégia de extraction (idêntica à PitchforkBNT):
+    1. Title vem no entry.title (já sem aspas)
+    2. Artist extrai de entry.link usando subtracção de slug
+       - Extrai o slug completo (último segmento do path)
+       - Slugifica o título (album name)
+       - Subtrai o album-slug do artist-slug
+       - Converte hyphens em espaços + title-case
+
+    DECISÃO: _slugify_pitchfork foi extraída para função de módulo-level
+    para evitar duplicação entre PitchforkBNT e PitchforkBestAlbums.
+    """
+
+    id = "pitchfork_best_albums"
+    name = "Pitchfork Best New Albums"
+    url = "https://pitchfork.com/feed/reviews/best/albums/rss"
+    kind = "album"
+
+    def _extract_artist_title(self, entry: dict) -> tuple[str, str] | None:
+        """Extrai artist e album name do entry Pitchfork."""
+        # Título: nome do álbum (sem aspas, tal como vem)
+        title = entry.get("title", "").strip()
+        if not title:
+            return None
+
+        # Artist: extrai da URL
+        link = entry.get("link", "").strip()
+        if not link:
+            log.warning(
+                "pitchfork_albums.no_link",
+                title=title,
+            )
+            return None
+
+        artist = self._extract_artist_from_link(link, title)
+        if not artist:
+            return None
+
+        return artist, title
+
+    def _extract_artist_from_link(self, link: str, album_title: str) -> str | None:
+        """Extrai artist da URL usando o album name como referência.
+
+        URL format: https://pitchfork.com/reviews/albums/<artist-slug>-<album-slug>/
+
+        Estratégia: idêntica à PitchforkBNT mas com album-slug em vez de title-slug.
+        """
+        try:
+            parsed = urlparse(link)
+            # Path típico: /reviews/albums/artist-slug-album-slug/
+            path = parsed.path.rstrip("/")
+            segments = [s for s in path.split("/") if s]
+
+            if not segments:
+                return None
+
+            # Slug completo é o último segmento
+            full_slug = segments[-1]
+
+            # Slugifica o album name (usa função helper de módulo)
+            album_slug = _slugify_pitchfork(album_title)
+
+            # Tenta remover o album-slug do final
+            if full_slug.endswith(f"-{album_slug}"):
+                artist_slug = full_slug[: -(len(album_slug) + 1)]
+            else:
+                # Slug divergiu — não adivinhamos
+                log.warning(
+                    "pitchfork_albums.slug_mismatch",
+                    full_slug=full_slug,
+                    album_slug=album_slug,
+                    album_title=album_title,
+                    link=link,
+                )
+                return None
+
+            # Converte slug para title-case
+            artist = self._slug_to_titlecase(artist_slug)
+            return artist if artist else None
+
+        except Exception as e:
+            log.warning(
+                "pitchfork_albums.artist_extraction_failed",
+                link=link,
+                album_title=album_title,
+                error=str(e),
+            )
+            return None
+
+    def _slug_to_titlecase(self, slug: str) -> str:
+        """Converte slug (artist-name) em title case."""
+        return slug.replace("-", " ").title()
+
+
+class StereogumNewMusic(RSSSource):
+    """Stereogum — New Music.
+
+    Feed: https://www.stereogum.com/feed/
+    Filtro: apenas entries com tag "New Music"
+
+    Título format: Artist – "Track Title" (optional features)
+    - Dash pode ser em-dash (U+2013), em-dash (U+2014), ou ASCII hyphen
+    - Quotes podem ser curly (U+201C/U+201D) ou straight ASCII "
+
+    Estratégia de extraction:
+    1. Filtrar por tag "New Music"
+    2. Usar regex para extrair Artist e Title (primeiro track citado se múltiplos)
+    3. Se não match o padrão, é narrativa — retorna None com warning
+    """
+
+    id = "stereogum_new_music"
+    name = "Stereogum — New Music"
+    url = "https://www.stereogum.com/feed/"
+
+    def _parse_entry(self, entry: dict) -> Track | None:
+        """Override para filtrar apenas "New Music"."""
+        # Verifica se tem tags
+        tags = entry.get("tags", [])
+        if not tags:
+            return None
+
+        # Procura por "New Music" na lista de tags
+        has_new_music = any(t.get("term") == "New Music" for t in tags)
+        if not has_new_music:
+            return None
+
+        # Chama parent (que vai chamar _extract_artist_title)
+        return super()._parse_entry(entry)
+
+    def _extract_artist_title(self, entry: dict) -> tuple[str, str] | None:
+        """Extrai artist e title do entry Stereogum.
+
+        Padrão esperado: Artist – "Track Title"
+        - Dash: em-dash (–, U+2013), em-dash (—, U+2014), ou ASCII hyphen (-)
+        - Quotes: curly (" ", U+201C/U+201D) ou straight (")
+        - Se múltiplas tracks citadas (e.g. "Track A" & "Track B"), pega só a primeira
+
+        TRADE-OFF: Posts com múltiplas tracks (e.g., 'Artist – "A" & "B"')
+        retornam apenas a primeira. Justificativa: a maioria dos posts é single-track,
+        e representar só a primeira permite incluir estes posts úteis. Alternativa seria
+        skip completo (mais conservador, mas perde valor).
+        """
+        title = entry.get("title", "").strip()
+        if not title:
+            return None
+
+        # Regex para extrair: Artist – "Title"
+        # Suporta: em-dash (–), em-dash (—), ASCII hyphen (-)
+        # Suporta: curly quotes (" ") ou straight quotes (")
+        pattern = r'^(?P<artist>.+?)\s+[–—-]\s+["\u201c"](?P<track>[^"\u201c\u201d]+?)["\u201d"]'
+        match = re.match(pattern, title)
+
+        if not match:
+            # Narrativa, não é track review
+            log.warning(
+                "stereogum.title_no_match",
+                title=title,
+            )
+            return None
+
+        artist = match.group("artist").strip()
+        track_title = match.group("track").strip()
+
+        if not artist or not track_title:
+            return None
+
+        return artist, track_title

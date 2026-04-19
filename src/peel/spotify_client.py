@@ -154,3 +154,70 @@ class SpotifyClient:
             total_added=len(uris),
             chunks=len(chunks),
         )
+
+    def replace_playlist_items(self, playlist_id: str, uris: list[str]) -> None:
+        """Substitui conteúdo da playlist pelos URIs dados.
+
+        Usa playlist_replace_items para os primeiros 100, depois playlist_add_items
+        para os restantes em chunks de 100.
+
+        Args:
+            playlist_id: ID ou URI da playlist
+            uris: Lista de Spotify track URIs (ordem preservada)
+
+        Levanta exceção se algo falhar — responsabilidade do caller tratar.
+        """
+        if not uris:
+            # Limpa a playlist (replace com lista vazia)
+            try:
+                self.sp.playlist_replace_items(playlist_id, [])
+                log.info("playlist.cleared", playlist_id=playlist_id)
+            except Exception as e:
+                log.exception("playlist.clear_failed", playlist_id=playlist_id, error=str(e))
+                raise
+            return
+
+        # Replace com os primeiros 100
+        try:
+            self.sp.playlist_replace_items(playlist_id, uris[:100])
+            log.info(
+                "playlist.replaced",
+                playlist_id=playlist_id,
+                initial_count=min(100, len(uris)),
+            )
+        except Exception as e:
+            log.exception("playlist.replace_failed", playlist_id=playlist_id, error=str(e))
+            raise
+
+        # Se há mais de 100, adiciona em chunks
+        if len(uris) > 100:
+            chunk_size = 100
+            remaining_uris = uris[100:]
+            chunks = [
+                remaining_uris[i : i + chunk_size]
+                for i in range(0, len(remaining_uris), chunk_size)
+            ]
+
+            for i, chunk in enumerate(chunks, start=1):
+                try:
+                    self.sp.playlist_add_items(playlist_id, chunk)
+                    log.info(
+                        "playlist.chunk_added_after_replace",
+                        chunk=i,
+                        total_chunks=len(chunks),
+                        chunk_size=len(chunk),
+                    )
+                except Exception as e:
+                    log.exception(
+                        "playlist.add_after_replace_failed",
+                        chunk=i,
+                        total_chunks=len(chunks),
+                        error=str(e),
+                    )
+                    raise
+
+        log.info(
+            "playlist.replaced_complete",
+            playlist_id=playlist_id,
+            total_items=len(uris),
+        )

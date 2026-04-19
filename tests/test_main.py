@@ -51,7 +51,7 @@ class TestMainIntegration:
             ]
 
         mock_sp.search_track = mock_search_track
-        mock_sp.add_to_playlist = MagicMock()
+        mock_sp.replace_playlist_items = MagicMock()
 
         # Patcha o URL do Pitchfork RSS para apontar ao fixture
         fixture_path = Path(__file__).parent / "fixtures" / "pitchfork_feed.xml"
@@ -60,6 +60,7 @@ class TestMainIntegration:
         with (
             patch("peel.sources.rss.PitchforkBNT.url", fixture_url),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
+            patch("peel.main.send_digest"),  # Mocka Telegram
         ):
             # Executa a run
             run()
@@ -75,8 +76,8 @@ class TestMainIntegration:
         track_count = cursor.fetchone()[0]
         assert track_count > 0, "Deve ter adicionado pelo menos um track"
 
-        # Verifica que o SpotifyClient.add_to_playlist foi chamado
-        assert mock_sp.add_to_playlist.called
+        # Verifica que o SpotifyClient.replace_playlist_items foi chamado (rotação)
+        assert mock_sp.replace_playlist_items.called
 
         db.close()
 
@@ -110,7 +111,7 @@ class TestMainIntegration:
             ]
 
         mock_sp.search_track = mock_search_track
-        mock_sp.add_to_playlist = MagicMock()
+        mock_sp.replace_playlist_items = MagicMock()
 
         fixture_path = Path(__file__).parent / "fixtures" / "pitchfork_feed.xml"
         fixture_url = fixture_path.as_uri()
@@ -118,6 +119,7 @@ class TestMainIntegration:
         with (
             patch("peel.sources.rss.PitchforkBNT.url", fixture_url),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
+            patch("peel.main.send_digest"),  # Mocka Telegram
         ):
             # Primeira run
             run()
@@ -167,7 +169,7 @@ class TestMainIntegration:
 
         mock_sp = MagicMock()
         mock_sp.search_track = MagicMock(return_value=[])
-        mock_sp.add_to_playlist = MagicMock()
+        mock_sp.replace_playlist_items = MagicMock()
 
         def mock_fetch(self):
             """Simula crash da source."""
@@ -176,6 +178,7 @@ class TestMainIntegration:
         with (
             patch.object(PitchforkBNT, "fetch", mock_fetch),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
+            patch("peel.main.send_digest"),  # Mocka Telegram
         ):
             # Executa a run — não deve falhar globalmente
             run()
@@ -197,5 +200,54 @@ class TestMainIntegration:
         assert "simulated source crash" in error, (
             f"Error deve conter 'simulated source crash', obtive '{error}'"
         )
+
+        db.close()
+
+    def test_run_album_source_skips_spotify_search(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Teste: source kind='album' NÃO faz Spotify search.
+
+        Verifica que:
+        - Album source processa tracks localmente
+        - Não chama sp.search_track()
+        - Regista albuns na tabela albums
+        """
+        db_path = tmp_path / "test.db"
+        monkeypatch.setenv("PEEL_PLAYLIST_ID", "spotify:playlist:test")
+        monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test_id")
+        monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "test_secret")
+        monkeypatch.setenv("SPOTIFY_REFRESH_TOKEN", "test_token")
+
+        from peel import config as config_module
+
+        monkeypatch.setattr(config_module.settings, "db_path", str(db_path))
+
+        # Mock SpotifyClient que rastreia chamadas
+        mock_sp = MagicMock()
+        mock_sp.search_track = MagicMock(return_value=[])
+        mock_sp.replace_playlist_items = MagicMock()
+
+        # Usa fixture do best albums
+        fixture_path = Path(__file__).parent / "fixtures" / "pitchfork_best_albums.xml"
+        fixture_url = fixture_path.as_uri()
+
+        with (
+            patch("peel.sources.rss.PitchforkBestAlbums.url", fixture_url),
+            patch("peel.main.SpotifyClient", return_value=mock_sp),
+            patch("peel.main.send_digest"),  # Mocka Telegram
+        ):
+            run()
+
+        # Verifica que alguns albums foram registados
+        from peel.db import DB
+
+        db = DB(str(db_path))
+        db.init_schema()
+
+        # Verifica que alguns albums foram registados
+        cursor = db.conn.execute("SELECT COUNT(*) FROM albums")
+        album_count = cursor.fetchone()[0]
+        assert album_count > 0, "Deve ter registado pelo menos um album"
 
         db.close()

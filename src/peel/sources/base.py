@@ -20,6 +20,9 @@ class Source(ABC):
     name: str
     """Nome human-readable da fonte, ex.: 'Pitchfork Best New Tracks'."""
 
+    kind: str = "track"
+    """Tipo de conteúdo: "track" (padrão, vai para Spotify) ou "album" (para digest)."""
+
     @abstractmethod
     def fetch(self) -> list[Track]:
         """Vai buscar o estado actual da fonte.

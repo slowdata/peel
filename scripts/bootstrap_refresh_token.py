@@ -26,6 +26,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
+from dotenv import load_dotenv
 
 # Constantes de configuração
 REDIRECT_URI = "http://127.0.0.1:8888/callback"
@@ -81,6 +82,7 @@ class CallbackHandler(BaseHTTPRequestHandler):
 
 def main() -> None:
     """Orquestra o fluxo de autorização."""
+    load_dotenv()
     # Carrega Client ID e Secret: prefere variáveis de env, senão pede input
     client_id = os.environ.get("SPOTIFY_CLIENT_ID")
     if not client_id:
