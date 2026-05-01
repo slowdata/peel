@@ -106,6 +106,16 @@ class TestRecordTrack:
         assert row[0] == "Radiohead"
         assert row[1] == "Idioteque"
 
+    def test_record_track_returns_inserted_flag(self, tmp_path: Path) -> None:
+        """record_track() devolve True quando insere e False em duplicate key."""
+        db_path = tmp_path / "test.db"
+        db = DB(str(db_path))
+        db.init_schema()
+
+        uri = "spotify:track:123"
+        assert db.record_track(uri, "pitchfork_bnt", "Artist", "Title", None) is True
+        assert db.record_track(uri, "pitchfork_bnt", "Artist", "Title", None) is False
+
     def test_record_track_idempotent(self, tmp_path: Path) -> None:
         """record_track() com mesma (uri, source_id) não duplica.
 
@@ -164,6 +174,33 @@ class TestRecordTrack:
         row = cursor.fetchone()
         assert row is not None
         assert row[0] == url
+
+    def test_track_sources_returns_ordered_sources(self, tmp_path: Path) -> None:
+        """track_sources() devolve as fontes de uma URI, por ordem de inserção."""
+        db_path = tmp_path / "test.db"
+        db = DB(str(db_path))
+        db.init_schema()
+
+        uri = "spotify:track:123"
+        db.record_track(uri, "source-a", "Artist", "Title", "https://a")
+        db.record_track(uri, "source-b", "Artist", "Title", "https://b")
+
+        assert db.track_sources(uri) == [("source-a", "https://a"), ("source-b", "https://b")]
+
+    def test_recent_tracks_with_sources_aggregates_source_count(self, tmp_path: Path) -> None:
+        """recent_tracks_with_sources() agrega várias fontes na mesma URI."""
+        db_path = tmp_path / "test.db"
+        db = DB(str(db_path))
+        db.init_schema()
+
+        uri = "spotify:track:123"
+        db.record_track(uri, "source-a", "Artist", "Title", "https://a")
+        db.record_track(uri, "source-b", "Artist", "Title", "https://b")
+
+        rows = db.recent_tracks_with_sources(limit=10)
+        assert len(rows) == 1
+        assert rows[0][0] == uri
+        assert rows[0][4] == 2
 
 
 class TestRecordUnmatched:

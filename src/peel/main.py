@@ -152,14 +152,7 @@ def run() -> None:
                                 )
                                 continue
 
-                            # Verifica se já foi adicionada
-                            if db.already_added(uri):
-                                log.debug(
-                                    "track.already_added",
-                                    source_id=source.id,
-                                    uri=uri,
-                                )
-                                continue
+                            already = db.already_added(uri)
 
                             # TRADE-OFF de design: registamos a track no DB ANTES de a
                             # adicionar à playlist. Se add_to_playlist falhar depois,
@@ -171,13 +164,23 @@ def run() -> None:
                             #     add_to_playlist bem-sucedido) duplicaria complexidade sem
                             #     ganho proporcional. Eventos de falha podem ser auditados
                             #     via logs estruturados.
-                            db.record_track(
+                            inserted = db.record_track(
                                 uri,
                                 source.id,
                                 track.artist,
                                 track.title,
                                 track.source_url,
                             )
+
+                            if already:
+                                log.debug(
+                                    "track.attributed_existing",
+                                    source_id=source.id,
+                                    uri=uri,
+                                    inserted=inserted,
+                                )
+                                continue
+
                             tracks_added += 1
                             new_track_entries.append((track.artist, track.title, track.source_url))
 
@@ -299,14 +302,22 @@ def _retry_unmatched(
             if uri is None:
                 continue
 
-            if db.already_added(uri):
-                # Outra source ou run anterior já adicionou esta URI; só limpa
-                db.delete_unmatched(source_id, artist, title)
+            already = db.already_added(uri)
+            inserted = db.record_track(uri, source_id, artist, title, None)
+            db.delete_unmatched(source_id, artist, title)
+
+            if already:
+                log.debug(
+                    "unmatched.retry_attributed_existing",
+                    source_id=source_id,
+                    artist=artist,
+                    title=title,
+                    uri=uri,
+                    inserted=inserted,
+                )
                 matched += 1
                 continue
 
-            db.record_track(uri, source_id, artist, title, None)
-            db.delete_unmatched(source_id, artist, title)
             new_track_entries.append((artist, title, None))
             matched += 1
             log.info(

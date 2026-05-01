@@ -218,7 +218,7 @@ class DB:
         artist: str,
         title: str,
         url: str | None,
-    ) -> None:
+    ) -> bool:
         """Regista uma faixa adicionada (ou ignora se duplicate key).
 
         Idempotente: chamar 2x com mesma (uri, source_id) só adiciona uma vez.
@@ -229,9 +229,12 @@ class DB:
             artist: Nome do artista
             title: Título da faixa
             url: URL opcional (link para review, etc.)
+
+        Returns:
+            True se a row foi inserida, False se já existia.
         """
         now = datetime.now(UTC)
-        self.conn.execute(
+        cursor = self.conn.execute(
             """
             INSERT OR IGNORE INTO tracks
             (spotify_uri, source_id, artist, title, source_url, added_at, added_at_week)
@@ -240,7 +243,58 @@ class DB:
             (uri, source_id, artist, title, url, now.isoformat(), iso_week(now)),
         )
         self.conn.commit()
-        log.debug("db.track_recorded", uri=uri, source_id=source_id)
+        inserted = cursor.rowcount > 0
+        log.debug("db.track_recorded", uri=uri, source_id=source_id, inserted=inserted)
+        return inserted
+
+    def track_sources(self, spotify_uri: str) -> list[tuple[str, str | None]]:
+        """Lista as fontes associadas a uma URI Spotify.
+
+        Args:
+            spotify_uri: Spotify track URI.
+
+        Returns:
+            Lista de tuplos (source_id, source_url), ordenada por added_at.
+        """
+        cursor = self.conn.execute(
+            """
+            SELECT source_id, source_url
+            FROM tracks
+            WHERE spotify_uri = ?
+            ORDER BY added_at ASC, source_id ASC
+            """,
+            (spotify_uri,),
+        )
+        return [(row[0], row[1]) for row in cursor.fetchall()]
+
+    def recent_tracks_with_sources(
+        self,
+        limit: int = 50,
+    ) -> list[tuple[str, str, str, str, int, str, str]]:
+        """Tracks agregadas com contagem de fontes.
+
+        Returns:
+            Lista de tuplos:
+            (spotify_uri, artist, title, added_at_week, source_count, first_added_at, last_added_at)
+        """
+        cursor = self.conn.execute(
+            """
+            SELECT
+                spotify_uri,
+                artist,
+                title,
+                MAX(added_at_week) AS added_at_week,
+                COUNT(DISTINCT source_id) AS source_count,
+                MIN(added_at) AS first_added_at,
+                MAX(added_at) AS last_added_at
+            FROM tracks
+            GROUP BY spotify_uri, artist, title
+            ORDER BY last_added_at DESC, artist COLLATE NOCASE, title COLLATE NOCASE
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        return [tuple(row) for row in cursor.fetchall()]
 
     def record_unmatched(
         self,

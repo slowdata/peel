@@ -6,7 +6,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from peel.main import _retry_unmatched, run
-from peel.sources.rss import PitchforkBNT
+from peel.models import Track
+from peel.sources.rss import GorillaVsBear, PitchforkBNT, StereogumNewMusic, TheQuietus
 
 
 class TestMainIntegration:
@@ -233,30 +234,48 @@ class TestRetryUnmatched:
         assert matched == 1
         # Unmatched foi limpo
         assert db.list_unmatched(30) == []
-        # Track foi registada
+        # Track foi registada e atribuída à source original
         row = db.conn.execute(
             "SELECT spotify_uri FROM tracks WHERE spotify_uri='spotify:track:abc'"
         ).fetchone()
         assert row is not None
+        assert db.track_sources("spotify:track:abc") == [("pitchfork_bnt", None)]
         # Entrou no digest do Telegram
         assert digest_entries == [("Claire Rousay", "Hey Eleanor", None)]
         db.close()
 
-    def test_retry_keeps_still_missing(self, tmp_path: Path) -> None:
-        """Se Spotify continuar sem resultados, row fica no unmatched."""
+    def test_retry_keeps_source_attribution_for_existing_uri(
+        self, tmp_path: Path
+    ) -> None:
+        """Se a URI já existir, retry regista a nova source mas não duplica digest."""
         from peel.db import DB
 
         db = DB(str(tmp_path / "test.db"))
         db.init_schema()
-        db.record_unmatched("pitchfork_bnt", "Very Niche", "Bandcamp Only")
+
+        uri = "spotify:track:shared"
+        db.record_track(uri, "source-a", "Artist", "Title", None)
+        db.record_unmatched("source-b", "Artist", "Title")
 
         mock_sp = MagicMock()
-        mock_sp.search_track = MagicMock(return_value=[])
+        mock_sp.search_track = MagicMock(
+            return_value=[
+                {
+                    "uri": uri,
+                    "name": "Title",
+                    "artists": ["Artist"],
+                }
+            ]
+        )
 
-        total, matched = _retry_unmatched(db, mock_sp, [])
+        digest_entries: list = []
+        total, matched = _retry_unmatched(db, mock_sp, digest_entries)
+
         assert total == 1
-        assert matched == 0
-        assert db.list_unmatched(30) == [("pitchfork_bnt", "Very Niche", "Bandcamp Only")]
+        assert matched == 1
+        assert db.list_unmatched(30) == []
+        assert db.track_sources(uri) == [("source-a", None), ("source-b", None)]
+        assert digest_entries == []
         db.close()
 
     def test_retry_handles_empty_table(self, tmp_path: Path) -> None:
@@ -272,3 +291,90 @@ class TestRetryUnmatched:
         mock_sp.search_track.assert_not_called()
         db.close()
 
+
+class TestConsensusAttribution:
+    """Tracks iguais vindas de múltiplas sources devem ser atribuídas, não ignoradas."""
+
+    def test_run_records_same_uri_from_multiple_sources_once_in_playlist(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        db_path = tmp_path / "test.db"
+        monkeypatch.setenv("PEEL_PLAYLIST_ID", "spotify:playlist:test")
+        monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test_id")
+        monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "test_secret")
+        monkeypatch.setenv("SPOTIFY_REFRESH_TOKEN", "test_token")
+
+        from peel import config as config_module
+
+        monkeypatch.setattr(config_module.settings, "db_path", str(db_path))
+
+        mock_sp = MagicMock()
+        shared_uri = "spotify:track:shared"
+        mock_sp.search_track = MagicMock(
+            return_value=[
+                {
+                    "uri": shared_uri,
+                    "name": "Shared Track",
+                    "artists": ["Shared Artist"],
+                }
+            ]
+        )
+        mock_sp.replace_playlist_items = MagicMock()
+
+        shared_track = Track(
+            source_id="pitchfork_bnt",
+            artist="Shared Artist",
+            title="Shared Track",
+            source_url="https://example.com/pitchfork",
+        )
+        shared_track_2 = Track(
+            source_id="stereogum_new_music",
+            artist="Shared Artist",
+            title="Shared Track",
+            source_url="https://example.com/stereogum",
+        )
+        shared_track_3 = Track(
+            source_id="thequietus",
+            artist="Shared Artist",
+            title="Shared Track",
+            source_url="https://example.com/quietus",
+        )
+        shared_track_4 = Track(
+            source_id="gorillavsbear",
+            artist="Shared Artist",
+            title="Shared Track",
+            source_url="https://example.com/gvb",
+        )
+
+        with (
+            patch.object(PitchforkBNT, "fetch", return_value=[shared_track]),
+            patch.object(StereogumNewMusic, "fetch", return_value=[shared_track_2]),
+            patch.object(TheQuietus, "fetch", return_value=[shared_track_3]),
+            patch.object(GorillaVsBear, "fetch", return_value=[shared_track_4]),
+            patch("peel.main.SpotifyClient", return_value=mock_sp),
+            patch("peel.main.send_digest"),
+        ):
+            run()
+
+        from peel.db import DB
+
+        db = DB(str(db_path))
+        db.init_schema()
+
+        cursor = db.conn.execute(
+            "SELECT COUNT(*) FROM tracks WHERE spotify_uri = ?",
+            (shared_uri,),
+        )
+        count = cursor.fetchone()[0]
+        assert count == 4
+        assert db.track_sources(shared_uri) == [
+            ("pitchfork_bnt", "https://example.com/pitchfork"),
+            ("stereogum_new_music", "https://example.com/stereogum"),
+            ("thequietus", "https://example.com/quietus"),
+            ("gorillavsbear", "https://example.com/gvb"),
+        ]
+
+        called_uris = mock_sp.replace_playlist_items.call_args.args[1]
+        assert called_uris == [shared_uri]
+
+        db.close()
