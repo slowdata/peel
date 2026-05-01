@@ -11,6 +11,7 @@ Backoffice local para:
 from __future__ import annotations
 
 import sqlite3
+import subprocess
 import tomllib
 import webbrowser
 from dataclasses import dataclass
@@ -30,6 +31,8 @@ from peel.report import generate_weekly_report
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 console = Console(width=120)
 app = typer.Typer(add_completion=False, help="Peel — música curada, sincronizada e visível.")
+sync_app = typer.Typer(add_completion=False, help="Sincronização local/GitHub.")
+app.add_typer(sync_app, name="sync")
 
 
 @dataclass(slots=True)
@@ -52,6 +55,17 @@ class SourceState:
 
 
 FeedbackRow = tuple[str, str, str, str, int, str, str]
+
+
+@dataclass(slots=True)
+class GitSyncState:
+    branch: str
+    upstream: str | None
+    ahead: int
+    behind: int
+    dirty: bool
+    peel_db_changed: bool
+    dirty_paths: list[str]
 
 
 @app.command("run")
@@ -218,6 +232,74 @@ def report(
             webbrowser.open(path.resolve().as_uri())
     finally:
         db.close()
+
+
+@sync_app.command("status")
+def sync_status() -> None:
+    """Mostra estado do git local e do upstream."""
+    state = _git_sync_state()
+
+    table = Table(title="Git sync")
+    table.add_column("Field", style="bold")
+    table.add_column("Value")
+    table.add_row("Branch", state.branch)
+    table.add_row("Upstream", state.upstream or "-")
+    table.add_row("Dirty", _yes_no(state.dirty))
+    table.add_row("Ahead", str(state.ahead))
+    table.add_row("Behind", str(state.behind))
+    table.add_row("data/peel.db changed", _yes_no(state.peel_db_changed))
+    table.add_row(
+        "Dirty paths",
+        ", ".join(state.dirty_paths) if state.dirty_paths else "-",
+    )
+    console.print(Panel(table, title="Sync status"))
+
+
+@sync_app.command("pull")
+def sync_pull() -> None:
+    """Faz pull seguro do upstream."""
+    state = _git_sync_state()
+    if state.dirty:
+        console.print("Working tree dirty; aborting pull.")
+        raise typer.Exit(code=1)
+
+    result = _run_git(["pull", "--ff-only"])
+    if result.returncode != 0:
+        _print_git_error(result)
+        raise typer.Exit(code=result.returncode or 1)
+
+    console.print("Pull completed.")
+
+
+@sync_app.command("push")
+def sync_push() -> None:
+    """Faz commit + push do estado local."""
+    paths = [_project_path("data/peel.db")]
+    reports_dir = _project_path("data/reports")
+    if reports_dir.exists():
+        paths.append(reports_dir)
+
+    add_result = _run_git(["add", *[str(path.relative_to(PROJECT_ROOT)) for path in paths]])
+    if add_result.returncode != 0:
+        _print_git_error(add_result)
+        raise typer.Exit(code=add_result.returncode or 1)
+
+    diff_result = _run_git(["diff", "--cached", "--quiet"])
+    if diff_result.returncode == 0:
+        console.print("Nothing to push.")
+        return
+
+    commit_result = _run_git(["commit", "-m", "chore: update peel local feedback/state"])
+    if commit_result.returncode != 0:
+        _print_git_error(commit_result)
+        raise typer.Exit(code=commit_result.returncode or 1)
+
+    push_result = _run_git(["push"])
+    if push_result.returncode != 0:
+        _print_git_error(push_result)
+        raise typer.Exit(code=push_result.returncode or 1)
+
+    console.print("Push completed.")
 
 
 @app.command()
@@ -465,3 +547,88 @@ def _script_target(pyproject_path: Path) -> str | None:
     scripts = data.get("project", {}).get("scripts", {})
     target = scripts.get("peel")
     return str(target) if target is not None else None
+
+
+def _project_path(value: str) -> Path:
+    return PROJECT_ROOT / value
+
+
+def _run_git(args: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *args],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _print_git_error(result: subprocess.CompletedProcess[str]) -> None:
+    message = (result.stderr or result.stdout or "git command failed").strip()
+    console.print(message)
+
+
+def _git_sync_state() -> GitSyncState:
+    result = _run_git(["status", "--porcelain=v1", "-b"])
+    if result.returncode != 0:
+        _print_git_error(result)
+        raise typer.Exit(code=result.returncode or 1)
+
+    lines = result.stdout.splitlines()
+    header = lines[0] if lines else ""
+    branch, upstream, ahead, behind = _parse_git_header(header)
+    dirty_paths = [line[3:].strip() for line in lines[1:] if line.strip()]
+    dirty = bool(dirty_paths)
+    peel_db_changed = any(path.endswith("data/peel.db") for path in dirty_paths)
+    return GitSyncState(
+        branch=branch,
+        upstream=upstream,
+        ahead=ahead,
+        behind=behind,
+        dirty=dirty,
+        peel_db_changed=peel_db_changed,
+        dirty_paths=dirty_paths,
+    )
+
+
+def _parse_git_header(header: str) -> tuple[str, str | None, int, int]:
+    if not header.startswith("## "):
+        return "unknown", None, 0, 0
+
+    payload = header[3:]
+    branch = payload
+    upstream: str | None = None
+    ahead = 0
+    behind = 0
+
+    if "..." in payload:
+        branch_part, remainder = payload.split("...", 1)
+        branch = branch_part.strip() or "unknown"
+        if " [" in remainder:
+            upstream_part, details_part = remainder.split(" [", 1)
+            upstream = upstream_part.strip() or None
+            details = details_part.rstrip("]")
+            ahead, behind = _parse_ahead_behind(details)
+        else:
+            upstream = remainder.strip() or None
+    else:
+        if " [" in payload:
+            branch_part, details_part = payload.split(" [", 1)
+            branch = branch_part.strip() or "unknown"
+            details = details_part.rstrip("]")
+            ahead, behind = _parse_ahead_behind(details)
+        else:
+            branch = payload.strip() or "unknown"
+
+    return branch, upstream, ahead, behind
+
+
+def _parse_ahead_behind(details: str) -> tuple[int, int]:
+    ahead = 0
+    behind = 0
+    for part in details.split(","):
+        item = part.strip()
+        if item.startswith("ahead "):
+            ahead = int(item.split()[1])
+        elif item.startswith("behind "):
+            behind = int(item.split()[1])
+    return ahead, behind

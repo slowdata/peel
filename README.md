@@ -99,6 +99,14 @@ uv run ruff format src/ tests/
 uv run ruff check src/ tests/
 ```
 
+### Sync
+
+```bash
+uv run peel sync status
+uv run peel sync pull
+uv run peel sync push
+```
+
 ### Roadmap (v2+)
 
 - [ ] Mais fontes: BBC 6 Music Recommends, KEXP, NTS Radio scraping
