@@ -321,6 +321,16 @@ def sync_pull() -> None:
 @sync_app.command("push")
 def sync_push() -> None:
     """Faz commit + push do estado local."""
+    staged_paths = _git_staged_paths()
+    forbidden_paths = [path for path in staged_paths if not _sync_path_allowed(path)]
+    if forbidden_paths:
+        console.print("Staged files outside Peel sync scope:")
+        for path in forbidden_paths:
+            console.print(f"- {path}")
+        raise typer.Exit(code=1)
+
+    state = _git_sync_state()
+
     paths = [_project_path("data/peel.db")]
     reports_dir = _project_path("data/reports")
     if reports_dir.exists():
@@ -332,14 +342,16 @@ def sync_push() -> None:
         raise typer.Exit(code=add_result.returncode or 1)
 
     diff_result = _run_git(["diff", "--cached", "--quiet"])
-    if diff_result.returncode == 0:
+    has_staged_changes = diff_result.returncode != 0
+    if not has_staged_changes and state.ahead == 0:
         console.print("Nothing to push.")
         return
 
-    commit_result = _run_git(["commit", "-m", "chore: update peel local feedback/state"])
-    if commit_result.returncode != 0:
-        _print_git_error(commit_result)
-        raise typer.Exit(code=commit_result.returncode or 1)
+    if has_staged_changes:
+        commit_result = _run_git(["commit", "-m", "chore: update peel local feedback/state"])
+        if commit_result.returncode != 0:
+            _print_git_error(commit_result)
+            raise typer.Exit(code=commit_result.returncode or 1)
 
     push_result = _run_git(["push"])
     if push_result.returncode != 0:
@@ -612,6 +624,18 @@ def _run_git(args: list[str]) -> subprocess.CompletedProcess[str]:
 def _print_git_error(result: subprocess.CompletedProcess[str]) -> None:
     message = (result.stderr or result.stdout or "git command failed").strip()
     console.print(message)
+
+
+def _git_staged_paths() -> list[str]:
+    result = _run_git(["diff", "--cached", "--name-only"])
+    if result.returncode != 0:
+        _print_git_error(result)
+        raise typer.Exit(code=result.returncode or 1)
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def _sync_path_allowed(path: str) -> bool:
+    return path == "data/peel.db" or path == "data/reports" or path.startswith("data/reports/")
 
 
 def _git_sync_state() -> GitSyncState:
