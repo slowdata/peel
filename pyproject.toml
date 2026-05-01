@@ -14,10 +14,12 @@ dependencies = [
     "pydantic-settings>=2.4",
     "structlog>=24.4",
     "python-dotenv>=1.0",
+    "typer>=0.12",
+    "rich>=13.7",
 ]
 
 [project.scripts]
-peel = "peel.main:run"
+peel = "peel.cli:app"
 
 [dependency-groups]
 dev = [

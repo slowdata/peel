@@ -1,0 +1,695 @@
+{
+  "_meta": {
+    "version": "1.0",
+    "generated": "2026-05-01",
+    "purpose": "Music discovery sources for an agent. Each source has a feed type (rss/api/scrape/manual), a URL or endpoint, a relevance score for the user's taste profile, and tags indicating genre coverage.",
+    "user_taste_profile": {
+      "primary": ["post-punk", "indie-rock", "electronic-melodic", "indie-electronic"],
+      "secondary": ["alternative-rap", "psychedelic-rock", "soul-groove", "art-pop"],
+      "geographic_focus": ["UK", "USA", "global"],
+      "languages_ok": ["en", "pt", "es", "fr"],
+      "must_include_references": ["Drake-tier mainstream pop"],
+      "examples_from_user": ["Fat Dog", "IDLES", "Cut Copy", "Caribou", "Nation of Language", "Khruangbin", "Baxter Dury", "Destroyer", "Tame Impala"]
+    },
+    "relevance_scoring": "1-10 scale based on overlap with user taste profile. 10=perfect match, 7-9=strong match, 5-6=partial match (worth checking), <5=tangential",
+    "feed_types": {
+      "rss": "Standard RSS/Atom feed, parseable directly",
+      "api_json": "JSON REST API with structured response",
+      "scrape": "No native feed, must scrape HTML",
+      "podcast_rss": "Podcast RSS feed (audio + show notes)"
+    }
+  },
+
+  "tier_1_critical_publications": [
+    {
+      "name": "Pitchfork - Best New Albums",
+      "id": "pitchfork-bna",
+      "type": "rss",
+      "feed_url": "https://pitchfork.com/feed/feed-best-albums/rss",
+      "site_url": "https://pitchfork.com/reviews/best/albums/",
+      "description": "The benchmark for indie/alt critical acclaim. Best New Music designation drives discovery.",
+      "relevance": 10,
+      "genres_covered": ["indie-rock", "post-punk", "electronic", "experimental", "alternative-rap", "art-pop", "ambient"],
+      "update_frequency": "weekly",
+      "authority_score": 10,
+      "user_taste_match_notes": "Almost every artist in user playlist (Cut Copy, IDLES, Caribou, Fat Dog) has been reviewed here. The single most important source.",
+      "fetch_priority": "high"
+    },
+    {
+      "name": "Pitchfork - All Album Reviews",
+      "id": "pitchfork-all-albums",
+      "type": "rss",
+      "feed_url": "https://pitchfork.com/feed/feed-album-reviews/rss",
+      "site_url": "https://pitchfork.com/reviews/albums/",
+      "description": "All album reviews (broader than Best New Music). Useful for tracking specific artists.",
+      "relevance": 8,
+      "genres_covered": ["indie-rock", "post-punk", "electronic", "experimental", "alternative-rap", "pop"],
+      "update_frequency": "daily",
+      "authority_score": 10,
+      "fetch_priority": "medium"
+    },
+    {
+      "name": "Pitchfork - Best New Tracks",
+      "id": "pitchfork-bnt",
+      "type": "rss",
+      "feed_url": "https://pitchfork.com/feed/feed-best-tracks/rss",
+      "site_url": "https://pitchfork.com/reviews/best/tracks/",
+      "description": "Curated single-track recommendations.",
+      "relevance": 9,
+      "genres_covered": ["indie-rock", "electronic", "alternative-rap", "experimental"],
+      "update_frequency": "daily",
+      "authority_score": 10,
+      "fetch_priority": "high"
+    },
+    {
+      "name": "Pitchfork - Lists & Guides",
+      "id": "pitchfork-lists",
+      "type": "rss",
+      "feed_url": "https://pitchfork.com/feed/features/lists-guides/rss",
+      "site_url": "https://pitchfork.com/features/lists-and-guides/",
+      "description": "Year-end lists, decade lists, genre primers. Critical for December roundup.",
+      "relevance": 9,
+      "genres_covered": ["all"],
+      "update_frequency": "weekly",
+      "authority_score": 10,
+      "fetch_priority": "high"
+    },
+    {
+      "name": "The Quietus - Reviews",
+      "id": "quietus-reviews",
+      "type": "rss",
+      "feed_url": "https://thequietus.com/feed/",
+      "site_url": "https://thequietus.com/reviews/",
+      "description": "UK-based, more experimental and ensayistic than Pitchfork. Strong on post-punk, electronic experimental, metal, krautrock. Independent publication.",
+      "relevance": 10,
+      "genres_covered": ["post-punk", "experimental", "electronic", "psych-rock", "punk", "metal", "ambient", "krautrock", "new-weird"],
+      "update_frequency": "daily",
+      "authority_score": 9,
+      "user_taste_match_notes": "Perfect for the user's post-punk and experimental electronic side. Has dedicated columns: Album of the Week, Reissue of the Week, Metal, Psych Rock, Punk, Rum Music (avant), Cassettes, New Weird Britain, Electronic, International. Note: feed URL needs verification — try /feed/, /rss/, /reviews/feed/.",
+      "fetch_priority": "high",
+      "alternative_feeds": [
+        "https://thequietus.com/news/feed/",
+        "https://thequietus.com/reviews/feed/"
+      ]
+    },
+    {
+      "name": "Stereogum - All Reviews",
+      "id": "stereogum-reviews",
+      "type": "rss",
+      "feed_url": "https://www.stereogum.com/category/reviews/feed/",
+      "site_url": "https://www.stereogum.com/category/reviews/",
+      "description": "Album reviews including weekly Album of the Week. Less pretentious than Pitchfork, very strong on US indie.",
+      "relevance": 8,
+      "genres_covered": ["indie-rock", "post-punk", "alternative-rap", "pop", "rock"],
+      "update_frequency": "daily",
+      "authority_score": 8,
+      "fetch_priority": "medium"
+    },
+    {
+      "name": "Stereogum - Album Of The Week",
+      "id": "stereogum-aotw",
+      "type": "rss",
+      "feed_url": "https://www.stereogum.com/category/reviews/album-of-the-week/feed/",
+      "site_url": "https://www.stereogum.com/category/reviews/album-of-the-week/",
+      "description": "Weekly highlight pick — high signal-to-noise.",
+      "relevance": 9,
+      "genres_covered": ["indie-rock", "alternative", "post-punk"],
+      "update_frequency": "weekly",
+      "authority_score": 8,
+      "fetch_priority": "high"
+    },
+    {
+      "name": "Stereogum - Main Feed",
+      "id": "stereogum-main",
+      "type": "rss",
+      "feed_url": "https://www.stereogum.com/feed/",
+      "site_url": "https://www.stereogum.com/",
+      "description": "All site content. High volume — apply genre/keyword filtering.",
+      "relevance": 7,
+      "genres_covered": ["all"],
+      "update_frequency": "hourly",
+      "authority_score": 8,
+      "fetch_priority": "low"
+    },
+    {
+      "name": "Resident Advisor - Album Reviews",
+      "id": "ra-album-reviews",
+      "type": "rss",
+      "feed_url": "https://ra.co/xml/reviews-albums.xml",
+      "site_url": "https://ra.co/reviews/albums",
+      "description": "The gold standard for serious electronic music criticism. RA has confirmed RSS feeds for News, Features, Album Reviews and Single Reviews.",
+      "relevance": 9,
+      "genres_covered": ["techno", "house", "electronic", "ambient", "experimental-electronic", "club"],
+      "update_frequency": "weekly",
+      "authority_score": 10,
+      "user_taste_match_notes": "Perfect for the Caribou / Maribou State / Cut Copy side. Verify feed URL — RA has confirmed feeds exist but URL pattern needs testing.",
+      "fetch_priority": "high",
+      "alternative_feeds": [
+        "https://ra.co/xml/news.xml",
+        "https://ra.co/xml/features.xml",
+        "https://ra.co/xml/reviews-singles.xml"
+      ]
+    },
+    {
+      "name": "The Guardian - Music",
+      "id": "guardian-music",
+      "type": "rss",
+      "feed_url": "https://www.theguardian.com/music/rss",
+      "site_url": "https://www.theguardian.com/music",
+      "description": "Best mainstream UK music journalism. Alexis Petridis is a top pop/rock critic. Strong on UK post-punk new waves.",
+      "relevance": 9,
+      "genres_covered": ["all", "post-punk-uk-focus", "pop", "indie", "electronic"],
+      "update_frequency": "daily",
+      "authority_score": 9,
+      "fetch_priority": "high"
+    },
+    {
+      "name": "The Guardian - Music Blog",
+      "id": "guardian-musicblog",
+      "type": "rss",
+      "feed_url": "https://www.theguardian.com/music/musicblog/rss",
+      "site_url": "https://www.theguardian.com/music/musicblog",
+      "description": "Opinion and discovery pieces. Curated lists.",
+      "relevance": 8,
+      "genres_covered": ["all"],
+      "update_frequency": "weekly",
+      "authority_score": 9,
+      "fetch_priority": "medium"
+    },
+    {
+      "name": "NME - News & Reviews",
+      "id": "nme",
+      "type": "rss",
+      "feed_url": "https://www.nme.com/feed",
+      "site_url": "https://www.nme.com/",
+      "description": "British indie/alternative coverage. Strong on new UK bands (Fat Dog territory).",
+      "relevance": 7,
+      "genres_covered": ["indie-rock", "post-punk", "pop", "rock"],
+      "update_frequency": "hourly",
+      "authority_score": 7,
+      "fetch_priority": "medium"
+    }
+  ],
+
+  "tier_2_radio_curators": [
+    {
+      "name": "NTS Radio - Live API",
+      "id": "nts-live-api",
+      "type": "api_json",
+      "feed_url": "https://www.nts.live/api/v2/live",
+      "site_url": "https://www.nts.live/",
+      "description": "Public (undocumented) JSON API showing current and upcoming shows on NTS's two channels with metadata, genres, location, descriptions.",
+      "relevance": 10,
+      "genres_covered": ["electronic", "post-punk", "ambient", "jazz", "experimental", "global", "krautrock", "balearic"],
+      "update_frequency": "real-time",
+      "authority_score": 10,
+      "user_taste_match_notes": "World's most influential alternative radio. Programs are curated by humans with serious taste. The API gives now-playing and upcoming shows; archives available via Mixcloud and SoundCloud. Use for show metadata; tracklists not always exposed in API but visible on show pages.",
+      "fetch_priority": "high",
+      "implementation_notes": "Returns JSON with channel_name, broadcast_title, start/end timestamps, genres, location, description, picture URL. No auth required.",
+      "github_references": [
+        "https://github.com/mcmillan/nts-api",
+        "https://github.com/tiktuk/NTS-Now-Playing-Example"
+      ]
+    },
+    {
+      "name": "NTS Radio - Latest Shows",
+      "id": "nts-latest",
+      "type": "scrape",
+      "feed_url": "https://www.nts.live/latest",
+      "site_url": "https://www.nts.live/latest",
+      "description": "Daily-updated archive of newest broadcasts. No native RSS — scrape required.",
+      "relevance": 10,
+      "genres_covered": ["all-alternative"],
+      "update_frequency": "daily",
+      "authority_score": 10,
+      "fetch_priority": "high"
+    },
+    {
+      "name": "NTS Radio - Curated Collections",
+      "id": "nts-collections",
+      "type": "scrape",
+      "feed_url": "https://www.nts.live/radio/collections",
+      "site_url": "https://www.nts.live/radio/collections",
+      "description": "Themed collections curated by NTS staff. Examples: krautrock, post-punk, Bristol bass, Japanese underground, Iranian music. Goldmine for genre-specific deep dives.",
+      "relevance": 9,
+      "genres_covered": ["genre-themed"],
+      "update_frequency": "weekly",
+      "authority_score": 10,
+      "fetch_priority": "medium"
+    },
+    {
+      "name": "NTS Radio - Infinite Mixtapes",
+      "id": "nts-mixtapes",
+      "type": "stream",
+      "feed_url": "https://www.nts.live/infinite-mixtapes",
+      "site_url": "https://www.nts.live/",
+      "description": "24/7 themed audio streams: Slow Focus (post-punk/new wave), Poolside (balearic), Low Key (lo-fi hip-hop/R&B), Memory Lane (oddball post-punk + industrial + minimal wave). NOT a feed — direct streaming.",
+      "relevance": 10,
+      "genres_covered": ["post-punk", "balearic", "lo-fi-hip-hop", "ambient", "house", "techno", "soul"],
+      "update_frequency": "continuous",
+      "authority_score": 10,
+      "user_taste_match_notes": "The 'Memory Lane' (oddball post-punk, industrial, minimal wave) and 'Slow Focus' streams are direct hits for user taste. 'Poolside' matches the Maribou State / Cut Copy chill side.",
+      "fetch_priority": "high"
+    },
+    {
+      "name": "BBC Radio 6 Music - Schedule",
+      "id": "bbc-6music",
+      "type": "scrape",
+      "feed_url": "https://www.bbc.co.uk/schedules/p00fzl65",
+      "site_url": "https://www.bbc.co.uk/6music",
+      "description": "BBC's alternative music station. Hosts 2025: Nick Grimshaw (Breakfast), Lauren Laverne (mid-morning, returned 2025 after cancer treatment), Mary Anne Hobbs (returns spring 2025 with new show), Iggy Pop (Saturday nights), Steve Lamacq (indie), Gilles Peterson (jazz/groove). No public RSS for shows but tracklists scrapable per episode.",
+      "relevance": 10,
+      "genres_covered": ["indie", "post-punk", "alternative", "electronic", "world", "soul", "jazz"],
+      "update_frequency": "real-time-broadcast",
+      "authority_score": 10,
+      "user_taste_match_notes": "Mary Anne Hobbs's show is the closest match for the user's experimental electronic + ambient side. Steve Lamacq for post-punk/indie. Listen-again via BBC Sounds (geo-restricted to UK without VPN, but tracklists are public).",
+      "fetch_priority": "high",
+      "implementation_notes": "BBC Sounds is geo-locked to UK. Track metadata and now-playing data is exposed at https://www.bbc.co.uk/programmes/{programme_id}.json — try this for individual shows."
+    },
+    {
+      "name": "BBC Radio 6 Music - Recommends Playlist (Spotify mirror)",
+      "id": "bbc-6music-spotify-mirror",
+      "type": "manual_spotify",
+      "feed_url": "https://open.spotify.com/playlist/0VoVrAxmwv6MQADBE8Z6Bk",
+      "site_url": "https://open.spotify.com/playlist/0VoVrAxmwv6MQADBE8Z6Bk",
+      "description": "Fan-maintained Spotify playlist mirroring Lauren Laverne's BBC 6 Music selections (10,943+ tracks). Not official.",
+      "relevance": 8,
+      "genres_covered": ["indie", "alternative", "pop"],
+      "update_frequency": "ongoing",
+      "authority_score": 7,
+      "fetch_priority": "low"
+    },
+    {
+      "name": "Radar 97.8 FM Lisboa - News & Picks",
+      "id": "radar-lisboa",
+      "type": "scrape",
+      "feed_url": "https://radarlisboa.fm/category/semana/",
+      "site_url": "https://radarlisboa.fm/",
+      "description": "Lisbon-based alternative radio. Weekly highlighted picks ('Observatório RADAR' for albums, 'Palco RADAR' for live, 'Discopátria' for new PT artists). Hosts include Nuno Galopim, Pedro Mexia. Founded with António Sérgio (Portugal's main rock/alternative DJ historically).",
+      "relevance": 10,
+      "genres_covered": ["indie", "post-punk", "rock", "electronic", "alternative", "portuguese-alt"],
+      "update_frequency": "weekly",
+      "authority_score": 9,
+      "user_taste_match_notes": "Recent picks include Baxter Dury, Nation of Language, Nick Cave & The Bad Seeds — all in the user's playlist neighborhood. Direct match.",
+      "fetch_priority": "high",
+      "alternative_feeds": [
+        "https://radarlisboa.fm/feed/",
+        "https://radarpodcasts.podbean.com/feed.xml"
+      ]
+    },
+    {
+      "name": "Radar 97.8 FM - Spotify Playlist",
+      "id": "radar-lisboa-spotify",
+      "type": "manual_spotify",
+      "feed_url": "https://open.spotify.com/playlist/7mrZmkFWM7RSpDCmAPQThD",
+      "site_url": "https://open.spotify.com/playlist/7mrZmkFWM7RSpDCmAPQThD",
+      "description": "Fan-maintained Spotify playlist tracking what Radar plays (1486+ tracks, 2.6K saves).",
+      "relevance": 9,
+      "genres_covered": ["alternative", "indie", "post-punk"],
+      "update_frequency": "ongoing",
+      "authority_score": 8,
+      "fetch_priority": "high"
+    },
+    {
+      "name": "Radar 97.8 FM - Podcast Feed (Podbean)",
+      "id": "radar-podcasts",
+      "type": "podcast_rss",
+      "feed_url": "https://radarpodcasts.podbean.com/feed.xml",
+      "site_url": "https://radarpodcasts.podbean.com/",
+      "description": "Podcast versions of Radar's curated programs (RADAR Beats, Atacama Blues, Discopátria, etc.).",
+      "relevance": 9,
+      "genres_covered": ["all-alternative-pt"],
+      "update_frequency": "weekly",
+      "authority_score": 9,
+      "fetch_priority": "high"
+    },
+    {
+      "name": "KEXP - Song of the Day Podcast",
+      "id": "kexp-sotd",
+      "type": "podcast_rss",
+      "feed_url": "https://feeds.megaphone.fm/kexp",
+      "site_url": "https://www.kexp.org/podcasts/song-of-the-day/",
+      "description": "Daily (Mon-Fri) curated track from KEXP DJs. Covers indie, alt, world, electronic, latin. Each episode = one track + context.",
+      "relevance": 9,
+      "genres_covered": ["indie-rock", "alternative", "world", "electronic", "latin", "ambient"],
+      "update_frequency": "daily",
+      "authority_score": 9,
+      "fetch_priority": "high",
+      "alternative_feeds": [
+        "https://www.omnycontent.com/d/playlist/bad5d079-8dcb-4630-8770-aa090049131d/32b2ac38-5a48-4300-9fa6-aa40002038b5/4ac1c451-4315-4096-ab9b-aa40002038c4/podcast.rss"
+      ]
+    },
+    {
+      "name": "KEXP - In Our Headphones Podcast",
+      "id": "kexp-headphones",
+      "type": "podcast_rss",
+      "feed_url": "https://www.omnycontent.com/d/playlist/bad5d079-8dcb-4630-8770-aa090049131d/32b2ac38-5a48-4300-9fa6-aa40002038b5/4ac1c451-4315-4096-ab9b-aa40002038c4/podcast.rss",
+      "site_url": "https://omny.fm/shows/kexp-song-of-the-day",
+      "description": "Weekly podcast where KEXP DJs share songs they can't stop listening to, with context.",
+      "relevance": 8,
+      "genres_covered": ["indie", "alternative", "world", "electronic"],
+      "update_frequency": "weekly",
+      "authority_score": 9,
+      "fetch_priority": "medium"
+    },
+    {
+      "name": "KEXP Live Sessions (YouTube)",
+      "id": "kexp-youtube",
+      "type": "youtube_rss",
+      "feed_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UC2bw5W-3JMzN0M4EzfyHcTA",
+      "site_url": "https://www.youtube.com/@kexp",
+      "description": "Live in-studio sessions. Industry-standard quality. Khruangbin, IDLES, etc. all appeared. 3.5M YouTube subscribers.",
+      "relevance": 9,
+      "genres_covered": ["indie", "alternative", "world"],
+      "update_frequency": "near-daily",
+      "authority_score": 10,
+      "fetch_priority": "high"
+    }
+  ],
+
+  "tier_3_aggregators_metacritic": [
+    {
+      "name": "Album of the Year (AOTY) - RSS Hub",
+      "id": "aoty-rss",
+      "type": "rss",
+      "feed_url": "https://www.albumoftheyear.org/rss/",
+      "site_url": "https://www.albumoftheyear.org/",
+      "description": "Aggregator of music critic scores from 50+ publications. Cross-references Pitchfork, Rolling Stone, NME, Guardian, Quietus. Best for tracking critical consensus.",
+      "relevance": 9,
+      "genres_covered": ["all"],
+      "update_frequency": "daily",
+      "authority_score": 9,
+      "fetch_priority": "high",
+      "implementation_notes": "Native RSS available at /rss/ but limited. For programmatic access, use unofficial Python package 'album-of-the-year-api' on PyPI (web-scraping wrapper). Cloudflare protection on direct scraping."
+    },
+    {
+      "name": "Metacritic - Music",
+      "id": "metacritic-music",
+      "type": "scrape",
+      "feed_url": "https://www.metacritic.com/browse/music/score/metascore/year/filtered",
+      "site_url": "https://www.metacritic.com/browse/albums/score/metascore/year",
+      "description": "Aggregates album reviews from professional critics into Metascores. No native RSS; community-built scrapers exist (e.g., github.com/claytono/metacritic-rss).",
+      "relevance": 7,
+      "genres_covered": ["all"],
+      "update_frequency": "weekly",
+      "authority_score": 8,
+      "fetch_priority": "medium"
+    },
+    {
+      "name": "AnyDecentMusic - Critic Aggregator",
+      "id": "adm",
+      "type": "scrape",
+      "site_url": "https://www.anydecentmusic.com/",
+      "description": "UK-focused aggregator. Tracks 50+ publications including Quietus, Drowned in Sound, NME. No native RSS.",
+      "relevance": 8,
+      "genres_covered": ["all"],
+      "update_frequency": "daily",
+      "authority_score": 8,
+      "fetch_priority": "medium"
+    }
+  ],
+
+  "tier_4_substack_newsletters": [
+    {
+      "name": "First Floor by Shawn Reynaldo",
+      "id": "first-floor",
+      "type": "rss",
+      "feed_url": "https://firstfloor.substack.com/feed",
+      "site_url": "https://firstfloor.substack.com/",
+      "description": "Best long-form electronic music newsletter. Industry analysis + recommendations.",
+      "relevance": 10,
+      "genres_covered": ["electronic", "techno", "house", "ambient", "experimental"],
+      "update_frequency": "weekly",
+      "authority_score": 10,
+      "fetch_priority": "high"
+    },
+    {
+      "name": "Hear Hear by Adam Offitzer",
+      "id": "hear-hear",
+      "type": "rss",
+      "feed_url": "https://hearhear.substack.com/feed",
+      "site_url": "https://hearhear.substack.com/",
+      "description": "Aggregates year-end lists from major critics; spotlights underrated artists. Especially useful in December.",
+      "relevance": 9,
+      "genres_covered": ["indie", "alternative", "post-punk"],
+      "update_frequency": "weekly",
+      "authority_score": 8,
+      "fetch_priority": "high"
+    },
+    {
+      "name": "Cabbages Hip Hop",
+      "id": "cabbages",
+      "type": "rss",
+      "feed_url": "https://www.cabbageshiphop.com/rss/",
+      "site_url": "https://www.cabbageshiphop.com/",
+      "description": "Underground/alternative hip-hop with deep listening. Author processes hundreds of releases yearly.",
+      "relevance": 8,
+      "genres_covered": ["alternative-rap", "underground-hip-hop", "abstract-hip-hop"],
+      "update_frequency": "weekly",
+      "authority_score": 9,
+      "fetch_priority": "high",
+      "user_taste_match_notes": "User wants Drake-tier mainstream PLUS lyrically-driven alt rap. Cabbages covers the latter superbly."
+    },
+    {
+      "name": "The Honest Broker by Ted Gioia",
+      "id": "honest-broker",
+      "type": "rss",
+      "feed_url": "https://www.honest-broker.com/feed",
+      "site_url": "https://www.honest-broker.com/",
+      "description": "Cultural music criticism with industry depth. Covers beyond indie.",
+      "relevance": 7,
+      "genres_covered": ["all", "jazz", "industry-analysis"],
+      "update_frequency": "weekly",
+      "authority_score": 9,
+      "fetch_priority": "medium"
+    },
+    {
+      "name": "Indie Scientist",
+      "id": "indie-scientist",
+      "type": "rss",
+      "feed_url": "https://indiescientist.substack.com/feed",
+      "site_url": "https://indiescientist.substack.com/",
+      "description": "Indie/post-punk recommendations weekly. Strong taste overlap with user profile.",
+      "relevance": 9,
+      "genres_covered": ["indie-rock", "post-punk", "alternative"],
+      "update_frequency": "weekly",
+      "authority_score": 7,
+      "fetch_priority": "high"
+    },
+    {
+      "name": "Recent and Decent by Matt Bull",
+      "id": "recent-decent",
+      "type": "rss",
+      "feed_url": "https://recentanddecent.substack.com/feed",
+      "site_url": "https://recentanddecent.substack.com/",
+      "description": "Weekly playlist of 7 new tracks across genres.",
+      "relevance": 8,
+      "genres_covered": ["all"],
+      "update_frequency": "weekly",
+      "authority_score": 7,
+      "fetch_priority": "medium"
+    },
+    {
+      "name": "Natural Music",
+      "id": "natural-music",
+      "type": "rss",
+      "feed_url": "https://naturalmusic.substack.com/feed",
+      "site_url": "https://naturalmusic.substack.com/",
+      "description": "Genre-spanning recommendations with serious depth (post-punk, glitch, jangle, ambient, hyperpop).",
+      "relevance": 9,
+      "genres_covered": ["post-punk", "indie-rock", "experimental", "glitch", "ambient"],
+      "update_frequency": "monthly",
+      "authority_score": 8,
+      "fetch_priority": "high"
+    }
+  ],
+
+  "tier_5_supporting_sources": [
+    {
+      "name": "Brooklyn Vegan",
+      "id": "brooklyn-vegan",
+      "type": "rss",
+      "feed_url": "https://www.brooklynvegan.com/feed/",
+      "site_url": "https://www.brooklynvegan.com/",
+      "description": "NYC-centric, multi-genre music blog. High volume — useful for catching news fast.",
+      "relevance": 7,
+      "genres_covered": ["indie", "rock", "punk", "alternative", "metal"],
+      "update_frequency": "hourly",
+      "authority_score": 7,
+      "fetch_priority": "medium"
+    },
+    {
+      "name": "The FADER",
+      "id": "fader",
+      "type": "rss",
+      "feed_url": "https://feeds.feedburner.com/TheFader",
+      "site_url": "https://www.thefader.com/",
+      "description": "Emerging music + lifestyle. Good for hip-hop, R&B, pop crossover.",
+      "relevance": 7,
+      "genres_covered": ["hip-hop", "pop", "r-and-b", "alternative"],
+      "update_frequency": "daily",
+      "authority_score": 8,
+      "fetch_priority": "medium"
+    },
+    {
+      "name": "Line of Best Fit",
+      "id": "lobf",
+      "type": "rss",
+      "feed_url": "https://feeds.feedburner.com/thelineofbestfit",
+      "site_url": "https://www.thelineofbestfit.com/",
+      "description": "UK-based discovery. Strong on emerging UK indie/electronic.",
+      "relevance": 8,
+      "genres_covered": ["indie", "electronic", "post-punk", "uk-emerging"],
+      "update_frequency": "daily",
+      "authority_score": 7,
+      "fetch_priority": "medium"
+    },
+    {
+      "name": "FACT Magazine",
+      "id": "fact-mag",
+      "type": "rss",
+      "feed_url": "https://www.factmag.com/feed/",
+      "site_url": "https://www.factmag.com/",
+      "description": "Electronic music and underground culture. UK-based.",
+      "relevance": 8,
+      "genres_covered": ["electronic", "experimental", "techno", "bass"],
+      "update_frequency": "daily",
+      "authority_score": 8,
+      "fetch_priority": "medium"
+    },
+    {
+      "name": "Mixmag",
+      "id": "mixmag",
+      "type": "rss",
+      "feed_url": "https://mixmag.net/feed",
+      "site_url": "https://mixmag.net/",
+      "description": "Dance music magazine. Heavier on club/techno than RA.",
+      "relevance": 6,
+      "genres_covered": ["dance", "electronic", "club", "house", "techno"],
+      "update_frequency": "daily",
+      "authority_score": 7,
+      "fetch_priority": "low"
+    },
+    {
+      "name": "Bandcamp Daily",
+      "id": "bandcamp-daily",
+      "type": "rss",
+      "feed_url": "https://daily.bandcamp.com/feed",
+      "site_url": "https://daily.bandcamp.com/",
+      "description": "Editorial covering Bandcamp releases. Strong for genre deep dives ('Best of...' lists by genre monthly).",
+      "relevance": 9,
+      "genres_covered": ["all-underground", "electronic", "experimental", "indie", "world"],
+      "update_frequency": "daily",
+      "authority_score": 9,
+      "fetch_priority": "high"
+    },
+    {
+      "name": "Drowned in Sound",
+      "id": "dis",
+      "type": "rss",
+      "feed_url": "https://drownedinsound.com/feed",
+      "site_url": "https://drownedinsound.com/",
+      "description": "UK indie webzine, reactivated. Good for underground UK indie.",
+      "relevance": 7,
+      "genres_covered": ["indie", "post-punk", "alternative-uk"],
+      "update_frequency": "weekly",
+      "authority_score": 7,
+      "fetch_priority": "low"
+    }
+  ],
+
+  "tier_6_hip_hop_specific": [
+    {
+      "name": "HipHopDX - Reviews",
+      "id": "hiphopdx",
+      "type": "rss",
+      "feed_url": "https://hiphopdx.com/feed",
+      "site_url": "https://hiphopdx.com/reviews/",
+      "description": "Mainstream + underground rap reviews. Includes Drake-tier coverage user requested.",
+      "relevance": 7,
+      "genres_covered": ["hip-hop", "rap", "r-and-b"],
+      "update_frequency": "daily",
+      "authority_score": 7,
+      "fetch_priority": "medium"
+    },
+    {
+      "name": "Complex - Music",
+      "id": "complex-music",
+      "type": "rss",
+      "feed_url": "https://www.complex.com/music/rss",
+      "site_url": "https://www.complex.com/music",
+      "description": "Mainstream rap and pop culture intersection. Annual best-of lists are standard reference. In 2025 noted that rap had its weakest chart year in three decades — they cover both mainstream Drake and underground.",
+      "relevance": 7,
+      "genres_covered": ["hip-hop", "rap", "pop", "r-and-b"],
+      "update_frequency": "daily",
+      "authority_score": 8,
+      "fetch_priority": "medium"
+    },
+    {
+      "name": "Pigeons & Planes",
+      "id": "pigeons-planes",
+      "type": "rss",
+      "feed_url": "https://pigeonsandplanes.com/feed",
+      "site_url": "https://pigeonsandplanes.com/",
+      "description": "Discovery-focused; emerging artists across rap, indie, electronic.",
+      "relevance": 8,
+      "genres_covered": ["hip-hop", "alternative", "emerging"],
+      "update_frequency": "daily",
+      "authority_score": 7,
+      "fetch_priority": "medium"
+    },
+    {
+      "name": "Passion of the Weiss",
+      "id": "potw",
+      "type": "rss",
+      "feed_url": "https://www.passionweiss.com/feed/",
+      "site_url": "https://www.passionweiss.com/",
+      "description": "Long-form, literary writing on rap. High-quality essays.",
+      "relevance": 8,
+      "genres_covered": ["hip-hop", "alternative-rap"],
+      "update_frequency": "weekly",
+      "authority_score": 9,
+      "fetch_priority": "medium"
+    }
+  ],
+
+  "agent_implementation_guide": {
+    "recommended_workflow": [
+      "1. STARTUP: Fetch all RSS feeds tagged fetch_priority=high. Cache for 6 hours.",
+      "2. FILTER: Match incoming items against user_taste_profile.examples_from_user (artist mentions) and primary genres.",
+      "3. SCORE: Assign relevance score = source.relevance * (1 + 0.5 if user-named artist mentioned) * recency_decay.",
+      "4. DEDUPLICATE: Group items by album/artist; merge mentions across sources to indicate consensus.",
+      "5. SURFACE: Present top 10 items per week, with source attribution and a 1-sentence why-this-matches.",
+      "6. WEEKLY DIGEST: Combine Pitchfork BNM + Stereogum AOTW + Quietus AOTW + RA Album Review + Radar Observatório.",
+      "7. DECEMBER MODE: Switch to year-end aggregation. Pull AOTY rss + all 'best of' lists, intersect for consensus picks."
+    ],
+    "quality_filters": [
+      "Reject items where genre tags include only: country, christian, mainstream-pop-only, EDM-festival",
+      "Boost items with genre tags: post-punk, indie-electronic, alternative-rap, ambient, krautrock",
+      "Boost items mentioning Cut Copy, Caribou, Khruangbin neighborhood (electronic-melodic crossover)"
+    ],
+    "consensus_signals": {
+      "strong_buy": "Mentioned positively in 3+ Tier 1 sources within 7 days",
+      "investigate": "Mentioned in 1 Tier 1 + 2 Tier 2-4 sources",
+      "skip_unless_listed_artist": "Single mention only"
+    },
+    "anti_patterns": [
+      "Don't surface every Pitchfork review — filter by Best New Music or 7.8+ score",
+      "Don't surface aggregator-only mentions without primary source verification",
+      "Don't trust Spotify-algorithm playlists alone — they mirror what user already likes"
+    ],
+    "user_specific_artists_to_track": [
+      "Caribou", "Daniel Snaith", "Maribou State", "Cut Copy", "Tame Impala",
+      "IDLES", "Fat Dog", "Viagra Boys", "Amyl and the Sniffers", "White Lies",
+      "Nation of Language", "Twin Shadow", "Destroyer", "Car Seat Headrest",
+      "Khruangbin", "Leon Bridges", "Chet Faker", "Baxter Dury", "Nilüfer Yanya",
+      "ANOHNI", "Beirut", "Elbow", "All Them Witches", "Black Keys",
+      "Parcels", "Metronomy", "Benjamim", "Master Peace"
+    ],
+    "user_specific_labels_to_track": [
+      "Ninja Tune", "Domino", "Rough Trade", "Warp", "City Slang",
+      "Sub Pop", "Bella Union", "Speedy Wunderground", "Dirty Hit",
+      "4AD", "Partisan Records"
+    ]
+  }
+}
