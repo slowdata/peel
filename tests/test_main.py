@@ -205,6 +205,147 @@ class TestMainIntegration:
         db.close()
 
 
+class TestPlaylistSafetyCaps:
+    def test_run_limits_new_tracks_per_source(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        db_path = tmp_path / "test.db"
+        monkeypatch.setenv("PEEL_PLAYLIST_ID", "spotify:playlist:test")
+        monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test_id")
+        monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "test_secret")
+        monkeypatch.setenv("SPOTIFY_REFRESH_TOKEN", "test_token")
+
+        from peel import config as config_module
+
+        monkeypatch.setattr(config_module.settings, "db_path", str(db_path))
+        monkeypatch.setattr(config_module.settings, "peel_max_tracks_per_source", 2)
+        monkeypatch.setattr(config_module.settings, "peel_max_tracks_per_run", 10)
+
+        tracks = [
+            Track(source_id="pitchfork_bnt", artist="Artist", title=f"Track {idx}")
+            for idx in range(1, 4)
+        ]
+
+        mock_sp = MagicMock()
+        mock_sp.search_track.side_effect = [
+            [{"uri": f"spotify:track:{idx}", "name": f"Track {idx}", "artists": ["Artist"]}]
+            for idx in range(1, 4)
+        ]
+        mock_sp.replace_playlist_items = MagicMock()
+
+        with (
+            patch.object(PitchforkBNT, "fetch", return_value=tracks),
+            patch.object(StereogumNewMusic, "fetch", return_value=[]),
+            patch.object(TheQuietus, "fetch", return_value=[]),
+            patch.object(GorillaVsBear, "fetch", return_value=[]),
+            patch("peel.main.SpotifyClient", return_value=mock_sp),
+            patch("peel.main.send_digest"),
+        ):
+            run()
+
+        from peel.db import DB
+
+        db = DB(str(db_path))
+        db.init_schema()
+        count = db.conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
+        assert count == 2
+        called_uris = mock_sp.replace_playlist_items.call_args.args[1]
+        assert set(called_uris) == {"spotify:track:1", "spotify:track:2"}
+        db.close()
+
+    def test_run_limits_new_tracks_globally(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        db_path = tmp_path / "test.db"
+        monkeypatch.setenv("PEEL_PLAYLIST_ID", "spotify:playlist:test")
+        monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test_id")
+        monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "test_secret")
+        monkeypatch.setenv("SPOTIFY_REFRESH_TOKEN", "test_token")
+
+        from peel import config as config_module
+
+        monkeypatch.setattr(config_module.settings, "db_path", str(db_path))
+        monkeypatch.setattr(config_module.settings, "peel_max_tracks_per_source", 10)
+        monkeypatch.setattr(config_module.settings, "peel_max_tracks_per_run", 2)
+
+        def track(source_id: str, idx: int) -> Track:
+            return Track(source_id=source_id, artist=f"Artist {idx}", title=f"Track {idx}")
+
+        mock_sp = MagicMock()
+        mock_sp.search_track.side_effect = [
+            [
+                {
+                    "uri": f"spotify:track:{idx}",
+                    "name": f"Track {idx}",
+                    "artists": [f"Artist {idx}"],
+                }
+            ]
+            for idx in range(1, 5)
+        ]
+        mock_sp.replace_playlist_items = MagicMock()
+
+        with (
+            patch.object(PitchforkBNT, "fetch", return_value=[track("pitchfork_bnt", 1)]),
+            patch.object(
+                StereogumNewMusic,
+                "fetch",
+                return_value=[track("stereogum_new_music", 2)],
+            ),
+            patch.object(TheQuietus, "fetch", return_value=[track("thequietus", 3)]),
+            patch.object(GorillaVsBear, "fetch", return_value=[track("gorillavsbear", 4)]),
+            patch("peel.main.SpotifyClient", return_value=mock_sp),
+            patch("peel.main.send_digest"),
+        ):
+            run()
+
+        from peel.db import DB
+
+        db = DB(str(db_path))
+        db.init_schema()
+        count = db.conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
+        assert count == 2
+        called_uris = mock_sp.replace_playlist_items.call_args.args[1]
+        assert set(called_uris) == {"spotify:track:1", "spotify:track:2"}
+        db.close()
+
+    def test_run_skips_non_track_non_album_sources(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        db_path = tmp_path / "test.db"
+        monkeypatch.setenv("PEEL_PLAYLIST_ID", "spotify:playlist:test")
+        monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test_id")
+        monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "test_secret")
+        monkeypatch.setenv("SPOTIFY_REFRESH_TOKEN", "test_token")
+
+        from peel import config as config_module
+
+        monkeypatch.setattr(config_module.settings, "db_path", str(db_path))
+
+        context_track = Track(
+            source_id="pitchfork_bnt",
+            artist="Context Artist",
+            title="Context Item",
+        )
+        mock_sp = MagicMock()
+        mock_sp.search_track = MagicMock()
+        mock_sp.replace_playlist_items = MagicMock()
+
+        with (
+            patch.object(PitchforkBNT, "kind", "context", create=True),
+            patch.object(PitchforkBNT, "fetch", return_value=[context_track]),
+            patch.object(StereogumNewMusic, "fetch", return_value=[]),
+            patch.object(TheQuietus, "fetch", return_value=[]),
+            patch.object(GorillaVsBear, "fetch", return_value=[]),
+            patch("peel.main.SpotifyClient", return_value=mock_sp),
+            patch("peel.main.send_digest"),
+        ):
+            run()
+
+        mock_sp.search_track.assert_not_called()
+        called_uris = mock_sp.replace_playlist_items.call_args.args[1]
+        assert called_uris == []
+
+
 class TestRetryUnmatched:
     """Testa o fluxo de retry de unmatched (fix #2)."""
 
@@ -244,9 +385,7 @@ class TestRetryUnmatched:
         assert digest_entries == [("Claire Rousay", "Hey Eleanor", None)]
         db.close()
 
-    def test_retry_keeps_source_attribution_for_existing_uri(
-        self, tmp_path: Path
-    ) -> None:
+    def test_retry_keeps_source_attribution_for_existing_uri(self, tmp_path: Path) -> None:
         """Se a URI já existir, retry regista a nova source mas não duplica digest."""
         from peel.db import DB
 
@@ -276,6 +415,32 @@ class TestRetryUnmatched:
         assert db.list_unmatched(30) == []
         assert db.track_sources(uri) == [("source-a", None), ("source-b", None)]
         assert digest_entries == []
+        db.close()
+
+    def test_retry_respects_new_track_cap(self, tmp_path: Path) -> None:
+        """Retry não deve promover backlog inteiro quando o cap foi atingido."""
+        from peel.db import DB
+
+        db = DB(str(tmp_path / "test.db"))
+        db.init_schema()
+        db.record_unmatched("source-a", "Artist A", "Track A")
+        db.record_unmatched("source-b", "Artist B", "Track B")
+
+        mock_sp = MagicMock()
+        mock_sp.search_track.side_effect = [
+            [{"uri": "spotify:track:a", "name": "Track A", "artists": ["Artist A"]}],
+            [{"uri": "spotify:track:b", "name": "Track B", "artists": ["Artist B"]}],
+        ]
+
+        digest_entries: list = []
+        total, matched = _retry_unmatched(db, mock_sp, digest_entries, max_new_tracks=1)
+
+        assert total == 2
+        assert matched == 1
+        assert digest_entries == [("Artist A", "Track A", None)]
+        assert db.already_added("spotify:track:a") is True
+        assert db.already_added("spotify:track:b") is False
+        assert db.list_unmatched(30) == [("source-b", "Artist B", "Track B")]
         db.close()
 
     def test_retry_handles_empty_table(self, tmp_path: Path) -> None:

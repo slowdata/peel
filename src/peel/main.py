@@ -74,7 +74,15 @@ def run() -> None:
         # antes do release global de sexta, ou os tracks chegam ao Spotify com
         # dias/semanas de atraso. Reprocessa antes das sources novas para maximizar
         # chances de recuperação.
-        retried_total, retried_matched = _retry_unmatched(db, sp, new_track_entries)
+        digest_count_before_retry = len(new_track_entries)
+        retried_total, retried_matched = _retry_unmatched(
+            db,
+            sp,
+            new_track_entries,
+            max_new_tracks=settings.peel_max_tracks_per_run,
+        )
+        tracks_added += len(new_track_entries) - digest_count_before_retry
+        playlist_slots_used = tracks_added
 
         # Sources a processar (hardcoded por agora, virá de config v2)
         sources = [PitchforkBNT(), StereogumNewMusic(), TheQuietus(), GorillaVsBear()]
@@ -126,10 +134,23 @@ def run() -> None:
                             )
                             continue
 
-                else:
-                    # Processa como tracks (padrão "track")
-                    for track in tracks:
+                elif source.kind == "track":
+                    # Processa como tracks (único kind que pode ir para playlist).
+                    # O slice por source evita backfill infinito de feeds longos: a próxima
+                    # run volta a olhar para os mesmos N itens do topo, não para backlog.
+                    for track in tracks[: settings.peel_max_tracks_per_source]:
                         try:
+                            if _track_cap_reached(playlist_slots_used):
+                                log.info(
+                                    "track.skipped_global_cap",
+                                    source_id=source.id,
+                                    artist=track.artist,
+                                    title=track.title,
+                                    max_tracks_per_run=settings.peel_max_tracks_per_run,
+                                )
+                                continue
+                            playlist_slots_used += 1
+
                             # Busca candidatos no Spotify
                             candidates = sp.search_track(track.artist, track.title, limit=5)
 
@@ -202,6 +223,14 @@ def run() -> None:
                             )
                             continue
 
+                else:
+                    log.info(
+                        "source.skipped_non_playlist_kind",
+                        source_id=source.id,
+                        kind=source.kind,
+                        fetched_count=len(tracks),
+                    )
+
                 # Atualiza estado da source como OK
                 db.update_source_state(source.id, "ok")
                 log.info("source.completed", source_id=source.id, status="ok")
@@ -266,10 +295,15 @@ def run() -> None:
         )
 
 
+def _track_cap_reached(playlist_slots_used: int) -> bool:
+    return playlist_slots_used >= settings.peel_max_tracks_per_run
+
+
 def _retry_unmatched(
     db: DB,
     sp: SpotifyClient,
     new_track_entries: list[tuple[str, str, str | None]],
+    max_new_tracks: int | None = None,
 ) -> tuple[int, int]:
     """Re-tenta tracks unmatched recentes contra o Spotify.
 
@@ -303,6 +337,20 @@ def _retry_unmatched(
                 continue
 
             already = db.already_added(uri)
+            if (
+                not already
+                and max_new_tracks is not None
+                and len(new_track_entries) >= max_new_tracks
+            ):
+                log.info(
+                    "unmatched.retry_skipped_cap",
+                    source_id=source_id,
+                    artist=artist,
+                    title=title,
+                    max_new_tracks=max_new_tracks,
+                )
+                continue
+
             inserted = db.record_track(uri, source_id, artist, title, None)
             db.delete_unmatched(source_id, artist, title)
 
