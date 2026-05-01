@@ -2,9 +2,9 @@ name: weekly peel run
 
 on:
   schedule:
-    # Sexta-feira às 22:00 UTC — lançamentos globais são 00:00 sexta,
-    # por isso damos tempo aos blogs para publicarem as picks semanais.
-    - cron: "0 22 * * 5"
+    # Sábado às 10:00 UTC — apanha as picks de sexta à noite e dá margem
+    # para os críticos/blogs publicarem sem esperarmos até domingo.
+    - cron: "0 10 * * 6"
   # Dispatch manual para testes durante desenvolvimento
   workflow_dispatch:
 
@@ -43,7 +43,17 @@ jobs:
         # Se os testes falharem, o workflow para aqui (não corre peel)
 
       - name: run peel
-        run: uv run peel
+        run: uv run peel run
+        env:
+          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+          SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+          SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
+          PEEL_PLAYLIST_ID: ${{ secrets.PEEL_PLAYLIST_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+      - name: generate report
+        run: uv run peel report
         env:
           SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
           SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
@@ -58,7 +68,7 @@ jobs:
         run: |
           git config user.name "peel-bot"
           git config user.email "peel-bot@users.noreply.github.com"
-          git add data/peel.db
+          git add data/peel.db data/reports/
           # Só comita se houver mudanças (não falha se DB não mudou)
           git diff --cached --quiet || git commit -m "chore: weekly peel state update"
           git push

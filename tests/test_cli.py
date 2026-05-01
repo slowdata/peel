@@ -148,6 +148,43 @@ class TestCliFeedback:
         db2.close()
 
 
+class TestCliReport:
+    def test_report_command_writes_markdown(self, tmp_path: Path, monkeypatch) -> None:
+        db_path = tmp_path / "peel.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        db.conn.execute(
+            """
+            INSERT INTO tracks
+            (spotify_uri, source_id, artist, title, source_url, added_at, added_at_week)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "spotify:track:1",
+                "source-a",
+                "Artist A",
+                "Track A",
+                None,
+                "2026-05-01T10:00:00+00:00",
+                "2026-W18",
+            ),
+        )
+        db.conn.commit()
+        db.close()
+
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+        output_dir = tmp_path / "reports"
+
+        result = runner.invoke(
+            cli.app,
+            ["report", "--week", "2026-W18", "--output-dir", str(output_dir)],
+        )
+
+        assert result.exit_code == 0
+        assert "Report written" in result.stdout
+        assert (output_dir / "2026-W18.md").exists()
+
+
 class TestCliDoctor:
     def test_doctor_checks_project_root(self, tmp_path: Path, monkeypatch) -> None:
         db_path = tmp_path / "peel.db"

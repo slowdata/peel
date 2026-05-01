@@ -12,8 +12,10 @@ from __future__ import annotations
 
 import sqlite3
 import tomllib
+import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Annotated
 
 import typer
 from rich.console import Console
@@ -23,6 +25,7 @@ from rich.table import Table
 from peel.config import settings
 from peel.db import DB, FEEDBACK_RATINGS
 from peel.main import run as run_pipeline
+from peel.report import generate_weekly_report
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 console = Console(width=120)
@@ -188,6 +191,31 @@ def feedback(
             chosen_comment = _prompt_comment(default="")
             _save_feedback(db, row[0], chosen_rating, chosen_comment)
             console.print(f"Saved: {row[1]} — {row[2]} [{chosen_rating}]")
+    finally:
+        db.close()
+
+
+@app.command()
+def report(
+    week: Annotated[str | None, typer.Option(help="Semana ISO a gerar")] = None,
+    output_dir: Annotated[
+        Path | None,
+        typer.Option(help="Directório de saída"),
+    ] = None,
+    open_report: Annotated[
+        bool,
+        typer.Option("--open", help="Abre o relatório no browser"),
+    ] = False,
+) -> None:
+    """Gera o relatório semanal em Markdown."""
+    db = DB(str(_resolve_path(settings.db_path)))
+    try:
+        db.init_schema()
+        target_dir = output_dir or PROJECT_ROOT / "data" / "reports"
+        path = generate_weekly_report(db, week=week, output_dir=target_dir)
+        console.print(f"Report written: {path}")
+        if open_report:
+            webbrowser.open(path.resolve().as_uri())
     finally:
         db.close()
 

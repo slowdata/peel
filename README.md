@@ -47,12 +47,12 @@ Sem algoritmos, sem bolhas — apenas bom gosto humano, entregue.
 5. **Testa localmente:**
    ```bash
    uv run pytest          # Valida todo o código
-   uv run peel            # Executa uma run completa
+   uv run peel run        # Executa uma run completa
    ```
 
 ## Automated Weekly Run
 
-O projeto corre automaticamente toda a segunda-feira (domingo 22:00 UTC) via [GitHub Actions](/.github/workflows/weekly.yml).
+O projeto corre automaticamente ao sábado (10:00 UTC) via [GitHub Actions](/.github/workflows/weekly.yml).
 
 Para dispatch manual (testes):
 ```bash
