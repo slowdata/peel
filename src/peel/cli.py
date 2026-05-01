@@ -27,6 +27,7 @@ from peel.config import settings
 from peel.db import DB, FEEDBACK_RATINGS
 from peel.main import run as run_pipeline
 from peel.report import generate_weekly_report
+from peel.scoring import build_source_scores
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 console = Console(width=120)
@@ -230,6 +231,52 @@ def report(
         console.print(f"Report written: {path}")
         if open_report:
             webbrowser.open(path.resolve().as_uri())
+    finally:
+        db.close()
+
+
+@app.command()
+def sources(
+    weeks: int = typer.Option(4, "--weeks", min=1, help="Janela em semanas"),
+) -> None:
+    """Mostra scoring das sources com base nos dados existentes."""
+    db = DB(str(_resolve_path(settings.db_path)))
+    try:
+        db.init_schema()
+        rows = build_source_scores(db, weeks=weeks)
+        if not rows:
+            console.print("Sem dados para scoring.")
+            return
+
+        table = Table(title=f"Source scores (last {weeks} weeks)")
+        table.add_column("Source", style="bold")
+        table.add_column("Found", justify="right")
+        table.add_column("Matched", justify="right")
+        table.add_column("New", justify="right")
+        table.add_column("Dup", justify="right")
+        table.add_column("Consensus", justify="right")
+        table.add_column("Unmatched", justify="right")
+        table.add_column("Liked", justify="right")
+        table.add_column("Skipped", justify="right")
+        table.add_column("Avg rating", justify="right")
+        table.add_column("Score", justify="right")
+
+        for row in rows:
+            table.add_row(
+                row.source_id,
+                str(row.tracks_found),
+                str(row.tracks_matched),
+                str(row.new_unique_tracks),
+                str(row.duplicate_mentions),
+                str(row.consensus_hits),
+                str(row.unmatched_count),
+                str(row.liked_count),
+                str(row.skipped_count),
+                row.avg_rating_display,
+                f"{row.score:.1f}",
+            )
+
+        console.print(table)
     finally:
         db.close()
 

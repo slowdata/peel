@@ -99,6 +99,15 @@ uv run ruff format src/ tests/
 uv run ruff check src/ tests/
 ```
 
+### Source scoring
+
+```bash
+uv run peel sources
+uv run peel sources --weeks 4
+```
+
+`tracks_found` é calculado a partir dos dados persistidos: matches + unmatched. O total bruto de items recolhidos por run só ficará disponível quando existir histórico `source_runs`.
+
 ### Sync
 
 ```bash
