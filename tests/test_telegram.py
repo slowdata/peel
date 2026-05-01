@@ -12,8 +12,8 @@ class TestFormatMessage:
 
     def test_format_message_with_tracks_and_albums(self) -> None:
         """Formata mensagem com tracks e álbuns."""
-        tracks = [("Artist A", "Track 1", None)]  # Tracks não têm URLs no digest
-        albums = [("Artist B", "Album 1", "http://example.com/album")]
+        tracks = [("source-a", "Artist A", "Track 1", None)]  # Tracks não têm URLs no digest
+        albums = [("source-b", "Artist B", "Album 1", "http://example.com/album")]
         playlist_id = "spotify:playlist:test123"
 
         msg = _format_message(tracks, albums, playlist_id)
@@ -23,16 +23,18 @@ class TestFormatMessage:
         assert "<b>Novas tracks (1)</b>" in msg
         assert "Artist A" in msg
         assert "Track 1" in msg
+        assert "(source-a)" in msg
         assert "<b>💿 Álbuns da semana (1)</b>" in msg
         assert "Artist B" in msg
         assert "Album 1" in msg
+        assert "(source-b)" in msg
         assert "spotify:playlist:test123" in msg
         assert '<a href="http://example.com/album">' in msg
 
     def test_format_message_empty_tracks(self) -> None:
         """Formata mensagem sem tracks."""
         tracks = []
-        albums = [("Artist", "Album", None)]
+        albums = [("source", "Artist", "Album", None)]
         playlist_id = "test_id"
 
         msg = _format_message(tracks, albums, playlist_id)
@@ -42,7 +44,7 @@ class TestFormatMessage:
 
     def test_format_message_empty_albums(self) -> None:
         """Formata mensagem sem álbuns."""
-        tracks = [("Artist", "Track", None)]
+        tracks = [("source", "Artist", "Track", None)]
         albums = []
         playlist_id = "test_id"
 
@@ -64,7 +66,7 @@ class TestFormatMessage:
 
     def test_format_message_tracks_overflow(self) -> None:
         """Formata mensagem com mais de 20 tracks."""
-        tracks = [(f"Artist {i}", f"Track {i}", None) for i in range(25)]
+        tracks = [("source", f"Artist {i}", f"Track {i}", None) for i in range(25)]
         albums = []
         playlist_id = "test_id"
 
@@ -80,7 +82,7 @@ class TestFormatMessage:
 
     def test_format_message_albums_overflow(self) -> None:
         """Formata mensagem com mais de 15 álbuns."""
-        albums = [(f"Artist {i}", f"Album {i}", None) for i in range(20)]
+        albums = [("source", f"Artist {i}", f"Album {i}", None) for i in range(20)]
         tracks = []
         playlist_id = "test_id"
 
@@ -93,8 +95,8 @@ class TestFormatMessage:
 
     def test_format_message_html_escaping(self) -> None:
         """Escape de caracteres HTML na mensagem."""
-        tracks = [("Artist <tag>", "Track & Title", None)]
-        albums = [('Artist "quotes"', "Album <script>", None)]
+        tracks = [("source&", "Artist <tag>", "Track & Title", None)]
+        albums = [("source", 'Artist "quotes"', "Album <script>", None)]
         playlist_id = "test_id"
 
         msg = _format_message(tracks, albums, playlist_id)
@@ -104,10 +106,11 @@ class TestFormatMessage:
         assert "Track &amp; Title" in msg
         assert "Artist &quot;quotes&quot;" in msg
         assert "Album &lt;script&gt;" in msg
+        assert "source&amp;" in msg
 
     def test_format_message_album_with_url(self) -> None:
         """Formata álbum com URL como link."""
-        albums = [("Artist", "Album", "https://example.com/album")]
+        albums = [("source", "Artist", "Album", "https://example.com/album")]
         tracks = []
         playlist_id = "test_id"
 
@@ -119,7 +122,7 @@ class TestFormatMessage:
 
     def test_format_message_album_without_url(self) -> None:
         """Formata álbum sem URL como texto simples."""
-        albums = [("Artist", "Album", None)]
+        albums = [("source", "Artist", "Album", None)]
         tracks = []
         playlist_id = "test_id"
 
@@ -183,8 +186,8 @@ class TestSendDigest:
         mock_response.raise_for_status = MagicMock()
 
         with patch("peel.telegram.httpx.post", return_value=mock_response) as mock_post:
-            tracks = [("Artist A", "Track A", None)]
-            albums = [("Artist B", "Album B", None)]
+            tracks = [("source-a", "Artist A", "Track A", None)]
+            albums = [("source-b", "Artist B", "Album B", None)]
             playlist_id = "playlist123"
 
             send_digest(tracks, albums, playlist_id)
@@ -229,7 +232,7 @@ class TestSendDigest:
             patch("peel.telegram.httpx.post", return_value=mock_response),
             patch("peel.telegram.log") as mock_log,
         ):
-            send_digest([("A", "T", None)], [("B", "Album", None)], "id")
+            send_digest([("source-a", "A", "T", None)], [("source-b", "B", "Album", None)], "id")
 
             # Verifica que log.info foi chamado com "telegram.sent"
             calls = [call[0][0] for call in mock_log.info.call_args_list]

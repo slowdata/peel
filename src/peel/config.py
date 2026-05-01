@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     peel_playlist_window_weeks: int = Field(default=2, alias="PEEL_PLAYLIST_WINDOW_WEEKS")
     peel_max_tracks_per_source: int = Field(default=8, alias="PEEL_MAX_TRACKS_PER_SOURCE")
     peel_max_tracks_per_run: int = Field(default=40, alias="PEEL_MAX_TRACKS_PER_RUN")
+    peel_max_source_item_age_days: int = Field(
+        default=30,
+        alias="PEEL_MAX_SOURCE_ITEM_AGE_DAYS",
+    )
     # Janela (dias) em que tentamos re-matchear tracks que falharam no Spotify.
     # Motivo: blogs frequentemente publicam antes do release global de sexta, ou
     # o track chega ao Spotify dias/semanas depois. 30 dias cobre ambos sem

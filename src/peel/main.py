@@ -14,7 +14,7 @@ Resiliência:
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import structlog
 
@@ -30,7 +30,7 @@ from peel.sources.rss import (
     TheQuietus,
 )
 from peel.spotify_client import SpotifyClient
-from peel.telegram import send_digest
+from peel.telegram import DigestItem, send_digest
 
 # Setup de logging estruturado (JSON para GitHub Actions)
 structlog.configure(
@@ -66,8 +66,8 @@ def run() -> None:
     albums_added = 0
 
     # Digest semanal: tracks e álbuns novos (para Telegram)
-    new_track_entries: list[tuple[str, str, str | None]] = []  # (artist, title, url)
-    new_album_entries: list[tuple[str, str, str | None]] = []  # (artist, album, url)
+    new_track_entries: list[DigestItem] = []  # (source_id, artist, title, url)
+    new_album_entries: list[DigestItem] = []  # (source_id, artist, album, url)
 
     # Métricas do retry de unmatched (reportadas no log final)
     retried_total = 0
@@ -105,16 +105,18 @@ def run() -> None:
             try:
                 # 1. Fetch da source
                 tracks = source.fetch()
+                fresh_tracks = _filter_fresh_source_items(source.id, tracks, datetime.now(UTC))
                 log.info(
                     "source.fetched",
                     source_id=source.id,
                     track_count=len(tracks),
+                    fresh_count=len(fresh_tracks),
                 )
 
                 # 2. Bifurca por source.kind
                 if source.kind == "album":
                     # Processa como álbuns (sem Spotify search)
-                    for track in tracks:
+                    for track in fresh_tracks:
                         try:
                             # track.title é o nome do álbum
                             is_new = db.record_album(
@@ -127,7 +129,7 @@ def run() -> None:
                             if is_new:
                                 albums_added += 1
                                 new_album_entries.append(
-                                    (track.artist, track.title, track.source_url)
+                                    (source.id, track.artist, track.title, track.source_url)
                                 )
                                 log.info(
                                     "album.recorded",
@@ -150,7 +152,7 @@ def run() -> None:
                     # Processa como tracks (único kind que pode ir para playlist).
                     # O slice por source evita backfill infinito de feeds longos: a próxima
                     # run volta a olhar para os mesmos N itens do topo, não para backlog.
-                    for track in tracks[: settings.peel_max_tracks_per_source]:
+                    for track in fresh_tracks[: settings.peel_max_tracks_per_source]:
                         try:
                             if _track_cap_reached(playlist_slots_used):
                                 log.info(
@@ -215,7 +217,9 @@ def run() -> None:
                                 continue
 
                             tracks_added += 1
-                            new_track_entries.append((track.artist, track.title, track.source_url))
+                            new_track_entries.append(
+                                (source.id, track.artist, track.title, track.source_url)
+                            )
 
                             log.info(
                                 "track.matched_and_added",
@@ -240,7 +244,7 @@ def run() -> None:
                         "source.skipped_non_playlist_kind",
                         source_id=source.id,
                         kind=source.kind,
-                        fetched_count=len(tracks),
+                        fetched_count=len(fresh_tracks),
                     )
 
                 # Atualiza estado da source como OK
@@ -307,6 +311,32 @@ def run() -> None:
         )
 
 
+def _filter_fresh_source_items(source_id: str, tracks: list[Track], now: datetime) -> list[Track]:
+    fresh_tracks: list[Track] = []
+    cutoff = now - timedelta(days=settings.peel_max_source_item_age_days)
+    for track in tracks:
+        if track.published_at is None:
+            fresh_tracks.append(track)
+            continue
+
+        published_at = track.published_at
+        if published_at.tzinfo is None:
+            published_at = published_at.replace(tzinfo=UTC)
+
+        if published_at < cutoff:
+            log.info(
+                "source.item_skipped_age",
+                source_id=source_id,
+                artist=track.artist,
+                title=track.title,
+                published_at=published_at.isoformat(),
+                max_age_days=settings.peel_max_source_item_age_days,
+            )
+            continue
+        fresh_tracks.append(track)
+    return fresh_tracks
+
+
 def _track_cap_reached(playlist_slots_used: int) -> bool:
     return playlist_slots_used >= settings.peel_max_tracks_per_run
 
@@ -314,7 +344,7 @@ def _track_cap_reached(playlist_slots_used: int) -> bool:
 def _retry_unmatched(
     db: DB,
     sp: SpotifyClient,
-    new_track_entries: list[tuple[str, str, str | None]],
+    new_track_entries: list[DigestItem],
     max_new_tracks: int | None = None,
 ) -> tuple[int, int]:
     """Re-tenta tracks unmatched recentes contra o Spotify.
@@ -378,7 +408,7 @@ def _retry_unmatched(
                 matched += 1
                 continue
 
-            new_track_entries.append((artist, title, None))
+            new_track_entries.append((source_id, artist, title, None))
             matched += 1
             log.info(
                 "unmatched.retry_matched",

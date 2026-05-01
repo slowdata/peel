@@ -1,11 +1,12 @@
 """Testes de integração para main.py."""
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from peel.main import _retry_unmatched, run
+from peel.main import _filter_fresh_source_items, _retry_unmatched, run
 from peel.models import Track
 from peel.sources.rss import (
     GorillaVsBear,
@@ -403,6 +404,34 @@ class TestPlaylistSafetyCaps:
         assert called_uris == []
 
 
+class TestFreshnessFilter:
+    def test_filter_fresh_source_items_skips_old_published_tracks(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from peel import config as config_module
+
+        monkeypatch.setattr(config_module.settings, "peel_max_source_item_age_days", 30)
+        now = datetime(2026, 5, 1, tzinfo=UTC)
+        fresh = Track(
+            source_id="source-a",
+            artist="Fresh Artist",
+            title="Fresh Track",
+            published_at=now - timedelta(days=5),
+        )
+        old = Track(
+            source_id="source-a",
+            artist="Old Artist",
+            title="Old Track",
+            published_at=now - timedelta(days=60),
+        )
+        no_date = Track(source_id="source-a", artist="No Date", title="No Date Track")
+
+        result = _filter_fresh_source_items("source-a", [fresh, old, no_date], now)
+
+        assert result == [fresh, no_date]
+
+
 class TestRetryUnmatched:
     """Testa o fluxo de retry de unmatched (fix #2)."""
 
@@ -439,7 +468,7 @@ class TestRetryUnmatched:
         assert row is not None
         assert db.track_sources("spotify:track:abc") == [("pitchfork_bnt", None)]
         # Entrou no digest do Telegram
-        assert digest_entries == [("Claire Rousay", "Hey Eleanor", None)]
+        assert digest_entries == [("pitchfork_bnt", "Claire Rousay", "Hey Eleanor", None)]
         db.close()
 
     def test_retry_keeps_source_attribution_for_existing_uri(self, tmp_path: Path) -> None:
@@ -494,7 +523,7 @@ class TestRetryUnmatched:
 
         assert total == 2
         assert matched == 1
-        assert digest_entries == [("Artist A", "Track A", None)]
+        assert digest_entries == [("source-a", "Artist A", "Track A", None)]
         assert db.already_added("spotify:track:a") is True
         assert db.already_added("spotify:track:b") is False
         assert db.list_unmatched(30) == [("source-b", "Artist B", "Track B")]

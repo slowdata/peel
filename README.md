@@ -119,9 +119,10 @@ uv run peel sources --weeks 4
 ```bash
 PEEL_MAX_TRACKS_PER_SOURCE=8
 PEEL_MAX_TRACKS_PER_RUN=40
+PEEL_MAX_SOURCE_ITEM_AGE_DAYS=30
 ```
 
-Só sources `kind = "track"` podem entrar na playlist. Sources `album`, `context`, `podcast`, `scrape` ou `manual_spotify` ficam fora da playlist automática.
+Só sources `kind = "track"` podem entrar na playlist. Sources `album`, `context`, `podcast`, `scrape` ou `manual_spotify` ficam fora da playlist automática. Items publicados há mais de `PEEL_MAX_SOURCE_ITEM_AGE_DAYS` dias são ignorados quando a source expõe data.
 
 `tracks_found` é calculado a partir dos dados persistidos: matches + unmatched. O total bruto de items recolhidos por run só ficará disponível quando existir histórico `source_runs`.
 
