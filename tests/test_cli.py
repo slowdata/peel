@@ -68,6 +68,7 @@ class TestCliTracks:
         db.record_track("spotify:track:1", "source-a", "Artist A", "Track A", "https://a")
         db.record_track("spotify:track:1", "source-b", "Artist A", "Track A", "https://b")
         db.record_track("spotify:track:2", "source-c", "Artist B", "Track B", None)
+        db.upsert_feedback("spotify:track:1", "like", "bom groove")
 
         monkeypatch.setattr(cli, "settings", _settings(db_path))
 
@@ -77,6 +78,7 @@ class TestCliTracks:
         assert "Artist A" in result.stdout
         assert "Track A" in result.stdout
         assert "2" in result.stdout
+        assert "like" in result.stdout
         assert "Artist B" in result.stdout
 
     def test_tracks_sources_shows_source_details(self, tmp_path: Path, monkeypatch) -> None:
@@ -95,6 +97,55 @@ class TestCliTracks:
         assert "source-b" in result.stdout
         assert "https://a" in result.stdout
         assert "https://b" in result.stdout
+
+
+class TestCliFeedback:
+    def test_feedback_non_interactive_upserts_rating(self, tmp_path: Path, monkeypatch) -> None:
+        db_path = tmp_path / "peel.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        db.record_track("spotify:track:1", "source-a", "Artist A", "Track A", None)
+
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+
+        result = runner.invoke(
+            cli.app,
+            [
+                "feedback",
+                "--uri",
+                "spotify:track:1",
+                "--rating",
+                "love",
+                "--comment",
+                "grande baixo",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Saved feedback" in result.stdout
+
+        db2 = DB(str(db_path))
+        db2.init_schema()
+        assert db2.feedback_for_track("spotify:track:1") == (2, "love", "grande baixo")
+        db2.close()
+
+    def test_feedback_interactive_prompts_and_saves(self, tmp_path: Path, monkeypatch) -> None:
+        db_path = tmp_path / "peel.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        db.record_track("spotify:track:1", "source-a", "Artist A", "Track A", None)
+
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+
+        result = runner.invoke(cli.app, ["feedback", "--limit", "1"], input="like\nbom groove\n")
+
+        assert result.exit_code == 0
+        assert "Feedback" in result.stdout
+
+        db2 = DB(str(db_path))
+        db2.init_schema()
+        assert db2.feedback_for_track("spotify:track:1") == (1, "like", "bom groove")
+        db2.close()
 
 
 class TestCliDoctor:

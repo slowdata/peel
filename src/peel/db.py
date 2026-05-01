@@ -8,6 +8,7 @@ Schema:
 - tracks: (spotify_uri, source_id) PRIMARY KEY — mesma faixa de várias fontes
 - sources_state: source_id PRIMARY KEY — estado último de cada source
 - unmatched: source_id + artist + title + seen_at — faixas não encontradas
+- feedback: spotify_uri PRIMARY KEY — feedback do utilizador por track
 - albums: (artist, album) PRIMARY KEY — álbuns curados (não vão para playlist)
 
 Conexão: single connection longo-vivido (por run inteira como transacção conceptual).
@@ -21,6 +22,14 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import structlog
+
+FEEDBACK_RATINGS: dict[str, int] = {
+    "love": 2,
+    "like": 1,
+    "meh": 0,
+    "skip": -1,
+    "ban": -2,
+}
 
 log = structlog.get_logger()
 
@@ -126,7 +135,7 @@ class DB:
         log.info("db.backfill_week_completed", table=table, count=count_updated)
 
     def init_schema(self) -> None:
-        """Cria as 4 tabelas se não existirem (idempotente).
+        """Cria as 5 tabelas se não existirem (idempotente).
 
         Esta função é segura chamar múltiplas vezes.
         Após criar tabelas, executa migrações idempotentes (adiciona colunas novas se necessário).
@@ -168,6 +177,19 @@ class DB:
                 artist       TEXT NOT NULL,
                 title        TEXT NOT NULL,
                 seen_at      TEXT NOT NULL
+            )
+            """
+        )
+
+        # Tabela: feedback do utilizador
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS feedback (
+                spotify_uri TEXT PRIMARY KEY,
+                rating      INTEGER NOT NULL,
+                label       TEXT NOT NULL,
+                comment     TEXT,
+                rated_at    TEXT NOT NULL
             )
             """
         )
@@ -293,6 +315,89 @@ class DB:
             LIMIT ?
             """,
             (limit,),
+        )
+        return [tuple(row) for row in cursor.fetchall()]
+
+    def feedback_for_track(self, spotify_uri: str) -> tuple[int, str, str | None] | None:
+        """Feedback registado para uma track, se existir."""
+        cursor = self.conn.execute(
+            """
+            SELECT rating, label, comment
+            FROM feedback
+            WHERE spotify_uri = ?
+            """,
+            (spotify_uri,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        return int(row[0]), str(row[1]), row[2]
+
+    def upsert_feedback(
+        self,
+        spotify_uri: str,
+        label: str,
+        comment: str | None = None,
+    ) -> None:
+        """Guarda feedback explícito do utilizador para uma track."""
+        normalized = label.strip().lower()
+        if normalized not in FEEDBACK_RATINGS:
+            allowed = ", ".join(sorted(FEEDBACK_RATINGS))
+            raise ValueError(f"invalid feedback label: {label!r}. Allowed: {allowed}")
+
+        rating = FEEDBACK_RATINGS[normalized]
+        now = datetime.now(UTC).isoformat()
+        self.conn.execute(
+            """
+            INSERT INTO feedback (spotify_uri, rating, label, comment, rated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(spotify_uri) DO UPDATE SET
+                rating = excluded.rating,
+                label = excluded.label,
+                comment = excluded.comment,
+                rated_at = excluded.rated_at
+            """,
+            (spotify_uri, rating, normalized, comment, now),
+        )
+        self.conn.commit()
+        log.debug(
+            "db.feedback_upserted",
+            spotify_uri=spotify_uri,
+            label=normalized,
+            rating=rating,
+        )
+
+    def unrated_tracks(
+        self,
+        week: str | None = None,
+        limit: int = 50,
+    ) -> list[tuple[str, str, str, str, int, str, str]]:
+        """Tracks ainda sem feedback explícito."""
+        params: list[object] = []
+        where_clause = "WHERE f.spotify_uri IS NULL"
+        if week is not None:
+            where_clause += " AND t.added_at_week = ?"
+            params.append(week)
+        params.append(limit)
+
+        cursor = self.conn.execute(
+            f"""
+            SELECT
+                t.spotify_uri,
+                t.artist,
+                t.title,
+                MAX(t.added_at_week) AS added_at_week,
+                COUNT(DISTINCT t.source_id) AS source_count,
+                MIN(t.added_at) AS first_added_at,
+                MAX(t.added_at) AS last_added_at
+            FROM tracks t
+            LEFT JOIN feedback f ON f.spotify_uri = t.spotify_uri
+            {where_clause}
+            GROUP BY t.spotify_uri, t.artist, t.title
+            ORDER BY last_added_at DESC, t.artist COLLATE NOCASE, t.title COLLATE NOCASE
+            LIMIT ?
+            """,
+            params,
         )
         return [tuple(row) for row in cursor.fetchall()]
 

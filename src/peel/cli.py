@@ -4,6 +4,7 @@ Backoffice local para:
 - correr o pipeline semanal,
 - ver estado da DB,
 - listar tracks recentes,
+- dar feedback,
 - fazer diagnóstico básico do ambiente.
 """
 
@@ -20,6 +21,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from peel.config import settings
+from peel.db import DB, FEEDBACK_RATINGS
 from peel.main import run as run_pipeline
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -44,6 +46,9 @@ class SourceState:
     last_run_at: str
     last_status: str
     last_error: str | None
+
+
+FeedbackRow = tuple[str, str, str, str, int, str, str]
 
 
 @app.command("run")
@@ -126,15 +131,18 @@ def tracks(
         table.add_column("Title")
         table.add_column("Week")
         table.add_column("Sources", justify="right")
+        table.add_column("Rating")
         table.add_column("Added first")
         table.add_column("Added last")
 
         for row in rows:
+            feedback = _feedback_for_track(conn, row.spotify_uri)
             table.add_row(
                 row.artist,
                 row.title,
                 row.added_at_week,
                 str(row.source_count),
+                feedback[1] if feedback else "",
                 row.first_added_at,
                 row.last_added_at,
             )
@@ -145,6 +153,43 @@ def tracks(
             console.print()
             for row in rows:
                 _print_track_sources(conn, row)
+
+
+@app.command()
+def feedback(
+    uri: str | None = typer.Option(None, "--uri", help="Spotify URI a avaliar"),
+    rating: str | None = typer.Option(None, "--rating", help="love|like|meh|skip|ban"),
+    comment: str | None = typer.Option(None, "--comment", help="Comentário opcional"),
+    week: str | None = typer.Option(None, "--week", help="Semana ISO a avaliar"),
+    limit: int = typer.Option(20, "--limit", min=1, help="Número máximo de tracks"),
+) -> None:
+    """Regista feedback explícito ou entra em modo interactivo."""
+    db_path = _resolve_path(settings.db_path)
+    db = DB(str(db_path))
+    try:
+        db.init_schema()
+
+        if uri is not None:
+            chosen_rating = rating or _prompt_rating(default="like")
+            _save_feedback(db, uri, chosen_rating, comment)
+            console.print(f"Saved feedback: {uri} -> {chosen_rating}")
+            return
+
+        rows = db.unrated_tracks(week=week, limit=limit)
+        if not rows:
+            console.print("Sem tracks por avaliar.")
+            return
+
+        for index, row in enumerate(rows, start=1):
+            _print_feedback_prompt(db, row, index, len(rows))
+            chosen_rating = _prompt_rating(default="like")
+            if chosen_rating in {"q", "quit", "exit"}:
+                break
+            chosen_comment = _prompt_comment(default="")
+            _save_feedback(db, row[0], chosen_rating, chosen_comment)
+            console.print(f"Saved: {row[1]} — {row[2]} [{chosen_rating}]")
+    finally:
+        db.close()
 
 
 @app.command()
@@ -188,7 +233,7 @@ def doctor() -> None:
         try:
             with sqlite3.connect(db_path) as conn:
                 tables = _list_tables(conn)
-                expected = {"tracks", "sources_state", "unmatched", "albums"}
+                expected = {"tracks", "sources_state", "unmatched", "feedback", "albums"}
                 tables_ok = expected.issubset(tables)
                 tables_detail = ", ".join(sorted(tables))
         except sqlite3.Error as exc:
@@ -252,7 +297,10 @@ def _fetch_source_states(conn: sqlite3.Connection) -> list[SourceState]:
     ]
 
 
-def _fetch_track_summaries(conn: sqlite3.Connection, limit: int) -> list[TrackSummary]:
+def _fetch_track_summaries(
+    conn: sqlite3.Connection,
+    limit: int,
+) -> list[TrackSummary]:
     rows = conn.execute(
         """
         SELECT
@@ -284,6 +332,19 @@ def _fetch_track_summaries(conn: sqlite3.Connection, limit: int) -> list[TrackSu
     ]
 
 
+def _feedback_for_track(
+    conn: sqlite3.Connection,
+    spotify_uri: str,
+) -> tuple[int, str, str | None] | None:
+    row = conn.execute(
+        "SELECT rating, label, comment FROM feedback WHERE spotify_uri = ?",
+        (spotify_uri,),
+    ).fetchone()
+    if row is None:
+        return None
+    return int(row[0]), str(row[1]), row[2]
+
+
 def _print_track_sources(conn: sqlite3.Connection, row: TrackSummary) -> None:
     table = Table(title=f"{row.artist} — {row.title}", show_header=False)
     table.add_column("Source")
@@ -300,6 +361,60 @@ def _print_track_sources(conn: sqlite3.Connection, row: TrackSummary) -> None:
     for source_id, source_url in source_rows:
         table.add_row(source_id, source_url or "")
     console.print(table)
+
+
+def _print_feedback_prompt(
+    db: DB,
+    row: FeedbackRow,
+    index: int,
+    total: int,
+) -> None:
+    spotify_uri, artist, title, week, source_count, first_added_at, last_added_at = row
+    panel = Panel(
+        f"{index}/{total} {artist} — {title}\n"
+        f"Week: {week}\n"
+        f"Sources: {source_count}\n"
+        f"Added: {first_added_at} → {last_added_at}\n"
+        f"URI: {spotify_uri}",
+        title="Feedback",
+    )
+    console.print(panel)
+
+    sources = db.track_sources(spotify_uri)
+    if not sources:
+        return
+
+    table = Table(show_header=False)
+    table.add_column("Source")
+    table.add_column("URL")
+    for source_id, source_url in sources:
+        table.add_row(source_id, source_url or "")
+    console.print(table)
+
+
+def _prompt_rating(default: str) -> str:
+    allowed = ", ".join(sorted(FEEDBACK_RATINGS))
+    while True:
+        value = typer.prompt(f"Rating [{allowed} / q]", default=default).strip().lower()
+        if value in {"q", "quit", "exit"}:
+            return value
+        if value in FEEDBACK_RATINGS:
+            return value
+        console.print(f"Rating inválida: {value}")
+
+
+def _prompt_comment(default: str) -> str | None:
+    value = typer.prompt("Comment optional", default=default, show_default=False).strip()
+    return value or None
+
+
+def _save_feedback(
+    db: DB,
+    spotify_uri: str,
+    rating: str,
+    comment: str | None,
+) -> None:
+    db.upsert_feedback(spotify_uri, rating, comment)
 
 
 def _masked(value: str) -> str:

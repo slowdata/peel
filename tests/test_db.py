@@ -3,6 +3,8 @@
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from peel.db import DB, iso_week
 
 
@@ -10,16 +12,17 @@ class TestInitSchema:
     """Testa a inicialização idempotente do schema."""
 
     def test_init_schema_creates_tables(self, tmp_path: Path) -> None:
-        """init_schema() cria as 4 tabelas."""
+        """init_schema() cria as 5 tabelas."""
         db_path = tmp_path / "test.db"
         db = DB(str(db_path))
         db.init_schema()
 
-        # Verifica que as 4 tabelas existem
+        # Verifica que as 5 tabelas existem
         cursor = db.conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
         tables = [row[0] for row in cursor.fetchall()]
 
         assert "albums" in tables
+        assert "feedback" in tables
         assert "sources_state" in tables
         assert "tracks" in tables
         assert "unmatched" in tables
@@ -33,10 +36,10 @@ class TestInitSchema:
         db.init_schema()
         db.init_schema()  # Não deve falhar
 
-        # Ainda temos as 4 tabelas
+        # Ainda temos as 5 tabelas
         cursor = db.conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table'")
         table_count = cursor.fetchone()[0]
-        assert table_count == 4
+        assert table_count == 5
 
     def test_db_directory_created(self, tmp_path: Path) -> None:
         """DB cria o diretório pai se não existir."""
@@ -386,6 +389,45 @@ class TestRecordAlbum:
         )
         row = cursor.fetchone()
         assert row[0] is None
+
+
+class TestFeedback:
+    """Testa feedback explícito do utilizador."""
+
+    def test_upsert_feedback_inserts_and_reads(self, tmp_path: Path) -> None:
+        db = DB(str(tmp_path / "test.db"))
+        db.init_schema()
+
+        db.upsert_feedback("spotify:track:123", "love", "muito bom")
+
+        assert db.feedback_for_track("spotify:track:123") == (2, "love", "muito bom")
+
+    def test_upsert_feedback_updates_existing(self, tmp_path: Path) -> None:
+        db = DB(str(tmp_path / "test.db"))
+        db.init_schema()
+
+        db.upsert_feedback("spotify:track:123", "meh", None)
+        db.upsert_feedback("spotify:track:123", "like", "melhorou")
+
+        assert db.feedback_for_track("spotify:track:123") == (1, "like", "melhorou")
+
+    def test_upsert_feedback_rejects_invalid_label(self, tmp_path: Path) -> None:
+        db = DB(str(tmp_path / "test.db"))
+        db.init_schema()
+
+        with pytest.raises(ValueError):
+            db.upsert_feedback("spotify:track:123", "great")
+
+    def test_unrated_tracks_filters_feedback(self, tmp_path: Path) -> None:
+        db = DB(str(tmp_path / "test.db"))
+        db.init_schema()
+
+        db.record_track("spotify:track:1", "source-a", "Artist A", "Track A", None)
+        db.record_track("spotify:track:2", "source-b", "Artist B", "Track B", None)
+        db.upsert_feedback("spotify:track:1", "like", None)
+
+        rows = db.unrated_tracks(limit=10)
+        assert {row[0] for row in rows} == {"spotify:track:2"}
 
 
 class TestDatetimeISO8601:
