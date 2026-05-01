@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from peel.main import run
+from peel.main import _retry_unmatched, run
 from peel.sources.rss import PitchforkBNT
 
 
@@ -201,5 +201,74 @@ class TestMainIntegration:
             f"Error deve conter 'simulated source crash', obtive '{error}'"
         )
 
+        db.close()
+
+
+class TestRetryUnmatched:
+    """Testa o fluxo de retry de unmatched (fix #2)."""
+
+    def test_retry_promotes_matched_and_cleans_unmatched(self, tmp_path: Path) -> None:
+        """Track que antes falhou é promovida quando Spotify agora devolve hit."""
+        from peel.db import DB
+
+        db = DB(str(tmp_path / "test.db"))
+        db.init_schema()
+        db.record_unmatched("pitchfork_bnt", "Claire Rousay", "Hey Eleanor")
+
+        mock_sp = MagicMock()
+        mock_sp.search_track = MagicMock(
+            return_value=[
+                {
+                    "uri": "spotify:track:abc",
+                    "name": "Hey Eleanor",
+                    "artists": ["Claire Rousay"],
+                }
+            ]
+        )
+
+        digest_entries: list = []
+        total, matched = _retry_unmatched(db, mock_sp, digest_entries)
+
+        assert total == 1
+        assert matched == 1
+        # Unmatched foi limpo
+        assert db.list_unmatched(30) == []
+        # Track foi registada
+        row = db.conn.execute(
+            "SELECT spotify_uri FROM tracks WHERE spotify_uri='spotify:track:abc'"
+        ).fetchone()
+        assert row is not None
+        # Entrou no digest do Telegram
+        assert digest_entries == [("Claire Rousay", "Hey Eleanor", None)]
+        db.close()
+
+    def test_retry_keeps_still_missing(self, tmp_path: Path) -> None:
+        """Se Spotify continuar sem resultados, row fica no unmatched."""
+        from peel.db import DB
+
+        db = DB(str(tmp_path / "test.db"))
+        db.init_schema()
+        db.record_unmatched("pitchfork_bnt", "Very Niche", "Bandcamp Only")
+
+        mock_sp = MagicMock()
+        mock_sp.search_track = MagicMock(return_value=[])
+
+        total, matched = _retry_unmatched(db, mock_sp, [])
+        assert total == 1
+        assert matched == 0
+        assert db.list_unmatched(30) == [("pitchfork_bnt", "Very Niche", "Bandcamp Only")]
+        db.close()
+
+    def test_retry_handles_empty_table(self, tmp_path: Path) -> None:
+        """Sem rows unmatched, retorna (0, 0) sem chamar Spotify."""
+        from peel.db import DB
+
+        db = DB(str(tmp_path / "test.db"))
+        db.init_schema()
+
+        mock_sp = MagicMock()
+        total, matched = _retry_unmatched(db, mock_sp, [])
+        assert (total, matched) == (0, 0)
+        mock_sp.search_track.assert_not_called()
         db.close()
 

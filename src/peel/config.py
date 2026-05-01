@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     db_path: str = "data/peel.db"
     match_threshold: int = 85
     peel_playlist_window_weeks: int = Field(default=2, alias="PEEL_PLAYLIST_WINDOW_WEEKS")
+    # Janela (dias) em que tentamos re-matchear tracks que falharam no Spotify.
+    # Motivo: blogs frequentemente publicam antes do release global de sexta, ou
+    # o track chega ao Spotify dias/semanas depois. 30 dias cobre ambos sem
+    # inflacionar a tabela indefinidamente.
+    unmatched_retry_days: int = Field(default=30, alias="PEEL_UNMATCHED_RETRY_DAYS")
 
     # Telegram opcional
     telegram_bot_token: str | None = Field(default=None, alias="TELEGRAM_BOT_TOKEN")

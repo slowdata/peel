@@ -717,3 +717,59 @@ class TestTracksInWindow:
         result = db.tracks_in_window("2026-W16", window=1)
         assert result == ["spotify:track:123"]
         assert len(result) == 1
+
+
+class TestUnmatchedRetryHelpers:
+    """list_unmatched, delete_unmatched, prune_unmatched."""
+
+    def test_list_unmatched_dedupes_and_filters_age(self, tmp_path: Path) -> None:
+        db = DB(str(tmp_path / "test.db"))
+        db.init_schema()
+
+        # 3 rows iguais (simula múltiplas runs) + 1 antiga
+        for _ in range(3):
+            db.record_unmatched("pitchfork_bnt", "Ms Ray", "Miss You")
+
+        # Row antiga: injectada directamente com seen_at no passado
+        old = (datetime.now(UTC)).replace(year=2020).isoformat()
+        db.conn.execute(
+            "INSERT INTO unmatched (source_id, artist, title, seen_at) VALUES (?,?,?,?)",
+            ("pitchfork_bnt", "Old", "Forgotten", old),
+        )
+        db.conn.commit()
+
+        rows = db.list_unmatched(max_age_days=30)
+        # Row antiga filtrada, duplicados colapsados
+        assert rows == [("pitchfork_bnt", "Ms Ray", "Miss You")]
+
+    def test_delete_unmatched_removes_all_matching(self, tmp_path: Path) -> None:
+        db = DB(str(tmp_path / "test.db"))
+        db.init_schema()
+
+        for _ in range(3):
+            db.record_unmatched("pitchfork_bnt", "Ms Ray", "Miss You")
+        db.record_unmatched("pitchfork_bnt", "Other", "Song")
+
+        deleted = db.delete_unmatched("pitchfork_bnt", "Ms Ray", "Miss You")
+        assert deleted == 3
+
+        remaining = db.list_unmatched(max_age_days=30)
+        assert remaining == [("pitchfork_bnt", "Other", "Song")]
+
+    def test_prune_unmatched_removes_old(self, tmp_path: Path) -> None:
+        db = DB(str(tmp_path / "test.db"))
+        db.init_schema()
+
+        db.record_unmatched("pitchfork_bnt", "Fresh", "Track")
+        old = datetime.now(UTC).replace(year=2020).isoformat()
+        db.conn.execute(
+            "INSERT INTO unmatched (source_id, artist, title, seen_at) VALUES (?,?,?,?)",
+            ("pitchfork_bnt", "Stale", "Song", old),
+        )
+        db.conn.commit()
+
+        pruned = db.prune_unmatched(max_age_days=30)
+        assert pruned == 1
+
+        remaining = db.list_unmatched(max_age_days=365 * 10)
+        assert remaining == [("pitchfork_bnt", "Fresh", "Track")]

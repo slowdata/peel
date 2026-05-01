@@ -535,9 +535,7 @@ class TheQuietus(RSSSource):
             return False
         if segments[0] != "quietus-reviews":
             return False
-        if not segments[1].endswith("-review"):
-            return False
-        return True
+        return segments[1].endswith("-review")
 
 
 class GorillaVsBear(RSSSource):

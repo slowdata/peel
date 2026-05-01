@@ -4,7 +4,88 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from peel.spotify_client import SpotifyClient
+from peel.spotify_client import SpotifyClient, _and_the_variant, _clean_for_query
+
+
+class TestCleanForQuery:
+    """Normalização de strings antes da search Spotify."""
+
+    def test_strip_feat_parens(self) -> None:
+        assert _clean_for_query("Miss You (feat. Nourished By Time)") == "Miss You"
+
+    def test_strip_ft_brackets(self) -> None:
+        assert _clean_for_query("Landgrab [ft. Earl Sweatshirt]") == "Landgrab"
+
+    def test_strip_curly_quotes(self) -> None:
+        assert _clean_for_query("\u201cLandgrab\u201d") == "Landgrab"
+
+    def test_collab_x_to_ampersand(self) -> None:
+        assert _clean_for_query("Shlohmo x SALEM") == "Shlohmo & SALEM"
+
+    def test_strip_residual_brackets(self) -> None:
+        assert _clean_for_query("Title [Album Version]") == "Title"
+
+    def test_collapse_whitespace(self) -> None:
+        assert _clean_for_query("  Hello   World  ") == "Hello World"
+
+    def test_preserves_normal_text(self) -> None:
+        assert _clean_for_query("Abigail Snail") == "Abigail Snail"
+
+
+class TestAndTheVariant:
+    def test_and_the_detected(self) -> None:
+        assert _and_the_variant("Ryan Davis And The Roadhouse Band") == (
+            "Ryan Davis & The Roadhouse Band"
+        )
+
+    def test_case_insensitive(self) -> None:
+        assert _and_the_variant("Artist and the Band") == "Artist & The Band"
+
+    def test_no_variant_when_absent(self) -> None:
+        assert _and_the_variant("Massive Attack") is None
+        assert _and_the_variant("Ryan Davis Roadhouse") is None
+
+
+class TestSearchTrackFallback:
+    """Verifica o fluxo de fallback And The no search_track."""
+
+    def test_uses_fallback_variant_when_primary_empty(self, mock_spotify_client):
+        client, mock_sp = mock_spotify_client
+
+        # Primeira chamada vazia; segunda (com variante) devolve um hit
+        hit = {
+            "tracks": {
+                "items": [
+                    {
+                        "uri": "spotify:track:xxx",
+                        "name": "New Threats From the Soul",
+                        "artists": [{"name": "Ryan Davis & The Roadhouse Band"}],
+                    }
+                ]
+            }
+        }
+        mock_sp.search.side_effect = [{"tracks": {"items": []}}, hit]
+
+        candidates = client.search_track(
+            "Ryan Davis And The Roadhouse Band",
+            "New Threats From the Soul",
+        )
+        assert len(candidates) == 1
+        assert candidates[0]["uri"] == "spotify:track:xxx"
+        # Primeira query com "And The", segunda com "& The"
+        first_q = mock_sp.search.call_args_list[0].kwargs["q"]
+        second_q = mock_sp.search.call_args_list[1].kwargs["q"]
+        assert "And The" in first_q
+        assert "& The" in second_q
+
+    def test_feat_stripped_from_query(self, mock_spotify_client):
+        client, mock_sp = mock_spotify_client
+        mock_sp.search.return_value = {"tracks": {"items": []}}
+
+        client.search_track("Ms Ray", "Miss You (feat. Nourished By Time)")
+        query = mock_sp.search.call_args_list[0].kwargs["q"]
+        assert "feat" not in query.lower()
+        assert "Miss You" in query
 
 
 @pytest.fixture

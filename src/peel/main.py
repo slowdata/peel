@@ -21,6 +21,7 @@ import structlog
 from peel.config import settings
 from peel.db import DB, iso_week
 from peel.matcher import best_match
+from peel.models import Track
 from peel.sources.rss import GorillaVsBear, PitchforkBNT, StereogumNewMusic, TheQuietus
 from peel.spotify_client import SpotifyClient
 from peel.telegram import send_digest
@@ -62,8 +63,18 @@ def run() -> None:
     new_track_entries: list[tuple[str, str, str | None]] = []  # (artist, title, url)
     new_album_entries: list[tuple[str, str, str | None]] = []  # (artist, album, url)
 
+    # Métricas do retry de unmatched (reportadas no log final)
+    retried_total = 0
+    retried_matched = 0
+
     try:
         db.init_schema()
+
+        # 0. Retry de tracks unmatched recentes — muitos blogs publicam picks
+        # antes do release global de sexta, ou os tracks chegam ao Spotify com
+        # dias/semanas de atraso. Reprocessa antes das sources novas para maximizar
+        # chances de recuperação.
+        retried_total, retried_matched = _retry_unmatched(db, sp, new_track_entries)
 
         # Sources a processar (hardcoded por agora, virá de config v2)
         sources = [PitchforkBNT(), StereogumNewMusic(), TheQuietus(), GorillaVsBear()]
@@ -202,6 +213,11 @@ def run() -> None:
                 db.update_source_state(source.id, "error", str(e))
                 continue
 
+        # 2.5 Prune rows unmatched expiradas (desistimos após a janela de retry)
+        pruned = db.prune_unmatched(settings.unmatched_retry_days)
+        if pruned:
+            log.info("unmatched.pruned", count=pruned, max_age_days=settings.unmatched_retry_days)
+
         # 3. Rotação: substitui playlist pelos URIs da janela recente
         current_week = iso_week(datetime.now(UTC))
         window_uris = db.tracks_in_window(current_week, settings.peel_playlist_window_weeks)
@@ -241,8 +257,77 @@ def run() -> None:
             tracks_added=tracks_added,
             tracks_unmatched=tracks_unmatched,
             albums_added=albums_added,
+            retried_total=retried_total,
+            retried_matched=retried_matched,
             duration_seconds=duration_seconds,
         )
+
+
+def _retry_unmatched(
+    db: DB,
+    sp: SpotifyClient,
+    new_track_entries: list[tuple[str, str, str | None]],
+) -> tuple[int, int]:
+    """Re-tenta tracks unmatched recentes contra o Spotify.
+
+    Para cada (source_id, artist, title) unmatched dentro da janela configurada:
+    - Procura candidatos no Spotify (com query normalizada — fix #1)
+    - Se houver match acima do threshold, regista em tracks e apaga do unmatched
+    - Se continuar sem match, fica — será tentada na próxima run até expirar.
+
+    Returns:
+        (total_retried, matched)
+    """
+    rows = db.list_unmatched(settings.unmatched_retry_days)
+    if not rows:
+        return 0, 0
+
+    total = len(rows)
+    matched = 0
+
+    log.info("unmatched.retry_start", pending=total)
+
+    for source_id, artist, title in rows:
+        try:
+            candidates = sp.search_track(artist, title, limit=5)
+            if not candidates:
+                continue
+
+            # Usa Track temporário só para alimentar o matcher
+            track = Track(source_id=source_id, artist=artist, title=title)
+            uri = best_match(track, candidates, threshold=settings.match_threshold)
+            if uri is None:
+                continue
+
+            if db.already_added(uri):
+                # Outra source ou run anterior já adicionou esta URI; só limpa
+                db.delete_unmatched(source_id, artist, title)
+                matched += 1
+                continue
+
+            db.record_track(uri, source_id, artist, title, None)
+            db.delete_unmatched(source_id, artist, title)
+            new_track_entries.append((artist, title, None))
+            matched += 1
+            log.info(
+                "unmatched.retry_matched",
+                source_id=source_id,
+                artist=artist,
+                title=title,
+                uri=uri,
+            )
+        except Exception as e:
+            log.exception(
+                "unmatched.retry_failed",
+                source_id=source_id,
+                artist=artist,
+                title=title,
+                error=str(e),
+            )
+            continue
+
+    log.info("unmatched.retry_done", total=total, matched=matched)
+    return total, matched
 
 
 if __name__ == "__main__":

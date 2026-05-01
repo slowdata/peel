@@ -11,6 +11,8 @@ Decisões de design:
 
 from __future__ import annotations
 
+import re
+
 import spotipy
 import structlog
 from spotipy.cache_handler import MemoryCacheHandler
@@ -19,6 +21,41 @@ from spotipy.oauth2 import SpotifyOAuth
 from peel.config import settings
 
 log = structlog.get_logger()
+
+
+def _clean_for_query(s: str) -> str:
+    """Limpa uma string para ser enviada ao Spotify search.
+
+    A API de search do Spotify é sensível a ruído como `(feat. X)`, `[ft. X]`,
+    curly quotes e brackets soltos — essas strings viajam literalmente na query
+    e reduzem drasticamente o recall. Esta função remove esse ruído mas
+    preserva o sinal essencial (nome do artista e título).
+    """
+    # (feat. X), (ft. X), (Feat. X) — parênteses
+    s = re.sub(r"\s*\(\s*f(?:ea)?t\.?\s*[^)]*\)\s*", " ", s, flags=re.IGNORECASE)
+    # [feat. X], [ft. X] — brackets
+    s = re.sub(r"\s*\[\s*f(?:ea)?t\.?\s*[^\]]*\]\s*", " ", s, flags=re.IGNORECASE)
+    # Brackets residuais (ex: "Title [Album Version]")
+    s = re.sub(r"\s*\[[^\]]*\]\s*", " ", s)
+    # Aspas curly e direitas
+    s = re.sub(r"[\u201c\u201d\u2018\u2019\"']", "", s)
+    # Separador de colaboração "x" (Shlohmo x SALEM) → &
+    s = re.sub(r"\s+x\s+", " & ", s)
+    # Whitespace múltiplo
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def _and_the_variant(artist: str) -> str | None:
+    """Se o artista contém ' And The ', devolve variante com '& The' (ou vice-versa).
+
+    Spotify guarda muitas vezes o nome canónico com '&' (ex: 'Ryan Davis & The
+    Roadhouse Band'); blogs escrevem com 'And The'. Serve como fallback quando
+    a query primária não devolve nada.
+    """
+    if re.search(r"\s+and\s+the\s+", artist, flags=re.IGNORECASE):
+        return re.sub(r"\s+and\s+the\s+", " & The ", artist, flags=re.IGNORECASE)
+    return None
 
 # Scopes necessários para add_to_playlist (write).
 SCOPES = "playlist-modify-private playlist-modify-public"
@@ -70,21 +107,39 @@ class SpotifyClient:
             Lista de dicts com {"uri": ..., "name": ..., "artists": [str, ...]}.
             Lista vazia [] se não encontrar ou em erro.
 
-        Normalização e matching fuzzy ficam para o matcher.py (Passo 5).
+        Normalização e matching fuzzy ficam para o matcher.py (Passo 5). A
+        string de query é limpa (feat./brackets/quotes) para maximizar recall,
+        e se a primeira tentativa for vazia testa-se uma variante `And The` → `&`
+        no artista (comum no Spotify).
         """
-        query = f"{artist} {title}"
+        clean_artist = _clean_for_query(artist)
+        clean_title = _clean_for_query(title)
 
+        # Tentativa primária com query normalizada
+        candidates = self._do_search(f"{clean_artist} {clean_title}", limit)
+        if candidates:
+            return candidates
+
+        # Fallback: variante "And The" → "& The" no artista
+        variant = _and_the_variant(clean_artist)
+        if variant:
+            log.debug(
+                "spotify.retry_variant", original=clean_artist, variant=variant
+            )
+            candidates = self._do_search(f"{variant} {clean_title}", limit)
+            if candidates:
+                return candidates
+
+        log.warning("spotify.no_match", artist=artist, title=title)
+        return []
+
+    def _do_search(self, query: str, limit: int) -> list[dict]:
+        """Executa uma query no Spotify e devolve lista de candidatos."""
         try:
             results = self.sp.search(q=query, type="track", limit=limit)
             items = results.get("tracks", {}).get("items", [])
 
             if not items:
-                log.warning(
-                    "spotify.no_match",
-                    query=query,
-                    artist=artist,
-                    title=title,
-                )
                 return []
 
             candidates = [
@@ -96,21 +151,11 @@ class SpotifyClient:
                 for item in items
             ]
 
-            log.debug(
-                "spotify.search_results",
-                query=query,
-                count=len(candidates),
-            )
-
+            log.debug("spotify.search_results", query=query, count=len(candidates))
             return candidates
 
         except Exception as e:
-            log.exception(
-                "spotify.search_failed",
-                artist=artist,
-                title=title,
-                error=str(e),
-            )
+            log.exception("spotify.search_failed", query=query, error=str(e))
             return []
 
     def add_to_playlist(self, playlist_id: str, uris: list[str]) -> None:

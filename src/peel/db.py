@@ -268,6 +268,50 @@ class DB:
         self.conn.commit()
         log.debug("db.unmatched_recorded", source_id=source_id, artist=artist, title=title)
 
+    def list_unmatched(self, max_age_days: int) -> list[tuple[str, str, str]]:
+        """Lista distinct (source_id, artist, title) de unmatched recentes.
+
+        Args:
+            max_age_days: apenas rows com seen_at nos últimos N dias
+
+        Returns:
+            Lista de tuplos (source_id, artist, title), sem duplicados.
+        """
+        cutoff = (datetime.now(UTC) - timedelta(days=max_age_days)).isoformat()
+        cursor = self.conn.execute(
+            """
+            SELECT DISTINCT source_id, artist, title FROM unmatched
+            WHERE seen_at >= ?
+            """,
+            (cutoff,),
+        )
+        return [tuple(row) for row in cursor.fetchall()]
+
+    def delete_unmatched(self, source_id: str, artist: str, title: str) -> int:
+        """Remove todas as rows unmatched que batam (source_id, artist, title).
+
+        Retorna o número de rows apagadas.
+        """
+        cursor = self.conn.execute(
+            """
+            DELETE FROM unmatched
+            WHERE source_id = ? AND artist = ? AND title = ?
+            """,
+            (source_id, artist, title),
+        )
+        self.conn.commit()
+        return cursor.rowcount
+
+    def prune_unmatched(self, max_age_days: int) -> int:
+        """Remove rows unmatched mais antigas que N dias. Retorna rows apagadas."""
+        cutoff = (datetime.now(UTC) - timedelta(days=max_age_days)).isoformat()
+        cursor = self.conn.execute(
+            "DELETE FROM unmatched WHERE seen_at < ?",
+            (cutoff,),
+        )
+        self.conn.commit()
+        return cursor.rowcount
+
     def record_album(self, artist: str, album: str, source_id: str, source_url: str | None) -> bool:
         """Insere um álbum se novo. Retorna True se inserido, False se já existia.
 

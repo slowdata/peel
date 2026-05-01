@@ -508,7 +508,10 @@ class TestTheQuietusExtractArtistTitle:
     def test_direct_review_extracts(self) -> None:
         source = TheQuietus()
         result = source._extract_artist_title(
-            self._entry("Abigail Snail – Rad Berms", "/quietus-reviews/abigail-snail-rad-berms-review/")
+            self._entry(
+                "Abigail Snail – Rad Berms",
+                "/quietus-reviews/abigail-snail-rad-berms-review/",
+            )
         )
         assert result == ("Abigail Snail", "Rad Berms")
 
