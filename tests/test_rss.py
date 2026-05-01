@@ -6,6 +6,7 @@ import pytest
 
 from peel.sources.rss import (
     GorillaVsBear,
+    GuardianMusicAlbums,
     PitchforkBestAlbums,
     PitchforkBNT,
     StereogumNewMusic,
@@ -32,6 +33,11 @@ class TestSourceKind:
     def test_pitchfork_best_albums_kind_is_album(self) -> None:
         """PitchforkBestAlbums.kind == 'album'."""
         source = PitchforkBestAlbums()
+        assert source.kind == "album"
+
+    def test_guardian_music_albums_kind_is_album(self) -> None:
+        """GuardianMusicAlbums.kind == 'album'."""
+        source = GuardianMusicAlbums()
         assert source.kind == "album"
 
 
@@ -254,6 +260,57 @@ class TestPitchforkBestAlbumsFetchFixture:
         assert ("ratboys", "singin\u2019 to an empty chair") in tracks_dict
         t2 = tracks_dict[("ratboys", "singin\u2019 to an empty chair")]
         assert "ratboys-singin-to-an-empty-chair" in t2.source_url
+
+
+class TestGuardianMusicAlbums:
+    """Testa a source de álbuns do Guardian Music."""
+
+    @pytest.fixture
+    def fixture_path(self) -> Path:
+        return Path(__file__).parent / "fixtures" / "guardian_music.xml"
+
+    def test_extract_album_review_title(self) -> None:
+        source = GuardianMusicAlbums()
+        entry = {
+            "title": "Kneecap: Fenian review | Alexis Petridis's album of the week",
+            "link": "https://www.theguardian.com/music/example",
+        }
+        assert source._extract_artist_title(entry) == ("Kneecap", "Fenian")
+
+    def test_ignores_non_album_review_title(self) -> None:
+        source = GuardianMusicAlbums()
+        entry = {
+            "title": "Add to playlist: the week’s best new tracks",
+            "link": "https://www.theguardian.com/music/example",
+        }
+        assert source._extract_artist_title(entry) is None
+
+    def test_fetch_from_fixture(self, fixture_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        fixture_url = fixture_path.as_uri()
+        monkeypatch.setattr(GuardianMusicAlbums, "url", fixture_url)
+
+        source = GuardianMusicAlbums()
+        albums = source.fetch()
+
+        assert len(albums) >= 5
+        for album in albums:
+            assert album.source_id == "guardian_music_albums"
+            assert album.artist
+            assert album.title
+            assert album.source_url.startswith("https://www.theguardian.com/music/")
+
+    def test_known_albums_in_fixture(
+        self, fixture_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fixture_url = fixture_path.as_uri()
+        monkeypatch.setattr(GuardianMusicAlbums, "url", fixture_url)
+
+        source = GuardianMusicAlbums()
+        albums = source.fetch()
+        albums_dict = {(album.artist.lower(), album.title.lower()): album for album in albums}
+
+        assert ("kneecap", "fenian") in albums_dict
+        assert ("kacey musgraves", "middle of nowhere") in albums_dict
 
 
 class TestStereogumExtractArtistTitle:
@@ -649,23 +706,17 @@ class TestGorillaVsBearExtractArtistTitle:
 
     def test_editorial_list_rejected(self) -> None:
         source = GorillaVsBear()
-        result = source._extract_artist_title(
-            self._entry("Gorilla vs. Bear's Songs of 2025")
-        )
+        result = source._extract_artist_title(self._entry("Gorilla vs. Bear's Songs of 2025"))
         assert result is None
 
     def test_photos_post_rejected(self) -> None:
         source = GorillaVsBear()
-        result = source._extract_artist_title(
-            self._entry("photos: Oklou – live in Los Angeles")
-        )
+        result = source._extract_artist_title(self._entry("photos: Oklou – live in Los Angeles"))
         assert result is None
 
     def test_live_review_rejected(self) -> None:
         source = GorillaVsBear()
-        result = source._extract_artist_title(
-            self._entry("shinetiac – live at café blue gelato")
-        )
+        result = source._extract_artist_title(self._entry("shinetiac – live at café blue gelato"))
         assert result is None
 
     def test_no_dash_rejected(self) -> None:

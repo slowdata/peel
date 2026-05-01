@@ -22,7 +22,13 @@ from peel.config import settings
 from peel.db import DB, iso_week
 from peel.matcher import best_match
 from peel.models import Track
-from peel.sources.rss import GorillaVsBear, PitchforkBNT, StereogumNewMusic, TheQuietus
+from peel.sources.rss import (
+    GorillaVsBear,
+    GuardianMusicAlbums,
+    PitchforkBNT,
+    StereogumNewMusic,
+    TheQuietus,
+)
 from peel.spotify_client import SpotifyClient
 from peel.telegram import send_digest
 
@@ -85,7 +91,13 @@ def run() -> None:
         playlist_slots_used = tracks_added
 
         # Sources a processar (hardcoded por agora, virá de config v2)
-        sources = [PitchforkBNT(), StereogumNewMusic(), TheQuietus(), GorillaVsBear()]
+        sources = [
+            PitchforkBNT(),
+            StereogumNewMusic(),
+            TheQuietus(),
+            GorillaVsBear(),
+            GuardianMusicAlbums(),
+        ]
 
         for source in sources:
             sources_processed += 1

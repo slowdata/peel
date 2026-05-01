@@ -380,6 +380,40 @@ class PitchforkBestAlbums(RSSSource):
         return slug.replace("-", " ").title()
 
 
+class GuardianMusicAlbums(RSSSource):
+    """The Guardian Music — album reviews.
+
+    Feed: https://www.theguardian.com/music/rss
+
+    O feed mistura notícias, entrevistas, live reviews e críticas. Para evitar ruído,
+    esta source só extrai títulos no formato de crítica de álbum:
+
+    ``Artist: Album review ...``
+
+    Produz items `kind = "album"`: entram no relatório, não na playlist.
+    """
+
+    id = "guardian_music_albums"
+    name = "The Guardian Music — Album Reviews"
+    url = "https://www.theguardian.com/music/rss"
+    kind = "album"
+
+    def _extract_artist_title(self, entry: dict) -> tuple[str, str] | None:
+        title = _strip_html_tags(entry.get("title", "").strip())
+        if not title:
+            return None
+
+        match = re.match(r"^(?P<artist>[^:]+):\s+(?P<album>.+?)\s+review\b", title)
+        if not match:
+            return None
+
+        artist = match.group("artist").strip()
+        album = match.group("album").strip()
+        if not artist or not album:
+            return None
+        return artist, album
+
+
 class StereogumNewMusic(RSSSource):
     """Stereogum — New Music.
 

@@ -7,7 +7,13 @@ import pytest
 
 from peel.main import _retry_unmatched, run
 from peel.models import Track
-from peel.sources.rss import GorillaVsBear, PitchforkBNT, StereogumNewMusic, TheQuietus
+from peel.sources.rss import (
+    GorillaVsBear,
+    GuardianMusicAlbums,
+    PitchforkBNT,
+    StereogumNewMusic,
+    TheQuietus,
+)
 
 
 class TestMainIntegration:
@@ -60,6 +66,7 @@ class TestMainIntegration:
 
         with (
             patch("peel.sources.rss.PitchforkBNT.url", fixture_url),
+            patch.object(GuardianMusicAlbums, "fetch", return_value=[]),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
             patch("peel.main.send_digest"),  # Mocka Telegram
         ):
@@ -119,6 +126,7 @@ class TestMainIntegration:
 
         with (
             patch("peel.sources.rss.PitchforkBNT.url", fixture_url),
+            patch.object(GuardianMusicAlbums, "fetch", return_value=[]),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
             patch("peel.main.send_digest"),  # Mocka Telegram
         ):
@@ -204,6 +212,52 @@ class TestMainIntegration:
 
         db.close()
 
+    def test_run_records_guardian_album_source(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        db_path = tmp_path / "test.db"
+        monkeypatch.setenv("PEEL_PLAYLIST_ID", "spotify:playlist:test")
+        monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test_id")
+        monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "test_secret")
+        monkeypatch.setenv("SPOTIFY_REFRESH_TOKEN", "test_token")
+
+        from peel import config as config_module
+
+        monkeypatch.setattr(config_module.settings, "db_path", str(db_path))
+
+        album = Track(
+            source_id="guardian_music_albums",
+            artist="Kneecap",
+            title="Fenian",
+            source_url="https://www.theguardian.com/music/example",
+        )
+        mock_sp = MagicMock()
+        mock_sp.search_track = MagicMock(return_value=[])
+        mock_sp.replace_playlist_items = MagicMock()
+
+        with (
+            patch.object(PitchforkBNT, "fetch", return_value=[]),
+            patch.object(StereogumNewMusic, "fetch", return_value=[]),
+            patch.object(TheQuietus, "fetch", return_value=[]),
+            patch.object(GorillaVsBear, "fetch", return_value=[]),
+            patch.object(GuardianMusicAlbums, "fetch", return_value=[album]),
+            patch("peel.main.SpotifyClient", return_value=mock_sp),
+            patch("peel.main.send_digest"),
+        ):
+            run()
+
+        from peel.db import DB
+
+        db = DB(str(db_path))
+        db.init_schema()
+        row = db.conn.execute(
+            "SELECT artist, album, source_id FROM albums WHERE artist = ? AND album = ?",
+            ("Kneecap", "Fenian"),
+        ).fetchone()
+        assert row == ("Kneecap", "Fenian", "guardian_music_albums")
+        mock_sp.search_track.assert_not_called()
+        db.close()
+
 
 class TestPlaylistSafetyCaps:
     def test_run_limits_new_tracks_per_source(
@@ -238,6 +292,7 @@ class TestPlaylistSafetyCaps:
             patch.object(StereogumNewMusic, "fetch", return_value=[]),
             patch.object(TheQuietus, "fetch", return_value=[]),
             patch.object(GorillaVsBear, "fetch", return_value=[]),
+            patch.object(GuardianMusicAlbums, "fetch", return_value=[]),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
             patch("peel.main.send_digest"),
         ):
@@ -293,6 +348,7 @@ class TestPlaylistSafetyCaps:
             ),
             patch.object(TheQuietus, "fetch", return_value=[track("thequietus", 3)]),
             patch.object(GorillaVsBear, "fetch", return_value=[track("gorillavsbear", 4)]),
+            patch.object(GuardianMusicAlbums, "fetch", return_value=[]),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
             patch("peel.main.send_digest"),
         ):
@@ -336,6 +392,7 @@ class TestPlaylistSafetyCaps:
             patch.object(StereogumNewMusic, "fetch", return_value=[]),
             patch.object(TheQuietus, "fetch", return_value=[]),
             patch.object(GorillaVsBear, "fetch", return_value=[]),
+            patch.object(GuardianMusicAlbums, "fetch", return_value=[]),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
             patch("peel.main.send_digest"),
         ):
@@ -516,6 +573,7 @@ class TestConsensusAttribution:
             patch.object(StereogumNewMusic, "fetch", return_value=[shared_track_2]),
             patch.object(TheQuietus, "fetch", return_value=[shared_track_3]),
             patch.object(GorillaVsBear, "fetch", return_value=[shared_track_4]),
+            patch.object(GuardianMusicAlbums, "fetch", return_value=[]),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
             patch("peel.main.send_digest"),
         ):
