@@ -10,6 +10,7 @@ Backoffice local para:
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import subprocess
 import tomllib
@@ -25,6 +26,7 @@ from rich.table import Table
 
 from peel.config import settings
 from peel.db import DB, FEEDBACK_RATINGS
+from peel.doctor_sources import inspect_registered_sources
 from peel.main import run as run_pipeline
 from peel.report import generate_weekly_report
 from peel.scoring import build_source_scores
@@ -33,7 +35,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 console = Console(width=120)
 app = typer.Typer(add_completion=False, help="Peel — música curada, sincronizada e visível.")
 sync_app = typer.Typer(add_completion=False, help="Sincronização local/GitHub.")
+doctor_app = typer.Typer(add_completion=False, help="Diagnósticos do Peel.")
 app.add_typer(sync_app, name="sync")
+app.add_typer(doctor_app, name="doctor")
 
 
 @dataclass(slots=True)
@@ -361,9 +365,50 @@ def sync_push() -> None:
     console.print("Push completed.")
 
 
-@app.command()
-def doctor() -> None:
+@doctor_app.callback(invoke_without_command=True)
+def doctor(ctx: typer.Context) -> None:
     """Valida o ambiente local do Peel."""
+    if ctx.invoked_subcommand is not None:
+        return
+    _print_doctor_overview()
+
+
+@doctor_app.command("sources")
+def doctor_sources(json_output: bool = typer.Option(False, "--json", help="Saída JSON")) -> None:
+    """Valida a registry de sources disponível no repositório."""
+    results = inspect_registered_sources()
+    if json_output:
+        typer.echo(
+            json.dumps([result.to_dict() for result in results], ensure_ascii=False, indent=2)
+        )
+        return
+
+    if not results:
+        console.print("Sem sources para validar.")
+        return
+
+    table = Table(title="Doctor sources")
+    table.add_column("Source", style="bold")
+    table.add_column("Type")
+    table.add_column("HTTP", justify="right")
+    table.add_column("Entries", justify="right")
+    table.add_column("OK")
+    table.add_column("Note")
+
+    for result in results:
+        table.add_row(
+            result.name,
+            result.type,
+            str(result.http_status),
+            str(result.entries),
+            _yes_no(result.ok),
+            result.note,
+        )
+
+    console.print(table)
+
+
+def _print_doctor_overview() -> None:
     db_path = _resolve_path(settings.db_path)
     env_path = PROJECT_ROOT / ".env"
     pyproject_path = PROJECT_ROOT / "pyproject.toml"

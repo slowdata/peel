@@ -99,6 +99,14 @@ uv run ruff format src/ tests/
 uv run ruff check src/ tests/
 ```
 
+### Doctor
+
+```bash
+uv run peel doctor
+uv run peel doctor sources
+uv run peel doctor sources --json
+```
+
 ### Source scoring
 
 ```bash
