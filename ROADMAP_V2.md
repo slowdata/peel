@@ -1,11 +1,59 @@
 # Peel v2 Roadmap — CLI-first backoffice, consenso e feedback
 
-> Estado: plano de trabalho para o próximo agent executor.
-> Revisor esperado: Opus.
-> Executor recomendado: Sonnet 4.5.
+> Estado em 2026-05-02: v2 CLI-first funcional e sincronizada.
+> Sprints 0–6 e 8 concluídos; fixes de segurança de playlist, freshness, Guardian albums,
+> Quietus como álbum/contexto e links externos para unmatched também concluídos.
 >
-> Regra-mãe: implementar em fatias pequenas. Cada sprint deve deixar o projecto funcional,
-> testado e fácil de rever.
+> Regra-mãe continua válida: implementar em fatias pequenas. Cada sprint deve deixar o projecto
+> funcional, testado e fácil de rever.
+
+---
+
+## Estado operacional — 2026-05-02
+
+### Feito
+
+- CLI Typer/Rich como backoffice principal:
+  - `peel run`
+  - `peel status`
+  - `peel tracks`
+  - `peel tracks --sources`
+  - `peel feedback`
+  - `peel report`
+  - `peel sources`
+  - `peel doctor`
+  - `peel doctor sources`
+  - `peel sync status|pull|push`
+- Source attribution e consenso preservados: a mesma URI pode ter várias fontes.
+- Feedback local explícito (`love|like|meh|skip|ban`) guardado em SQLite.
+- Relatórios semanais Markdown em `data/reports/YYYY-Www.md`.
+- Sync local/GitHub para DB e relatórios.
+- Source scoring inicial com `peel sources --weeks N --min-tracks N --json`.
+- Validação de registry com `peel doctor sources`.
+- Caps de segurança:
+  - `PEEL_MAX_TRACKS_PER_SOURCE`
+  - `PEEL_MAX_TRACKS_PER_RUN`
+  - `PEEL_MAX_SOURCE_ITEM_AGE_DAYS`
+- `source_runs` criado para histórico real por fonte/run.
+- Guardian Music entra como fonte de álbuns/contexto, não playlist directa.
+- The Quietus entra como `album`, reduzindo unmatched falso de reviews.
+- `unmatched.source_url` preserva links externos para ouvir fora do Spotify.
+- Telegram digest mostra tracks, álbuns e “escutas externas”.
+
+### Última validação conhecida
+
+```bash
+uv run pytest      # 212 passed
+uv run ruff check  # OK
+```
+
+### Estado Git conhecido
+
+- `main` sincronizado com `origin/main`.
+- Últimos commits relevantes:
+  - `7257a9f feat(external): preserve unmatched source links`
+  - `389824f chore: update peel local feedback/state`
+- Nota: push SSH pode falhar se a chave não estiver carregada; workaround usado com `gh`/HTTPS.
 
 ---
 
@@ -43,22 +91,20 @@
 
 ### Estado actual importante
 
-O repo pode estar com alterações locais não commitadas, incluindo:
+Antes de começar trabalho novo, o agent deve mostrar sempre:
+
+```bash
+git status --short
+git diff --stat
+```
+
+O estado versionável intencional inclui:
 
 - `data/peel.db`
-- `src/peel/config.py`
-- `src/peel/db.py`
-- `src/peel/main.py`
-- `src/peel/spotify_client.py`
-- `tests/*`
-- `music_sources/`
+- `data/reports/`
 
-Antes de começar trabalho novo, o agent deve mostrar o estado e perguntar se deve:
-
-1. continuar por cima;
-2. separar em commit próprio;
-3. fazer stash;
-4. abortar.
+Não adicionar secrets/tokens/user IDs sensíveis à DB. Se `data/peel.db` estiver modificado,
+confirmar se é estado local esperado antes de o commitar.
 
 ---
 
@@ -750,46 +796,59 @@ Mock de httpx/feedparser ou fixture local. Não depender de internet nos testes.
 
 ## 12. Ordem recomendada de execução
 
-1. **Sprint 0** — estabilizar baseline.
-2. **Sprint 1** — CLI base.
-3. **Sprint 2** — attribution/consenso.
-4. **Sprint 3** — feedback.
-5. **Sprint 4** — report semanal.
-6. **Sprint 5** — sync.
-7. **Sprint 6** — source scoring.
-8. **Sprint 8** — doctor sources.
-9. **Sprint 7** — novas fontes, uma por uma.
+### Concluído
 
-Nota: `doctor sources` pode subir antes das novas fontes se for útil.
+- [x] **Sprint 0** — estabilizar baseline.
+- [x] **Sprint 1** — CLI base.
+- [x] **Sprint 2** — attribution/consenso.
+- [x] **Sprint 3** — feedback.
+- [x] **Sprint 4** — report semanal.
+- [x] **Sprint 5** — sync.
+- [x] **Sprint 6** — source scoring.
+- [x] **Sprint 8** — doctor sources.
+- [x] Caps/freshness: limites por fonte/run e filtro temporal.
+- [x] Guardian Music como álbum/contexto.
+- [x] The Quietus como álbum/contexto.
+- [x] Unmatched com `source_url` e escutas externas no Telegram/report.
+
+### Próximo trabalho recomendado
+
+1. **Sprint 7 incremental** — adicionar novas fontes uma a uma, começando por Bandcamp Daily como
+   `context`/external inbox, não playlist directa.
+2. Rever `source_runs` após algumas semanas de histórico e decidir se `peel sources` deve usar
+   `fetched_count`, `fresh_count`, `processed_count`, `skipped_stale` e `skipped_cap`.
+3. Melhorar scoring com estado “insufficient data” para fontes com poucas tracks.
+4. Só depois considerar matcher mais agressivo para casos Spotify difíceis.
 
 ---
 
-## 13. Primeiro pedido recomendado para o Sonnet
+## 13. Próximo pedido recomendado para agente pequeno
 
-Usar este prompt:
+Usar tarefas fechadas, sem expandir scope:
 
 ```text
-Lê ROADMAP_V2.md inteiro.
+Lê ROADMAP_V2.md e TODO.md.
 
-Implementa apenas Sprint 0 + uma proposta técnica para Sprint 1.
-Não implementes ainda a CLI.
+Implementa apenas Bandcamp Daily como fonte context/external, sem adicionar tracks à playlist.
 
-Tarefas:
-1. Mostra git status/diff stat.
-2. Corre pytest e ruff.
-3. Resume as alterações locais existentes e sugere o que deve ser commitado/stashado antes da CLI.
-4. Verifica pyproject.toml e propõe exactamente que dependências/entrypoint seriam alterados no Sprint 1.
-5. Não faças commit.
-6. Não alteres ficheiros excepto, se necessário, um ficheiro temporário de notas. Preferencialmente não alteres nada.
+Requisitos:
+1. Validar URL/feed.
+2. Criar fixture real em tests/fixtures/.
+3. Criar parser com kind="context" ou kind="album" conforme os dados reais.
+4. Garantir que nada desta fonte entra em Spotify matching/playlist.
+5. Garantir que aparece em report/Telegram como contexto/escuta externa quando houver URL útil.
+6. Adicionar testes.
+7. Correr uv run ruff format, uv run ruff check e uv run pytest.
+8. Não fazer commit sem mostrar diff.
 
-Depois pára para revisão Opus/Dias.
+Depois pára.
 ```
 
-Se o baseline estiver aceite, segundo prompt:
+Prompt alternativo de manutenção:
 
 ```text
-Implementa apenas Sprint 1 do ROADMAP_V2.md: CLI base com Typer + Rich.
-Não mexas em attribution/feedback/reports ainda.
-Não faças commit.
-Mostra ficheiros alterados, pytest, ruff e exemplos de output da CLI.
+Lê ROADMAP_V2.md e TODO.md.
+
+Não implementes features. Apenas revê source_runs e propõe como integrar histórico real no
+peel sources/scoring. Mostra plano e queries SQLite necessárias. Não alteres ficheiros.
 ```
