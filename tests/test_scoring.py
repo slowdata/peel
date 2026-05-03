@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -173,6 +174,75 @@ class TestBuildSourceScores:
 
 
 class TestSourcesCli:
+    def test_sources_command_renders_json(self, tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+        db_path = tmp_path / "peel.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        now = datetime.now(UTC)
+        _insert_track(
+            db,
+            uri="spotify:track:1",
+            source_id="source-a",
+            artist="Artist A",
+            title="Track A",
+            added_at=now.isoformat(),
+        )
+        db.upsert_feedback("spotify:track:1", "love", None)
+        db.close()
+
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+
+        result = runner.invoke(cli.app, ["sources", "--weeks", "4", "--json"])
+
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload[0]["source_id"] == "source-a"
+        assert payload[0]["tracks_matched"] == 1
+        assert payload[0]["score"] == 22.0
+
+    def test_sources_command_min_tracks_filters_by_tracks_matched(
+        self,
+        tmp_path: Path,
+        monkeypatch: MonkeyPatch,
+    ) -> None:
+        db_path = tmp_path / "peel.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        now = datetime.now(UTC).isoformat()
+        _insert_track(
+            db,
+            uri="spotify:track:1",
+            source_id="source-a",
+            artist="Artist A",
+            title="Track A",
+            added_at=now,
+        )
+        _insert_track(
+            db,
+            uri="spotify:track:2",
+            source_id="source-b",
+            artist="Artist B",
+            title="Track B",
+            added_at=now,
+        )
+        _insert_track(
+            db,
+            uri="spotify:track:3",
+            source_id="source-b",
+            artist="Artist C",
+            title="Track C",
+            added_at=now,
+        )
+        db.close()
+
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+
+        result = runner.invoke(cli.app, ["sources", "--weeks", "4", "--min-tracks", "2"])
+
+        assert result.exit_code == 0
+        assert "source-b" in result.stdout
+        assert "source-a" not in result.stdout
+
     def test_sources_command_renders_table(self, tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
         db_path = tmp_path / "peel.db"
         db = DB(str(db_path))

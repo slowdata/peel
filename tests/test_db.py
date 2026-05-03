@@ -12,17 +12,18 @@ class TestInitSchema:
     """Testa a inicialização idempotente do schema."""
 
     def test_init_schema_creates_tables(self, tmp_path: Path) -> None:
-        """init_schema() cria as 5 tabelas."""
+        """init_schema() cria as tabelas."""
         db_path = tmp_path / "test.db"
         db = DB(str(db_path))
         db.init_schema()
 
-        # Verifica que as 5 tabelas existem
+        # Verifica que as tabelas esperadas existem
         cursor = db.conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
         tables = [row[0] for row in cursor.fetchall()]
 
         assert "albums" in tables
         assert "feedback" in tables
+        assert "source_runs" in tables
         assert "sources_state" in tables
         assert "tracks" in tables
         assert "unmatched" in tables
@@ -36,10 +37,17 @@ class TestInitSchema:
         db.init_schema()
         db.init_schema()  # Não deve falhar
 
-        # Ainda temos as 5 tabelas
-        cursor = db.conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table'")
-        table_count = cursor.fetchone()[0]
-        assert table_count == 5
+        # Ainda temos as tabelas esperadas
+        cursor = db.conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = {row[0] for row in cursor.fetchall()}
+        assert {
+            "albums",
+            "feedback",
+            "source_runs",
+            "sources_state",
+            "tracks",
+            "unmatched",
+        }.issubset(tables)
 
     def test_db_directory_created(self, tmp_path: Path) -> None:
         """DB cria o diretório pai se não existir."""
@@ -48,6 +56,75 @@ class TestInitSchema:
         db.init_schema()
 
         assert nested_path.exists()
+
+
+class TestSourceRunsSchema:
+    def test_init_schema_creates_source_runs_index(self, tmp_path: Path) -> None:
+        db = DB(str(tmp_path / "test.db"))
+        db.init_schema()
+
+        rows = db.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='source_runs'"
+        ).fetchall()
+        indexes = {row[0] for row in rows}
+
+        assert "idx_source_runs_source_run_at" in indexes
+
+    def test_record_source_run_truncates_error(self, tmp_path: Path) -> None:
+        db = DB(str(tmp_path / "test.db"))
+        db.init_schema()
+
+        db.record_source_run(
+            source_id="source-a",
+            run_at="2026-05-03T10:00:00+00:00",
+            fetched_count=10,
+            fresh_count=8,
+            processed_count=5,
+            matched_count=4,
+            new_unique_count=3,
+            unmatched_count=1,
+            album_count=0,
+            skipped_stale_count=2,
+            skipped_cap_count=3,
+            status="error",
+            error="x" * 600,
+        )
+
+        row = db.conn.execute(
+            """
+            SELECT
+                source_id,
+                run_at,
+                fetched_count,
+                fresh_count,
+                processed_count,
+                matched_count,
+                new_unique_count,
+                unmatched_count,
+                album_count,
+                skipped_stale_count,
+                skipped_cap_count,
+                status,
+                length(error)
+            FROM source_runs
+            """
+        ).fetchone()
+
+        assert row == (
+            "source-a",
+            "2026-05-03T10:00:00+00:00",
+            10,
+            8,
+            5,
+            4,
+            3,
+            1,
+            0,
+            2,
+            3,
+            "error",
+            500,
+        )
 
 
 class TestAlreadyAdded:

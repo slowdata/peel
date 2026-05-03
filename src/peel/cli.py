@@ -13,8 +13,10 @@ from __future__ import annotations
 import json
 import sqlite3
 import subprocess
+import sys
 import tomllib
 import webbrowser
+from contextlib import redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
@@ -29,7 +31,7 @@ from peel.db import DB, FEEDBACK_RATINGS
 from peel.doctor_sources import inspect_registered_sources
 from peel.main import run as run_pipeline
 from peel.report import generate_weekly_report
-from peel.scoring import build_source_scores
+from peel.scoring import SourceScore, build_source_scores
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 console = Console(width=120)
@@ -242,47 +244,61 @@ def report(
 @app.command()
 def sources(
     weeks: int = typer.Option(4, "--weeks", min=1, help="Janela em semanas"),
+    min_tracks: int = typer.Option(
+        0,
+        "--min-tracks",
+        min=0,
+        help="Filtra sources com menos tracks matched",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Saída JSON"),
 ) -> None:
     """Mostra scoring das sources com base nos dados existentes."""
-    db = DB(str(_resolve_path(settings.db_path)))
-    try:
-        db.init_schema()
-        rows = build_source_scores(db, weeks=weeks)
-        if not rows:
-            console.print("Sem dados para scoring.")
-            return
-
-        table = Table(title=f"Source scores (last {weeks} weeks)")
-        table.add_column("Source", style="bold")
-        table.add_column("Found", justify="right")
-        table.add_column("Matched", justify="right")
-        table.add_column("New", justify="right")
-        table.add_column("Dup", justify="right")
-        table.add_column("Consensus", justify="right")
-        table.add_column("Unmatched", justify="right")
-        table.add_column("Liked", justify="right")
-        table.add_column("Skipped", justify="right")
-        table.add_column("Avg rating", justify="right")
-        table.add_column("Score", justify="right")
-
-        for row in rows:
-            table.add_row(
-                row.source_id,
-                str(row.tracks_found),
-                str(row.tracks_matched),
-                str(row.new_unique_tracks),
-                str(row.duplicate_mentions),
-                str(row.consensus_hits),
-                str(row.unmatched_count),
-                str(row.liked_count),
-                str(row.skipped_count),
-                row.avg_rating_display,
-                f"{row.score:.1f}",
+    if json_output:
+        with redirect_stdout(sys.stderr):
+            rows = _source_score_rows(weeks, min_tracks)
+        typer.echo(
+            json.dumps(
+                [_source_score_to_dict(row) for row in rows],
+                ensure_ascii=False,
+                indent=2,
             )
+        )
+        return
 
-        console.print(table)
-    finally:
-        db.close()
+    rows = _source_score_rows(weeks, min_tracks)
+    if not rows:
+        console.print("Sem dados para scoring.")
+        return
+
+    table = Table(title=f"Source scores (last {weeks} weeks)")
+    table.add_column("Source", style="bold")
+    table.add_column("Found", justify="right")
+    table.add_column("Matched", justify="right")
+    table.add_column("New", justify="right")
+    table.add_column("Dup", justify="right")
+    table.add_column("Consensus", justify="right")
+    table.add_column("Unmatched", justify="right")
+    table.add_column("Liked", justify="right")
+    table.add_column("Skipped", justify="right")
+    table.add_column("Avg rating", justify="right")
+    table.add_column("Score", justify="right")
+
+    for row in rows:
+        table.add_row(
+            row.source_id,
+            str(row.tracks_found),
+            str(row.tracks_matched),
+            str(row.new_unique_tracks),
+            str(row.duplicate_mentions),
+            str(row.consensus_hits),
+            str(row.unmatched_count),
+            str(row.liked_count),
+            str(row.skipped_count),
+            row.avg_rating_display,
+            f"{row.score:.1f}",
+        )
+
+    console.print(table)
 
 
 @sync_app.command("status")
@@ -406,6 +422,33 @@ def doctor_sources(json_output: bool = typer.Option(False, "--json", help="Saíd
         )
 
     console.print(table)
+
+
+def _source_score_rows(weeks: int, min_tracks: int) -> list[SourceScore]:
+    db = DB(str(_resolve_path(settings.db_path)))
+    try:
+        db.init_schema()
+        return [
+            row for row in build_source_scores(db, weeks=weeks) if row.tracks_matched >= min_tracks
+        ]
+    finally:
+        db.close()
+
+
+def _source_score_to_dict(row: SourceScore) -> dict[str, object]:
+    return {
+        "source_id": row.source_id,
+        "tracks_found": row.tracks_found,
+        "tracks_matched": row.tracks_matched,
+        "new_unique_tracks": row.new_unique_tracks,
+        "duplicate_mentions": row.duplicate_mentions,
+        "consensus_hits": row.consensus_hits,
+        "unmatched_count": row.unmatched_count,
+        "liked_count": row.liked_count,
+        "skipped_count": row.skipped_count,
+        "avg_rating": row.avg_rating,
+        "score": row.score,
+    }
 
 
 def _print_doctor_overview() -> None:

@@ -187,6 +187,10 @@ class TestMainIntegration:
 
         with (
             patch.object(PitchforkBNT, "fetch", mock_fetch),
+            patch.object(StereogumNewMusic, "fetch", return_value=[]),
+            patch.object(TheQuietus, "fetch", return_value=[]),
+            patch.object(GorillaVsBear, "fetch", return_value=[]),
+            patch.object(GuardianMusicAlbums, "fetch", return_value=[]),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
             patch("peel.main.send_digest"),  # Mocka Telegram
         ):
@@ -210,6 +214,13 @@ class TestMainIntegration:
         assert "simulated source crash" in error, (
             f"Error deve conter 'simulated source crash', obtive '{error}'"
         )
+
+        run_row = db.conn.execute(
+            "SELECT status, error FROM source_runs WHERE source_id='pitchfork_bnt'"
+        ).fetchone()
+        assert run_row is not None
+        assert run_row[0] == "error"
+        assert "simulated source crash" in run_row[1]
 
         db.close()
 
@@ -256,6 +267,20 @@ class TestMainIntegration:
             ("Kneecap", "Fenian"),
         ).fetchone()
         assert row == ("Kneecap", "Fenian", "guardian_music_albums")
+        run_row = db.conn.execute(
+            """
+            SELECT
+                fetched_count,
+                fresh_count,
+                processed_count,
+                album_count,
+                status,
+                error
+            FROM source_runs
+            WHERE source_id = 'guardian_music_albums'
+            """
+        ).fetchone()
+        assert run_row == (1, 1, 1, 1, "ok", None)
         mock_sp.search_track.assert_not_called()
         db.close()
 

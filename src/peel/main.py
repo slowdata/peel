@@ -14,6 +14,7 @@ Resiliência:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 import structlog
@@ -42,6 +43,38 @@ structlog.configure(
 )
 
 log = structlog.get_logger()
+
+
+@dataclass(slots=True)
+class SourceRunStats:
+    source_id: str
+    run_at: str
+    fetched_count: int = 0
+    fresh_count: int = 0
+    processed_count: int = 0
+    matched_count: int = 0
+    new_unique_count: int = 0
+    unmatched_count: int = 0
+    album_count: int = 0
+    skipped_stale_count: int = 0
+    skipped_cap_count: int = 0
+
+    def record(self, db: DB, status: str, error: str | None = None) -> None:
+        db.record_source_run(
+            source_id=self.source_id,
+            run_at=self.run_at,
+            fetched_count=self.fetched_count,
+            fresh_count=self.fresh_count,
+            processed_count=self.processed_count,
+            matched_count=self.matched_count,
+            new_unique_count=self.new_unique_count,
+            unmatched_count=self.unmatched_count,
+            album_count=self.album_count,
+            skipped_stale_count=self.skipped_stale_count,
+            skipped_cap_count=self.skipped_cap_count,
+            status=status,
+            error=error,
+        )
 
 
 def run() -> None:
@@ -101,11 +134,18 @@ def run() -> None:
 
         for source in sources:
             sources_processed += 1
+            source_stats = SourceRunStats(
+                source_id=source.id,
+                run_at=datetime.now(UTC).isoformat(),
+            )
 
             try:
                 # 1. Fetch da source
                 tracks = source.fetch()
                 fresh_tracks = _filter_fresh_source_items(source.id, tracks, datetime.now(UTC))
+                source_stats.fetched_count = len(tracks)
+                source_stats.fresh_count = len(fresh_tracks)
+                source_stats.skipped_stale_count = len(tracks) - len(fresh_tracks)
                 log.info(
                     "source.fetched",
                     source_id=source.id,
@@ -118,6 +158,7 @@ def run() -> None:
                     # Processa como álbuns (sem Spotify search)
                     for track in fresh_tracks:
                         try:
+                            source_stats.processed_count += 1
                             # track.title é o nome do álbum
                             is_new = db.record_album(
                                 track.artist,
@@ -128,6 +169,7 @@ def run() -> None:
 
                             if is_new:
                                 albums_added += 1
+                                source_stats.album_count += 1
                                 new_album_entries.append(
                                     (source.id, track.artist, track.title, track.source_url)
                                 )
@@ -152,9 +194,14 @@ def run() -> None:
                     # Processa como tracks (único kind que pode ir para playlist).
                     # O slice por source evita backfill infinito de feeds longos: a próxima
                     # run volta a olhar para os mesmos N itens do topo, não para backlog.
-                    for track in fresh_tracks[: settings.peel_max_tracks_per_source]:
+                    source_candidates = fresh_tracks[: settings.peel_max_tracks_per_source]
+                    source_stats.skipped_cap_count += max(
+                        0, len(fresh_tracks) - len(source_candidates)
+                    )
+                    for track in source_candidates:
                         try:
                             if _track_cap_reached(playlist_slots_used):
+                                source_stats.skipped_cap_count += 1
                                 log.info(
                                     "track.skipped_global_cap",
                                     source_id=source.id,
@@ -164,6 +211,8 @@ def run() -> None:
                                 )
                                 continue
                             playlist_slots_used += 1
+
+                            source_stats.processed_count += 1
 
                             # Busca candidatos no Spotify
                             candidates = sp.search_track(track.artist, track.title, limit=5)
@@ -179,6 +228,7 @@ def run() -> None:
                                 # Não encontrou match
                                 db.record_unmatched(source.id, track.artist, track.title)
                                 tracks_unmatched += 1
+                                source_stats.unmatched_count += 1
                                 log.warning(
                                     "track.no_match",
                                     source_id=source.id,
@@ -187,6 +237,7 @@ def run() -> None:
                                 )
                                 continue
 
+                            source_stats.matched_count += 1
                             already = db.already_added(uri)
 
                             # TRADE-OFF de design: registamos a track no DB ANTES de a
@@ -217,6 +268,7 @@ def run() -> None:
                                 continue
 
                             tracks_added += 1
+                            source_stats.new_unique_count += 1
                             new_track_entries.append(
                                 (source.id, track.artist, track.title, track.source_url)
                             )
@@ -249,6 +301,7 @@ def run() -> None:
 
                 # Atualiza estado da source como OK
                 db.update_source_state(source.id, "ok")
+                source_stats.record(db, "ok")
                 log.info("source.completed", source_id=source.id, status="ok")
 
             except Exception as e:
@@ -259,6 +312,7 @@ def run() -> None:
                     error=str(e),
                 )
                 db.update_source_state(source.id, "error", str(e))
+                source_stats.record(db, "error", str(e))
                 continue
 
         # 2.5 Prune rows unmatched expiradas (desistimos após a janela de retry)

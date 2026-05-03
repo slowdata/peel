@@ -10,6 +10,7 @@ Schema:
 - unmatched: source_id + artist + title + seen_at — faixas não encontradas
 - feedback: spotify_uri PRIMARY KEY — feedback do utilizador por track
 - albums: (artist, album) PRIMARY KEY — álbuns curados (não vão para playlist)
+- source_runs: histórico por source/run para métricas futuras
 
 Conexão: single connection longo-vivido (por run inteira como transacção conceptual).
 Dates: ISO 8601 UTC via datetime.now(UTC).isoformat().
@@ -135,7 +136,7 @@ class DB:
         log.info("db.backfill_week_completed", table=table, count=count_updated)
 
     def init_schema(self) -> None:
-        """Cria as 5 tabelas se não existirem (idempotente).
+        """Cria as tabelas se não existirem (idempotente).
 
         Esta função é segura chamar múltiplas vezes.
         Após criar tabelas, executa migrações idempotentes (adiciona colunas novas se necessário).
@@ -205,6 +206,34 @@ class DB:
                 seen_at    TEXT NOT NULL,
                 PRIMARY KEY (artist, album)
             )
+            """
+        )
+
+        # Tabela: histórico de runs por source (para scoring futuro)
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS source_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_id TEXT NOT NULL,
+                run_at TEXT NOT NULL,
+                fetched_count INTEGER NOT NULL,
+                fresh_count INTEGER NOT NULL,
+                processed_count INTEGER NOT NULL,
+                matched_count INTEGER NOT NULL,
+                new_unique_count INTEGER NOT NULL,
+                unmatched_count INTEGER NOT NULL,
+                album_count INTEGER NOT NULL,
+                skipped_stale_count INTEGER NOT NULL,
+                skipped_cap_count INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                error TEXT
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_source_runs_source_run_at
+            ON source_runs (source_id, run_at)
             """
         )
 
@@ -505,6 +534,80 @@ class DB:
             is_new=inserted,
         )
         return inserted
+
+    def record_source_run(
+        self,
+        source_id: str,
+        run_at: str,
+        fetched_count: int,
+        fresh_count: int,
+        processed_count: int,
+        matched_count: int,
+        new_unique_count: int,
+        unmatched_count: int,
+        album_count: int,
+        skipped_stale_count: int,
+        skipped_cap_count: int,
+        status: str,
+        error: str | None = None,
+    ) -> None:
+        """Regista métricas de uma run de source.
+
+        Args:
+            source_id: ID estável da source.
+            run_at: timestamp ISO 8601 UTC.
+            fetched_count: items devolvidos pela source antes de filtros.
+            fresh_count: items que passaram o filtro de idade.
+            processed_count: items realmente processados/searchados.
+            matched_count: items com match Spotify.
+            new_unique_count: matches novos na BD/playlist.
+            unmatched_count: items sem match Spotify.
+            album_count: álbuns novos registados.
+            skipped_stale_count: items ignorados por idade.
+            skipped_cap_count: items ignorados por caps.
+            status: "ok" ou "error".
+            error: mensagem opcional, truncada a 500 chars.
+        """
+        if status not in {"ok", "error"}:
+            raise ValueError("source run status must be 'ok' or 'error'")
+        truncated_error = error[:500] if error else None
+        self.conn.execute(
+            """
+            INSERT INTO source_runs (
+                source_id,
+                run_at,
+                fetched_count,
+                fresh_count,
+                processed_count,
+                matched_count,
+                new_unique_count,
+                unmatched_count,
+                album_count,
+                skipped_stale_count,
+                skipped_cap_count,
+                status,
+                error
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                source_id,
+                run_at,
+                fetched_count,
+                fresh_count,
+                processed_count,
+                matched_count,
+                new_unique_count,
+                unmatched_count,
+                album_count,
+                skipped_stale_count,
+                skipped_cap_count,
+                status,
+                truncated_error,
+            ),
+        )
+        self.conn.commit()
+        log.debug("db.source_run_recorded", source_id=source_id, status=status)
 
     def update_source_state(
         self,
