@@ -132,6 +132,28 @@ class TestFormatMessage:
         assert "• Artist — Album" in msg
         assert "<a href=" not in msg or '<a href="https://open.spotify.com' in msg
 
+    def test_format_message_with_external_entries(self) -> None:
+        """Formata escutas externas que não entraram no Spotify."""
+        msg = _format_message(
+            [],
+            [],
+            "test_id",
+            external_entries=[
+                (
+                    "stereogum_new_music",
+                    "Helado Negro",
+                    "Dance To The Music",
+                    "https://stereogum.com/example",
+                )
+            ],
+        )
+
+        assert "Escutas externas (1)" in msg
+        assert "Helado Negro" in msg
+        assert "Dance To The Music" in msg
+        assert "stereogum_new_music" in msg
+        assert '<a href="https://stereogum.com/example">' in msg
+
 
 class TestSendDigest:
     """Testa a função send_digest."""

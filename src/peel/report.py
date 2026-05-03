@@ -69,7 +69,7 @@ class WeeklyReport:
     week: str
     tracks: list[WeeklyTrack]
     albums: list[WeeklyAlbum]
-    unmatched: list[tuple[str, str, str]]
+    unmatched: list[tuple[str, str, str, str | None]]
     summaries: list[SourceSummary]
 
 
@@ -191,23 +191,24 @@ def _load_weekly_albums(db: DB, week: str) -> list[WeeklyAlbum]:
     ]
 
 
-def _load_weekly_unmatched(db: DB, week: str) -> list[tuple[str, str, str]]:
+def _load_weekly_unmatched(db: DB, week: str) -> list[tuple[str, str, str, str | None]]:
     start, end = _week_bounds(week)
     rows = db.conn.execute(
         """
-        SELECT DISTINCT source_id, artist, title
+        SELECT source_id, artist, title, MAX(source_url)
         FROM unmatched
         WHERE seen_at >= ? AND seen_at < ?
+        GROUP BY source_id, artist, title
         ORDER BY source_id ASC, artist COLLATE NOCASE, title COLLATE NOCASE
         """,
         (start.isoformat(), end.isoformat()),
     ).fetchall()
-    return [(str(row[0]), str(row[1]), str(row[2])) for row in rows]
+    return [(str(row[0]), str(row[1]), str(row[2]), row[3]) for row in rows]
 
 
 def _build_source_summaries(
     tracks: list[WeeklyTrack],
-    unmatched: list[tuple[str, str, str]],
+    unmatched: list[tuple[str, str, str, str | None]],
 ) -> list[SourceSummary]:
     summaries: dict[str, SourceSummary] = {}
 
@@ -231,7 +232,7 @@ def _build_source_summaries(
                 summary.rating_total += feedback[0]
                 summary.rating_count += 1
 
-    for source_id, _, _ in unmatched:
+    for source_id, _, _, _ in unmatched:
         _summary(source_id).unmatched += 1
 
     return sorted(summaries.values(), key=lambda item: (-item.tracks, item.source_id))
@@ -272,8 +273,11 @@ def _render_markdown(report: WeeklyReport) -> str:
 
     lines.append("\n## Unmatched")
     if report.unmatched:
-        for source_id, artist, title in report.unmatched:
-            lines.append(f"- {source_id} — {_md_escape(artist)} — {_md_escape(title)}")
+        for source_id, artist, title, source_url in report.unmatched:
+            line = f"- {source_id} — {_md_escape(artist)} — {_md_escape(title)}"
+            if source_url:
+                line += f" — {source_url}"
+            lines.append(line)
     else:
         lines.append("- None")
 

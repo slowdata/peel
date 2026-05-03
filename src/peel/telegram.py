@@ -19,6 +19,7 @@ def send_digest(
     new_tracks: list[DigestItem],
     new_albums: list[DigestItem],
     playlist_id: str,
+    external_entries: list[DigestItem] | None = None,
 ) -> None:
     """Envia digest semanal via Telegram.
 
@@ -29,12 +30,13 @@ def send_digest(
         new_tracks: Lista de (source_id, artist, title, url) das tracks novas
         new_albums: Lista de (source_id, artist, album, url) dos álbuns novos
         playlist_id: ID da playlist Spotify
+        external_entries: Items com link externo que não entraram no Spotify
     """
     if not settings.telegram_bot_token or not settings.telegram_chat_id:
         log.info("telegram.skipped", reason="credentials_missing")
         return
 
-    text = _format_message(new_tracks, new_albums, playlist_id)
+    text = _format_message(new_tracks, new_albums, playlist_id, external_entries or [])
     url = f"{API_BASE}/bot{settings.telegram_bot_token}/sendMessage"
     payload = {
         "chat_id": settings.telegram_chat_id,
@@ -55,6 +57,7 @@ def _format_message(
     new_tracks: list[DigestItem],
     new_albums: list[DigestItem],
     playlist_id: str,
+    external_entries: list[DigestItem] | None = None,
 ) -> str:
     """Formata mensagem HTML do Telegram.
 
@@ -62,6 +65,7 @@ def _format_message(
         new_tracks: Lista de (source_id, artist, title, url)
         new_albums: Lista de (source_id, artist, album, url)
         playlist_id: ID da playlist Spotify
+        external_entries: Items com link externo que não entraram no Spotify
 
     Returns:
         Mensagem formatada em HTML para Telegram
@@ -85,6 +89,15 @@ def _format_message(
             lines.append(_format_item(source_id, artist, album, url_))
     else:
         lines.append("<i>Sem álbuns novos esta semana.</i>")
+
+    external_items = external_entries or []
+    if external_items:
+        lines.append("")
+        lines.append(f"<b>🔗 Escutas externas ({len(external_items)})</b>")
+        for source_id, artist, title, url_ in external_items[:15]:
+            lines.append(_format_item(source_id, artist, title, url_))
+        if len(external_items) > 15:
+            lines.append(f"<i>... e mais {len(external_items) - 15}</i>")
 
     lines.append("")
     lines.append(

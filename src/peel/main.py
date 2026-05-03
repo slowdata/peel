@@ -98,9 +98,10 @@ def run() -> None:
     tracks_unmatched = 0
     albums_added = 0
 
-    # Digest semanal: tracks e álbuns novos (para Telegram)
+    # Digest semanal: tracks, álbuns e escutas externas novas (para Telegram)
     new_track_entries: list[DigestItem] = []  # (source_id, artist, title, url)
     new_album_entries: list[DigestItem] = []  # (source_id, artist, album, url)
+    external_entries: list[DigestItem] = []  # unmatched com URL para ouvir fora do Spotify
 
     # Métricas do retry de unmatched (reportadas no log final)
     retried_total = 0
@@ -226,9 +227,18 @@ def run() -> None:
 
                             if uri is None:
                                 # Não encontrou match
-                                db.record_unmatched(source.id, track.artist, track.title)
+                                db.record_unmatched(
+                                    source.id,
+                                    track.artist,
+                                    track.title,
+                                    track.source_url,
+                                )
                                 tracks_unmatched += 1
                                 source_stats.unmatched_count += 1
+                                if track.source_url:
+                                    external_entries.append(
+                                        (source.id, track.artist, track.title, track.source_url)
+                                    )
                                 log.warning(
                                     "track.no_match",
                                     source_id=source.id,
@@ -344,7 +354,12 @@ def run() -> None:
         # 4. Envia digest semanal (SEMPRE — mesmo que playlist tenha falhado).
         #    send_digest tem a sua própria protecção contra HTTP errors.
         try:
-            send_digest(new_track_entries, new_album_entries, settings.peel_playlist_id)
+            send_digest(
+                new_track_entries,
+                new_album_entries,
+                settings.peel_playlist_id,
+                external_entries=external_entries,
+            )
         except Exception:
             log.exception("digest.crashed")
 
@@ -411,7 +426,7 @@ def _retry_unmatched(
     Returns:
         (total_retried, matched)
     """
-    rows = db.list_unmatched(settings.unmatched_retry_days)
+    rows = db.list_unmatched_with_urls(settings.unmatched_retry_days)
     if not rows:
         return 0, 0
 
@@ -420,7 +435,7 @@ def _retry_unmatched(
 
     log.info("unmatched.retry_start", pending=total)
 
-    for source_id, artist, title in rows:
+    for source_id, artist, title, source_url in rows:
         try:
             candidates = sp.search_track(artist, title, limit=5)
             if not candidates:
@@ -447,7 +462,7 @@ def _retry_unmatched(
                 )
                 continue
 
-            inserted = db.record_track(uri, source_id, artist, title, None)
+            inserted = db.record_track(uri, source_id, artist, title, source_url)
             db.delete_unmatched(source_id, artist, title)
 
             if already:
@@ -462,7 +477,7 @@ def _retry_unmatched(
                 matched += 1
                 continue
 
-            new_track_entries.append((source_id, artist, title, None))
+            new_track_entries.append((source_id, artist, title, source_url))
             matched += 1
             log.info(
                 "unmatched.retry_matched",

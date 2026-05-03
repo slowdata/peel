@@ -490,7 +490,14 @@ def _print_doctor_overview() -> None:
         try:
             with sqlite3.connect(db_path) as conn:
                 tables = _list_tables(conn)
-                expected = {"tracks", "sources_state", "unmatched", "feedback", "albums"}
+                expected = {
+                    "tracks",
+                    "sources_state",
+                    "unmatched",
+                    "feedback",
+                    "albums",
+                    "source_runs",
+                }
                 tables_ok = expected.issubset(tables)
                 tables_detail = ", ".join(sorted(tables))
         except sqlite3.Error as exc:

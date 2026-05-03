@@ -520,7 +520,7 @@ def _split_artist_title_dash(title: str) -> tuple[str, str] | None:
 
 
 class TheQuietus(RSSSource):
-    """The Quietus — reviews de tracks/álbuns.
+    """The Quietus — reviews de álbuns/contexto.
 
     Feed: https://thequietus.com/feed/
     Bloqueia User-Agents não-browser (retorna 403), por isso passamos um UA
@@ -533,12 +533,13 @@ class TheQuietus(RSSSource):
       ou reviews não-musicais (livros).
     - Ignoramos news, interviews, culture, opinion — onde extrair tracks é ruidoso.
 
-    Título format: 'Artist – Track/Album Title' (en-dash ou em-dash).
+    Título format: 'Artist – Album Title' (en-dash ou em-dash).
     """
 
     id = "thequietus"
     name = "The Quietus"
     url = "https://thequietus.com/feed/"
+    kind = "album"
     request_headers = {"User-Agent": _BROWSER_UA}
 
     def _extract_artist_title(self, entry: dict) -> tuple[str, str] | None:

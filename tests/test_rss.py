@@ -40,6 +40,11 @@ class TestSourceKind:
         source = GuardianMusicAlbums()
         assert source.kind == "album"
 
+    def test_quietus_kind_is_album(self) -> None:
+        """TheQuietus.kind == 'album'."""
+        source = TheQuietus()
+        assert source.kind == "album"
+
 
 class TestPitchforkSlugify:
     """Testa a função de slugify do Pitchfork."""

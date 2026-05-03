@@ -466,7 +466,12 @@ class TestRetryUnmatched:
 
         db = DB(str(tmp_path / "test.db"))
         db.init_schema()
-        db.record_unmatched("pitchfork_bnt", "Claire Rousay", "Hey Eleanor")
+        db.record_unmatched(
+            "pitchfork_bnt",
+            "Claire Rousay",
+            "Hey Eleanor",
+            "https://source/hey-eleanor",
+        )
 
         mock_sp = MagicMock()
         mock_sp.search_track = MagicMock(
@@ -491,9 +496,13 @@ class TestRetryUnmatched:
             "SELECT spotify_uri FROM tracks WHERE spotify_uri='spotify:track:abc'"
         ).fetchone()
         assert row is not None
-        assert db.track_sources("spotify:track:abc") == [("pitchfork_bnt", None)]
-        # Entrou no digest do Telegram
-        assert digest_entries == [("pitchfork_bnt", "Claire Rousay", "Hey Eleanor", None)]
+        assert db.track_sources("spotify:track:abc") == [
+            ("pitchfork_bnt", "https://source/hey-eleanor")
+        ]
+        # Entrou no digest do Telegram com link da source preservado
+        assert digest_entries == [
+            ("pitchfork_bnt", "Claire Rousay", "Hey Eleanor", "https://source/hey-eleanor")
+        ]
         db.close()
 
     def test_retry_keeps_source_attribution_for_existing_uri(self, tmp_path: Path) -> None:
@@ -625,6 +634,7 @@ class TestConsensusAttribution:
         with (
             patch.object(PitchforkBNT, "fetch", return_value=[shared_track]),
             patch.object(StereogumNewMusic, "fetch", return_value=[shared_track_2]),
+            patch.object(TheQuietus, "kind", "track", create=True),
             patch.object(TheQuietus, "fetch", return_value=[shared_track_3]),
             patch.object(GorillaVsBear, "fetch", return_value=[shared_track_4]),
             patch.object(GuardianMusicAlbums, "fetch", return_value=[]),

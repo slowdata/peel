@@ -7,7 +7,7 @@ e mais rápido que SQLAlchemy. Aprender SQL à mão é pedagogicamente valioso.
 Schema:
 - tracks: (spotify_uri, source_id) PRIMARY KEY — mesma faixa de várias fontes
 - sources_state: source_id PRIMARY KEY — estado último de cada source
-- unmatched: source_id + artist + title + seen_at — faixas não encontradas
+- unmatched: source_id + artist + title + source_url + seen_at — faixas não encontradas
 - feedback: spotify_uri PRIMARY KEY — feedback do utilizador por track
 - albums: (artist, album) PRIMARY KEY — álbuns curados (não vão para playlist)
 - source_runs: histórico por source/run para métricas futuras
@@ -177,6 +177,7 @@ class DB:
                 source_id    TEXT NOT NULL,
                 artist       TEXT NOT NULL,
                 title        TEXT NOT NULL,
+                source_url   TEXT,
                 seen_at      TEXT NOT NULL
             )
             """
@@ -246,6 +247,8 @@ class DB:
 
         if self._ensure_column("albums", "added_at_week", "TEXT"):
             self._backfill_week("albums", "seen_at")
+
+        self._ensure_column("unmatched", "source_url", "TEXT")
 
     def already_added(self, spotify_uri: str) -> bool:
         """Verifica se um URI já foi adicionado (por qualquer source).
@@ -435,6 +438,7 @@ class DB:
         source_id: str,
         artist: str,
         title: str,
+        source_url: str | None = None,
     ) -> None:
         """Regista uma faixa que não foi encontrada no Spotify.
 
@@ -444,14 +448,15 @@ class DB:
             source_id: ID da fonte
             artist: Nome do artista
             title: Título da faixa
+            source_url: URL opcional da source original
         """
         self.conn.execute(
             """
             INSERT INTO unmatched
-            (source_id, artist, title, seen_at)
-            VALUES (?, ?, ?, ?)
+            (source_id, artist, title, source_url, seen_at)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (source_id, artist, title, datetime.now(UTC).isoformat()),
+            (source_id, artist, title, source_url, datetime.now(UTC).isoformat()),
         )
         self.conn.commit()
         log.debug("db.unmatched_recorded", source_id=source_id, artist=artist, title=title)
@@ -474,6 +479,20 @@ class DB:
             (cutoff,),
         )
         return [tuple(row) for row in cursor.fetchall()]
+
+    def list_unmatched_with_urls(self, max_age_days: int) -> list[tuple[str, str, str, str | None]]:
+        """Lista unmatched recentes preservando source_url quando existe."""
+        cutoff = (datetime.now(UTC) - timedelta(days=max_age_days)).isoformat()
+        cursor = self.conn.execute(
+            """
+            SELECT source_id, artist, title, MAX(source_url)
+            FROM unmatched
+            WHERE seen_at >= ?
+            GROUP BY source_id, artist, title
+            """,
+            (cutoff,),
+        )
+        return [(str(row[0]), str(row[1]), str(row[2]), row[3]) for row in cursor.fetchall()]
 
     def delete_unmatched(self, source_id: str, artist: str, title: str) -> int:
         """Remove todas as rows unmatched que batam (source_id, artist, title).

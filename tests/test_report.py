@@ -79,13 +79,14 @@ class TestWeeklyReport:
         db.conn.execute(
             """
             INSERT INTO unmatched
-            (source_id, artist, title, seen_at)
-            VALUES (?, ?, ?, ?)
+            (source_id, artist, title, source_url, seen_at)
+            VALUES (?, ?, ?, ?, ?)
             """,
             (
                 "source-a",
                 "Ghost Artist",
                 "Ghost Song",
+                "https://ghost",
                 "2026-05-01T15:00:00+00:00",
             ),
         )
@@ -101,7 +102,7 @@ class TestWeeklyReport:
         assert "source-a — https://a" in report
         assert "source-b — https://b" in report
         assert "Album Artist — Album Name" in report
-        assert "source-a — Ghost Artist — Ghost Song" in report
+        assert "source-a — Ghost Artist — Ghost Song — https://ghost" in report
         assert "| source-a | 1 | 1 | 1 | 1 | 1.00 |" in report
         assert "| source-b | 1 | 0 | 1 | 0 | 1.00 |" in report
         assert "| source-c | 1 | 1 | 0 | 0 | — |" in report

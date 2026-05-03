@@ -292,15 +292,22 @@ class TestRecordUnmatched:
         db = DB(str(db_path))
         db.init_schema()
 
-        db.record_unmatched("test_source", "Unknown Artist", "Unknown Title")
+        db.record_unmatched(
+            "test_source",
+            "Unknown Artist",
+            "Unknown Title",
+            "https://source/item",
+        )
 
         cursor = db.conn.execute(
-            "SELECT artist, title FROM unmatched WHERE source_id = ?", ("test_source",)
+            "SELECT artist, title, source_url FROM unmatched WHERE source_id = ?",
+            ("test_source",),
         )
         row = cursor.fetchone()
         assert row is not None
         assert row[0] == "Unknown Artist"
         assert row[1] == "Unknown Title"
+        assert row[2] == "https://source/item"
 
     def test_record_unmatched_multiple(self, tmp_path: Path) -> None:
         """Múltiplas unmatched não são dedupadas (cada seen_at é único)."""
@@ -897,6 +904,28 @@ class TestUnmatchedRetryHelpers:
         rows = db.list_unmatched(max_age_days=30)
         # Row antiga filtrada, duplicados colapsados
         assert rows == [("pitchfork_bnt", "Ms Ray", "Miss You")]
+
+    def test_list_unmatched_with_urls_preserves_source_url(self, tmp_path: Path) -> None:
+        db = DB(str(tmp_path / "test.db"))
+        db.init_schema()
+
+        db.record_unmatched(
+            "stereogum_new_music",
+            "Helado Negro",
+            "Dance To The Music",
+            "https://stereogum.com/example",
+        )
+
+        rows = db.list_unmatched_with_urls(max_age_days=30)
+
+        assert rows == [
+            (
+                "stereogum_new_music",
+                "Helado Negro",
+                "Dance To The Music",
+                "https://stereogum.com/example",
+            )
+        ]
 
     def test_delete_unmatched_removes_all_matching(self, tmp_path: Path) -> None:
         db = DB(str(tmp_path / "test.db"))
