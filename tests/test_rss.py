@@ -11,6 +11,7 @@ from peel.sources.rss import (
     PitchforkBNT,
     StereogumNewMusic,
     TheQuietus,
+    TheQuietusTracksOfMonth,
     _slugify_pitchfork,
     _split_artist_title_dash,
     _strip_html_tags,
@@ -44,6 +45,11 @@ class TestSourceKind:
         """TheQuietus.kind == 'album'."""
         source = TheQuietus()
         assert source.kind == "album"
+
+    def test_quietus_tracks_of_month_kind_is_track(self) -> None:
+        """TheQuietusTracksOfMonth.kind == 'track'."""
+        source = TheQuietusTracksOfMonth()
+        assert source.kind == "track"
 
 
 class TestPitchforkSlugify:
@@ -628,6 +634,50 @@ class TestTheQuietusExtractArtistTitle:
             self._entry("Some Weird Title", "/quietus-reviews/some-slug-review/")
         )
         assert result is None
+
+
+class TestTheQuietusTracksOfMonth:
+    """Parser dos melhores tracks mensais da Quietus."""
+
+    @pytest.fixture
+    def fixture_path(self) -> Path:
+        return Path(__file__).parent / "fixtures" / "thequietus_tracks_of_month.html"
+
+    def test_fixture_exists(self, fixture_path: Path) -> None:
+        assert fixture_path.exists(), f"Fixture not found: {fixture_path}"
+
+    def test_parse_tracks_section_only(self, fixture_path: Path) -> None:
+        source = TheQuietusTracksOfMonth()
+        html = fixture_path.read_text(encoding="utf-8")
+
+        tracks = source._parse_chart_html(
+            html,
+            "https://thequietus.com/tq-charts/music-of-the-month/example/",
+        )
+
+        assert len(tracks) == 5
+        tracks_dict = {(track.artist.lower(), track.title.lower()): track for track in tracks}
+        assert ("james k", "peel (loidis remix)") in tracks_dict
+        assert (
+            "the standing stones, iona zajac, daragh lynch",
+            "twa sisters",
+        ) in tracks_dict
+        assert ("kelela", "idea 1") in tracks_dict
+
+        for track in tracks:
+            assert track.source_id == "thequietus_tracks_of_month"
+            assert (
+                track.source_url == "https://thequietus.com/tq-charts/music-of-the-month/example/"
+            )
+            assert track.artist
+            assert track.title
+
+    def test_parse_missing_tracks_section_returns_empty(self) -> None:
+        source = TheQuietusTracksOfMonth()
+
+        tracks = source._parse_chart_html("<html><h2>ALBUMS</h2></html>", "https://example.com")
+
+        assert tracks == []
 
 
 class TestTheQuietusFetchFixture:

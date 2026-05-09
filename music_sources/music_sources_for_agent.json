@@ -93,6 +93,20 @@
       ]
     },
     {
+      "name": "The Quietus - Tracks of the Month",
+      "id": "thequietus-tracks-of-month",
+      "type": "scrape",
+      "feed_url": "https://thequietus.com/feed/",
+      "site_url": "https://thequietus.com/columns/tq-charts/music-of-the-month/",
+      "description": "Monthly Music of the Month articles. Peel scrapes only the TRACKS section and treats it as track recommendations for Spotify matching/feedback.",
+      "relevance": 10,
+      "genres_covered": ["post-punk", "experimental", "electronic", "psych-rock", "punk", "ambient", "new-weird"],
+      "update_frequency": "monthly",
+      "authority_score": 9,
+      "user_taste_match_notes": "High-signal Quietus curation as tracks, separated from album reviews so it can enter playlist feedback without polluting album/context scoring.",
+      "fetch_priority": "high"
+    },
+    {
       "name": "Stereogum - All Reviews",
       "id": "stereogum-reviews",
       "type": "rss",

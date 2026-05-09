@@ -29,6 +29,7 @@ from peel.sources.rss import (
     PitchforkBNT,
     StereogumNewMusic,
     TheQuietus,
+    TheQuietusTracksOfMonth,
 )
 from peel.spotify_client import SpotifyClient
 from peel.telegram import DigestItem, send_digest
@@ -129,6 +130,7 @@ def run() -> None:
             PitchforkBNT(),
             StereogumNewMusic(),
             TheQuietus(),
+            TheQuietusTracksOfMonth(),
             GorillaVsBear(),
             GuardianMusicAlbums(),
         ]

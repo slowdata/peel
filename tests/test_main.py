@@ -14,6 +14,7 @@ from peel.sources.rss import (
     PitchforkBNT,
     StereogumNewMusic,
     TheQuietus,
+    TheQuietusTracksOfMonth,
 )
 
 
@@ -68,6 +69,7 @@ class TestMainIntegration:
         with (
             patch("peel.sources.rss.PitchforkBNT.url", fixture_url),
             patch.object(GuardianMusicAlbums, "fetch", return_value=[]),
+            patch.object(TheQuietusTracksOfMonth, "fetch", return_value=[]),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
             patch("peel.main.send_digest"),  # Mocka Telegram
         ):
@@ -128,6 +130,7 @@ class TestMainIntegration:
         with (
             patch("peel.sources.rss.PitchforkBNT.url", fixture_url),
             patch.object(GuardianMusicAlbums, "fetch", return_value=[]),
+            patch.object(TheQuietusTracksOfMonth, "fetch", return_value=[]),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
             patch("peel.main.send_digest"),  # Mocka Telegram
         ):
@@ -189,6 +192,7 @@ class TestMainIntegration:
             patch.object(PitchforkBNT, "fetch", mock_fetch),
             patch.object(StereogumNewMusic, "fetch", return_value=[]),
             patch.object(TheQuietus, "fetch", return_value=[]),
+            patch.object(TheQuietusTracksOfMonth, "fetch", return_value=[]),
             patch.object(GorillaVsBear, "fetch", return_value=[]),
             patch.object(GuardianMusicAlbums, "fetch", return_value=[]),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
@@ -251,6 +255,7 @@ class TestMainIntegration:
             patch.object(PitchforkBNT, "fetch", return_value=[]),
             patch.object(StereogumNewMusic, "fetch", return_value=[]),
             patch.object(TheQuietus, "fetch", return_value=[]),
+            patch.object(TheQuietusTracksOfMonth, "fetch", return_value=[]),
             patch.object(GorillaVsBear, "fetch", return_value=[]),
             patch.object(GuardianMusicAlbums, "fetch", return_value=[album]),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
@@ -317,6 +322,7 @@ class TestPlaylistSafetyCaps:
             patch.object(PitchforkBNT, "fetch", return_value=tracks),
             patch.object(StereogumNewMusic, "fetch", return_value=[]),
             patch.object(TheQuietus, "fetch", return_value=[]),
+            patch.object(TheQuietusTracksOfMonth, "fetch", return_value=[]),
             patch.object(GorillaVsBear, "fetch", return_value=[]),
             patch.object(GuardianMusicAlbums, "fetch", return_value=[]),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
@@ -375,6 +381,7 @@ class TestPlaylistSafetyCaps:
             patch.object(TheQuietus, "fetch", return_value=[track("thequietus", 3)]),
             patch.object(GorillaVsBear, "fetch", return_value=[track("gorillavsbear", 4)]),
             patch.object(GuardianMusicAlbums, "fetch", return_value=[]),
+            patch.object(TheQuietusTracksOfMonth, "fetch", return_value=[]),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
             patch("peel.main.send_digest"),
         ):
@@ -417,6 +424,7 @@ class TestPlaylistSafetyCaps:
             patch.object(PitchforkBNT, "fetch", return_value=[context_track]),
             patch.object(StereogumNewMusic, "fetch", return_value=[]),
             patch.object(TheQuietus, "fetch", return_value=[]),
+            patch.object(TheQuietusTracksOfMonth, "fetch", return_value=[]),
             patch.object(GorillaVsBear, "fetch", return_value=[]),
             patch.object(GuardianMusicAlbums, "fetch", return_value=[]),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
@@ -636,6 +644,7 @@ class TestConsensusAttribution:
             patch.object(StereogumNewMusic, "fetch", return_value=[shared_track_2]),
             patch.object(TheQuietus, "kind", "track", create=True),
             patch.object(TheQuietus, "fetch", return_value=[shared_track_3]),
+            patch.object(TheQuietusTracksOfMonth, "fetch", return_value=[]),
             patch.object(GorillaVsBear, "fetch", return_value=[shared_track_4]),
             patch.object(GuardianMusicAlbums, "fetch", return_value=[]),
             patch("peel.main.SpotifyClient", return_value=mock_sp),

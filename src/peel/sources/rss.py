@@ -17,7 +17,9 @@ from datetime import datetime
 from urllib.parse import urlparse
 
 import feedparser
+import httpx
 import structlog
+from selectolax.parser import HTMLParser
 
 from peel.models import Track
 from peel.sources.base import Source
@@ -501,6 +503,11 @@ def _strip_html_tags(s: str) -> str:
     return re.sub(r"<[^>]+>", "", s)
 
 
+def _clean_quietus_chart_text(value: str) -> str:
+    """Limpa texto dos chart-items da Quietus (aspas curly e espaços)."""
+    return value.strip().strip("\u2018\u2019\u201c\u201d'\"").strip()
+
+
 def _split_artist_title_dash(title: str) -> tuple[str, str] | None:
     """Separa um título no formato 'Artist – Title' em tuplo.
 
@@ -517,6 +524,122 @@ def _split_artist_title_dash(title: str) -> tuple[str, str] | None:
     if not artist or not track:
         return None
     return artist, track
+
+
+class TheQuietusTracksOfMonth(Source):
+    """The Quietus — Music of the Month / TRACKS.
+
+    Esta source é separada de ``TheQuietus``: a Quietus principal fica como
+    álbum/contexto, enquanto esta extrai apenas a secção ``TRACKS`` dos artigos
+    mensais "Music of the Month: The Best Albums and Tracks...".
+    """
+
+    id = "thequietus_tracks_of_month"
+    name = "The Quietus — Tracks of the Month"
+    kind = "track"
+    feed_url = "https://thequietus.com/feed/"
+    fallback_chart_url = (
+        "https://thequietus.com/tq-charts/music-of-the-month/"
+        "music-of-the-month-the-best-albums-and-tracks-of-april-2026/"
+    )
+    request_headers = {"User-Agent": _BROWSER_UA}
+
+    def fetch(self) -> list[Track]:
+        """Procura o artigo mensal mais recente no feed e extrai a secção TRACKS."""
+        chart_url, published_at = self._latest_chart_entry()
+        response = httpx.get(
+            chart_url,
+            headers=self.request_headers,
+            follow_redirects=True,
+            timeout=20,
+        )
+        response.raise_for_status()
+        return self._parse_chart_html(response.text, chart_url, published_at)
+
+    def _latest_chart_entry(self) -> tuple[str, datetime | None]:
+        feed = feedparser.parse(self.feed_url, request_headers=self.request_headers)
+        for entry in feed.entries:
+            link = entry.get("link", "").strip()
+            title = entry.get("title", "").strip().lower()
+            if "/tq-charts/music-of-the-month/" not in link:
+                continue
+            if "tracks" not in title:
+                continue
+
+            published_at = None
+            if entry.get("published"):
+                try:
+                    parsed_time = entry.published_parsed
+                    if parsed_time:
+                        published_at = datetime(*parsed_time[:6])
+                except Exception:
+                    pass
+            return link, published_at
+
+        return self.fallback_chart_url, None
+
+    def _parse_chart_html(
+        self,
+        html: str,
+        source_url: str,
+        published_at: datetime | None = None,
+    ) -> list[Track]:
+        """Extrai apenas chart-items que aparecem depois do heading TRACKS."""
+        section = self._tracks_section_html(html)
+        if section is None:
+            log.warning("quietus_tracks.section_not_found", source_url=source_url)
+            return []
+
+        parser = HTMLParser(section)
+        tracks: list[Track] = []
+        for item in parser.css("div.chart-item"):
+            parsed = self._parse_chart_item(item)
+            if parsed is None:
+                continue
+            artist, title = parsed
+            tracks.append(
+                Track(
+                    source_id=self.id,
+                    artist=artist,
+                    title=title,
+                    source_url=source_url,
+                    published_at=published_at,
+                    raw_title=f"{artist} — {title}",
+                )
+            )
+        return tracks
+
+    def _tracks_section_html(self, html: str) -> str | None:
+        marker = re.search(
+            r"<h2[^>]*>\s*<strong>\s*TRACKS\s*</strong>\s*</h2>",
+            html,
+            flags=re.IGNORECASE,
+        )
+        if marker is None:
+            return None
+
+        tail = html[marker.end() :]
+        end = re.search(r"<h2[^>]*>\s*From the Archive", tail, flags=re.IGNORECASE)
+        if end is not None:
+            return tail[: end.start()]
+        return tail
+
+    def _parse_chart_item(self, item) -> tuple[str, str] | None:
+        header = item.css_first(".chart-entry-header h2") or item.css_first("h2")
+        if header is None:
+            return None
+
+        title_node = header.css_first("em")
+        if title_node is None:
+            return None
+
+        artists = [_clean_quietus_chart_text(node.text(strip=True)) for node in header.css("a")]
+        artists = [artist for artist in artists if artist]
+        title = _clean_quietus_chart_text(title_node.text(strip=True))
+
+        if not artists or not title:
+            return None
+        return ", ".join(artists), title
 
 
 class TheQuietus(RSSSource):
