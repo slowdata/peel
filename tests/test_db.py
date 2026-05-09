@@ -513,6 +513,22 @@ class TestFeedback:
         rows = db.unrated_tracks(limit=10)
         assert {row[0] for row in rows} == {"spotify:track:2"}
 
+    def test_unrated_tracks_filters_same_artist_title_with_different_uri(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        db = DB(str(tmp_path / "test.db"))
+        db.init_schema()
+
+        db.record_track("spotify:track:old", "source-a", "Artist A", "Track A", None)
+        db.record_track("spotify:track:new", "source-b", "Artist A", "Track A", None)
+        db.record_track("spotify:track:other", "source-c", "Artist B", "Track B", None)
+        db.upsert_feedback("spotify:track:old", "ban", None)
+
+        rows = db.unrated_tracks(limit=10)
+
+        assert {row[0] for row in rows} == {"spotify:track:other"}
+
 
 class TestDatetimeISO8601:
     """Testa que as datas são armazenadas em ISO 8601 UTC."""

@@ -406,7 +406,17 @@ class DB:
     ) -> list[tuple[str, str, str, str, int, str, str]]:
         """Tracks ainda sem feedback explícito."""
         params: list[object] = []
-        where_clause = "WHERE f.spotify_uri IS NULL"
+        where_clause = """
+            WHERE f.spotify_uri IS NULL
+              AND NOT EXISTS (
+                SELECT 1
+                FROM tracks rated_track
+                JOIN feedback rated_feedback
+                  ON rated_feedback.spotify_uri = rated_track.spotify_uri
+                WHERE rated_track.artist = t.artist
+                  AND rated_track.title = t.title
+              )
+        """
         if week is not None:
             where_clause += " AND t.added_at_week = ?"
             params.append(week)
