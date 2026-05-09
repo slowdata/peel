@@ -79,7 +79,7 @@ def generate_weekly_report(
     output_dir: Path | None = None,
 ) -> Path:
     """Gera o Markdown da semana e escreve-o para disco."""
-    resolved_week = week or iso_week(datetime.now(UTC))
+    resolved_week = _normalize_week(week or iso_week(datetime.now(UTC)))
     target_dir = output_dir or REPORTS_DIR
     target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -91,6 +91,7 @@ def generate_weekly_report(
 
 def build_weekly_report(db: DB, week: str) -> str:
     """Constrói o relatório Markdown para uma semana ISO."""
+    week = _normalize_week(week)
     tracks = _load_weekly_tracks(db, week)
     albums = _load_weekly_albums(db, week)
     unmatched = _load_weekly_unmatched(db, week)
@@ -297,12 +298,33 @@ def _render_markdown(report: WeeklyReport) -> str:
 
 
 def _week_bounds(week: str) -> tuple[datetime, datetime]:
-    year_str, week_str = week.split("-W")
+    normalized = _normalize_week(week)
+    year_str, week_str = normalized.split("-W")
     year = int(year_str)
     week_number = int(week_str)
     start = datetime.fromisocalendar(year, week_number, 1).replace(tzinfo=UTC)
     end = start + timedelta(days=7)
     return start, end
+
+
+def _normalize_week(week: str) -> str:
+    """Normaliza semana ISO, aceitando `2026-w19` e devolvendo `2026-W19`."""
+    value = week.strip().upper()
+    parts = value.split("-W")
+    if len(parts) != 2:
+        raise ValueError(f"invalid ISO week: {week!r}. Expected format: YYYY-Www")
+
+    year_str, week_str = parts
+    try:
+        year = int(year_str)
+        week_number = int(week_str)
+    except ValueError as exc:
+        raise ValueError(f"invalid ISO week: {week!r}. Expected format: YYYY-Www") from exc
+
+    if not 1 <= week_number <= 53:
+        raise ValueError(f"invalid ISO week: {week!r}. Week must be between 1 and 53")
+
+    return f"{year:04d}-W{week_number:02d}"
 
 
 def _md_escape(value: str) -> str:

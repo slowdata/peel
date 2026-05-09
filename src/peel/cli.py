@@ -233,7 +233,10 @@ def report(
     try:
         db.init_schema()
         target_dir = output_dir or PROJECT_ROOT / "data" / "reports"
-        path = generate_weekly_report(db, week=week, output_dir=target_dir)
+        try:
+            path = generate_weekly_report(db, week=week, output_dir=target_dir)
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc), param_hint="--week") from exc
         console.print(f"Report written: {path}")
         if open_report:
             webbrowser.open(path.resolve().as_uri())

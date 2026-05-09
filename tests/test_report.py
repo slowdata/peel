@@ -139,3 +139,36 @@ class TestWeeklyReport:
         content = path.read_text(encoding="utf-8")
         assert "# Peel 2026-W18" in content
         db.close()
+
+    def test_generate_weekly_report_accepts_lowercase_week(self, tmp_path: Path) -> None:
+        db = DB(str(tmp_path / "peel.db"))
+        db.init_schema()
+
+        week = "2026-W19"
+        db.conn.execute(
+            """
+            INSERT INTO tracks
+            (spotify_uri, source_id, artist, title, source_url, added_at, added_at_week)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "spotify:track:1",
+                "source-a",
+                "Artist A",
+                "Track A",
+                None,
+                "2026-05-09T10:00:00+00:00",
+                week,
+            ),
+        )
+        db.conn.commit()
+
+        output_dir = tmp_path / "reports"
+        path = generate_weekly_report(db, week="2026-w19", output_dir=output_dir)
+
+        assert path == output_dir / "2026-W19.md"
+        assert path.exists()
+        content = path.read_text(encoding="utf-8")
+        assert "# Peel 2026-W19" in content
+        assert "Artist A — Track A" in content
+        db.close()
