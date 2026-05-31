@@ -32,14 +32,17 @@ from peel.doctor_sources import inspect_registered_sources
 from peel.main import run as run_pipeline
 from peel.report import generate_weekly_report
 from peel.scoring import SourceScore, build_source_scores
+from peel.spotify_client import SpotifyClient
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-console = Console(width=120)
+console = Console(width=160)
 app = typer.Typer(add_completion=False, help="Peel — música curada, sincronizada e visível.")
 sync_app = typer.Typer(add_completion=False, help="Sincronização local/GitHub.")
 doctor_app = typer.Typer(add_completion=False, help="Diagnósticos do Peel.")
+playlist_app = typer.Typer(add_completion=False, help="Ferramentas de playlists Spotify.")
 app.add_typer(sync_app, name="sync")
 app.add_typer(doctor_app, name="doctor")
+app.add_typer(playlist_app, name="playlist")
 
 
 @dataclass(slots=True)
@@ -274,25 +277,31 @@ def sources(
         return
 
     table = Table(title=f"Source scores (last {weeks} weeks)")
-    table.add_column("Source", style="bold")
-    table.add_column("Found", justify="right")
-    table.add_column("Matched", justify="right")
-    table.add_column("New", justify="right")
-    table.add_column("Dup", justify="right")
-    table.add_column("Consensus", justify="right")
-    table.add_column("Unmatched", justify="right")
-    table.add_column("Liked", justify="right")
-    table.add_column("Skipped", justify="right")
-    table.add_column("Avg rating", justify="right")
-    table.add_column("Score", justify="right")
+    table.add_column("Source", style="bold", no_wrap=True)
+    table.add_column("Fnd", justify="right", header_style="bold", overflow="fold")
+    table.add_column("Runs", justify="right", header_style="bold", overflow="fold")
+    table.add_column("F/F", justify="right", header_style="bold", overflow="fold")
+    table.add_column("Proc", justify="right", header_style="bold", overflow="fold")
+    table.add_column("S/C/E", justify="right", header_style="bold", overflow="fold")
+    table.add_column("Mat", justify="right", header_style="bold", overflow="fold")
+    table.add_column("New", justify="right", header_style="bold", overflow="fold")
+    table.add_column("Con", justify="right", header_style="bold", overflow="fold")
+    table.add_column("Unm", justify="right", header_style="bold", overflow="fold")
+    table.add_column("Like", justify="right", header_style="bold", overflow="fold")
+    table.add_column("Skip", justify="right", header_style="bold", overflow="fold")
+    table.add_column("Avg", justify="right", header_style="bold", overflow="fold")
+    table.add_column("Score", justify="right", header_style="bold", overflow="fold")
 
     for row in rows:
         table.add_row(
             row.source_id,
             str(row.tracks_found),
+            str(row.run_count),
+            f"{row.fetched_count}/{row.fresh_count}",
+            str(row.processed_count),
+            f"{row.skipped_stale_count}/{row.skipped_cap_count}/{row.error_count}",
             str(row.tracks_matched),
             str(row.new_unique_tracks),
-            str(row.duplicate_mentions),
             str(row.consensus_hits),
             str(row.unmatched_count),
             str(row.liked_count),
@@ -302,6 +311,40 @@ def sources(
         )
 
     console.print(table)
+
+
+@playlist_app.command("fill-week")
+def playlist_fill_week(
+    week: Annotated[str, typer.Argument(help="Semana ISO, ex. 2026-W22")],
+    playlist_id: Annotated[str, typer.Option("--playlist-id", help="Playlist Spotify destino")],
+    unrated_only: Annotated[
+        bool,
+        typer.Option("--unrated-only", help="Inclui só tracks ainda sem feedback"),
+    ] = False,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Mostra sem alterar Spotify")] = False,
+) -> None:
+    """Preenche uma playlist existente com tracks de uma semana."""
+    normalized_week = _normalize_week_option(week)
+    rows = _weekly_playlist_rows(normalized_week, unrated_only=unrated_only)
+    if not rows:
+        console.print(f"Sem tracks para {normalized_week}.")
+        return
+
+    table = Table(title=f"Playlist {normalized_week}")
+    table.add_column("Artist", style="bold")
+    table.add_column("Title")
+    table.add_column("URI")
+    for spotify_uri, artist, title in rows:
+        table.add_row(artist, title, spotify_uri)
+    console.print(table)
+
+    if dry_run:
+        console.print(f"Dry run: {len(rows)} tracks; playlist not changed.")
+        return
+
+    client = SpotifyClient()
+    client.replace_playlist_items(playlist_id, [row[0] for row in rows])
+    console.print(f"Playlist filled: {playlist_id} ({len(rows)} tracks).")
 
 
 @sync_app.command("status")
@@ -438,11 +481,62 @@ def _source_score_rows(weeks: int, min_tracks: int) -> list[SourceScore]:
         db.close()
 
 
+def _weekly_playlist_rows(
+    week: str,
+    unrated_only: bool = False,
+) -> list[tuple[str, str, str]]:
+    db = DB(str(_resolve_path(settings.db_path)))
+    try:
+        db.init_schema()
+        if unrated_only:
+            rows = db.conn.execute(
+                """
+                SELECT t.spotify_uri, t.artist, t.title, MAX(t.added_at) AS last_added_at
+                FROM tracks t
+                LEFT JOIN feedback f ON f.spotify_uri = t.spotify_uri
+                WHERE t.added_at_week = ?
+                  AND f.spotify_uri IS NULL
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM tracks rated_track
+                    JOIN feedback rated_feedback
+                      ON rated_feedback.spotify_uri = rated_track.spotify_uri
+                    WHERE rated_track.artist = t.artist
+                      AND rated_track.title = t.title
+                  )
+                GROUP BY t.spotify_uri, t.artist, t.title
+                ORDER BY last_added_at DESC, t.artist COLLATE NOCASE, t.title COLLATE NOCASE
+                """,
+                (week,),
+            ).fetchall()
+        else:
+            rows = db.conn.execute(
+                """
+                SELECT spotify_uri, artist, title, MAX(added_at) AS last_added_at
+                FROM tracks
+                WHERE added_at_week = ?
+                GROUP BY spotify_uri, artist, title
+                ORDER BY last_added_at DESC, artist COLLATE NOCASE, title COLLATE NOCASE
+                """,
+                (week,),
+            ).fetchall()
+        return [(str(row[0]), str(row[1]), str(row[2])) for row in rows]
+    finally:
+        db.close()
+
+
 def _source_score_to_dict(row: SourceScore) -> dict[str, object]:
     return {
         "source_id": row.source_id,
         "tracks_found": row.tracks_found,
         "tracks_matched": row.tracks_matched,
+        "run_count": row.run_count,
+        "fetched_count": row.fetched_count,
+        "fresh_count": row.fresh_count,
+        "processed_count": row.processed_count,
+        "skipped_stale_count": row.skipped_stale_count,
+        "skipped_cap_count": row.skipped_cap_count,
+        "error_count": row.error_count,
         "new_unique_tracks": row.new_unique_tracks,
         "duplicate_mentions": row.duplicate_mentions,
         "consensus_hits": row.consensus_hits,
@@ -522,6 +616,21 @@ def _print_doctor_overview() -> None:
     )
 
     console.print(checks)
+
+
+def _normalize_week_option(week: str) -> str:
+    value = week.strip().upper()
+    parts = value.split("-W")
+    if len(parts) != 2:
+        raise typer.BadParameter(f"Invalid ISO week: {week!r}. Expected YYYY-Www")
+    try:
+        year = int(parts[0])
+        week_number = int(parts[1])
+    except ValueError as exc:
+        raise typer.BadParameter(f"Invalid ISO week: {week!r}. Expected YYYY-Www") from exc
+    if not 1 <= week_number <= 53:
+        raise typer.BadParameter("ISO week must be between 1 and 53")
+    return f"{year:04d}-W{week_number:02d}"
 
 
 def _resolve_path(value: str) -> Path:

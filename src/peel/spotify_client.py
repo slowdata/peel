@@ -57,8 +57,12 @@ def _and_the_variant(artist: str) -> str | None:
         return re.sub(r"\s+and\s+the\s+", " & The ", artist, flags=re.IGNORECASE)
     return None
 
-# Scopes necessários para add_to_playlist (write).
-SCOPES = "playlist-modify-private playlist-modify-public"
+
+# Scopes necessários para gerir a playlist principal e playlists temporárias.
+SCOPES = (
+    "playlist-modify-private playlist-modify-public "
+    "playlist-read-private playlist-read-collaborative user-read-private"
+)
 
 # Redirect URI: tem de ser http://127.0.0.1:8888/callback (HTTP, 127.0.0.1, não localhost).
 REDIRECT_URI = "http://127.0.0.1:8888/callback"
@@ -123,9 +127,7 @@ class SpotifyClient:
         # Fallback: variante "And The" → "& The" no artista
         variant = _and_the_variant(clean_artist)
         if variant:
-            log.debug(
-                "spotify.retry_variant", original=clean_artist, variant=variant
-            )
+            log.debug("spotify.retry_variant", original=clean_artist, variant=variant)
             candidates = self._do_search(f"{variant} {clean_title}", limit)
             if candidates:
                 return candidates

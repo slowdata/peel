@@ -32,6 +32,14 @@ class TestLoadSourceRegistry:
                             "feed_url": "https://www.theguardian.com/music/rss",
                         }
                     ],
+                    "archived_sources": [
+                        {
+                            "name": "Dead Feed",
+                            "id": "dead-feed",
+                            "type": "rss",
+                            "feed_url": "https://example.test/dead.xml",
+                        }
+                    ],
                     "misc": ["ignored"],
                 }
             ),

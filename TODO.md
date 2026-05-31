@@ -1,6 +1,6 @@
 # Peel — TODO actual
 
-Última actualização: 2026-05-02
+Última actualização: 2026-05-31
 
 ## Pronto / feito
 
@@ -15,8 +15,12 @@
 - [x] Caps de segurança por source/run e filtro de items antigos.
 - [x] Guardian Music como fonte de álbuns/contexto.
 - [x] The Quietus tratado como álbum/contexto, não playlist directa.
+- [x] The Quietus Tracks of the Month como fonte de tracks.
 - [x] `unmatched.source_url` para preservar links externos.
 - [x] Telegram digest com tracks, álbuns e escutas externas.
+- [x] Playlists temporárias por semana: `peel playlist fill-week`.
+- [x] Registry limpa: 9 feeds mortos arquivados em `archived_sources`.
+- [x] `peel sources` enriquecido com métricas reais de `source_runs`.
 
 ## O que testar agora
 
@@ -26,6 +30,7 @@
 uv run ruff check
 uv run pytest
 uv run peel doctor
+uv run peel doctor sources
 uv run peel status
 ```
 
@@ -40,23 +45,25 @@ uv run peel sources --weeks 4
 uv run peel sync push
 ```
 
-### Próxima run semanal
+### Playlists temporárias
 
-Depois do próximo cron de sábado, confirmar:
-
-- [ ] Playlist recebeu apenas tracks novas e deduplicadas.
-- [ ] Quietus aparece como álbum/contexto, não como unmatched track.
-- [ ] Telegram mostra secção de álbuns quando houver álbuns.
-- [ ] Telegram mostra “Escutas externas” quando houver unmatched com link.
-- [ ] Report semanal inclui links em `Unmatched`.
-- [ ] `peel sources` continua legível depois de mais uma semana de histórico.
+```bash
+uv run peel playlist fill-week 2026-W22 --playlist-id <spotify_playlist_id> --dry-run
+uv run peel playlist fill-week 2026-W22 --playlist-id <spotify_playlist_id>
+uv run peel playlist fill-week 2026-W22 --playlist-id <spotify_playlist_id> --unrated-only
+```
 
 ## Próximos TODOs pequenos
 
-1. [ ] Adicionar Bandcamp Daily como source `context`/external inbox, sem playlist directa.
-2. [ ] Adicionar Pitchfork Best New Albums como source de álbuns.
-3. [ ] Adicionar First Floor/Substacks como contexto, uma de cada vez.
-4. [ ] Rever `source_runs` no fim de Maio e decidir se scoring passa a usar histórico real.
+1. [ ] NPR New Music Friday como source de álbuns/contexto e/ou tracks filtradas.
+   - URL: `https://www.npr.org/sections/allsongs/606254804/new-music-friday`
+   - Artigos semanais têm `The Starting 5`, `The Lightning Round`, `Dora's Corner` e `The Long List`.
+   - Prioridade inicial: `The Starting 5` como high-signal.
+   - Considerar `Rock/Alt/Indie`, `R&B/Soul` e `Rap/Hip-Hop` da Long List só com filtro/cap forte.
+   - Evitar ingestão cega da Long List completa.
+2. [ ] Adicionar Bandcamp Daily como source `context`/external inbox, sem playlist directa.
+3. [ ] Adicionar Pitchfork Best New Albums como source de álbuns.
+4. [ ] Adicionar First Floor/Substacks como contexto, uma de cada vez.
 5. [ ] Em `peel sources`, mostrar “insufficient data” para fontes com poucas tracks.
 6. [ ] Só depois considerar matcher Spotify mais agressivo.
 
@@ -65,4 +72,5 @@ Depois do próximo cron de sábado, confirmar:
 - `data/peel.db` é versionado intencionalmente, mas não deve guardar tokens ou dados sensíveis.
 - `.env` nunca deve ser commitado.
 - Push SSH pode falhar sem chave carregada; workaround: `gh`/HTTPS.
+- Para playlists temporárias, criar playlist vazia manualmente no Spotify e usar `peel playlist fill-week`.
 - Anthropic/Claude API esteve bloqueada por billing/credits baixos; usar GPT mini para tarefas fechadas.

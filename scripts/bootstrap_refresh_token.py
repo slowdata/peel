@@ -30,7 +30,10 @@ from dotenv import load_dotenv
 
 # Constantes de configuração
 REDIRECT_URI = "http://127.0.0.1:8888/callback"
-SCOPES = "playlist-modify-private playlist-modify-public"
+SCOPES = (
+    "playlist-modify-private playlist-modify-public "
+    "playlist-read-private playlist-read-collaborative user-read-private"
+)
 AUTH_URL = "https://accounts.spotify.com/authorize"
 TOKEN_URL = "https://accounts.spotify.com/api/token"
 

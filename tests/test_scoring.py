@@ -117,6 +117,81 @@ class TestBuildSourceScores:
 
         db.close()
 
+    def test_build_source_scores_adds_source_run_metrics(self, tmp_path: Path) -> None:
+        db = DB(str(tmp_path / "peel.db"))
+        db.init_schema()
+
+        _insert_track(
+            db,
+            uri="spotify:track:1",
+            source_id="source-a",
+            artist="Artist A",
+            title="Track A",
+            added_at="2026-05-01T10:00:00+00:00",
+        )
+        db.record_source_run(
+            source_id="source-a",
+            run_at="2026-05-01T09:00:00+00:00",
+            fetched_count=10,
+            fresh_count=8,
+            processed_count=5,
+            matched_count=4,
+            new_unique_count=3,
+            unmatched_count=1,
+            album_count=0,
+            skipped_stale_count=2,
+            skipped_cap_count=3,
+            status="ok",
+            error=None,
+        )
+        db.record_source_run(
+            source_id="source-a",
+            run_at="2026-05-02T09:00:00+00:00",
+            fetched_count=7,
+            fresh_count=6,
+            processed_count=4,
+            matched_count=2,
+            new_unique_count=1,
+            unmatched_count=2,
+            album_count=0,
+            skipped_stale_count=1,
+            skipped_cap_count=0,
+            status="error",
+            error="boom",
+        )
+        db.record_source_run(
+            source_id="album-only",
+            run_at="2026-05-01T09:00:00+00:00",
+            fetched_count=5,
+            fresh_count=5,
+            processed_count=5,
+            matched_count=0,
+            new_unique_count=0,
+            unmatched_count=0,
+            album_count=5,
+            skipped_stale_count=0,
+            skipped_cap_count=0,
+            status="ok",
+            error=None,
+        )
+
+        scores = build_source_scores(
+            db,
+            weeks=4,
+            reference_dt=datetime(2026, 5, 1, tzinfo=UTC),
+        )
+
+        assert [row.source_id for row in scores] == ["source-a"]
+        source_a = scores[0]
+        assert source_a.run_count == 2
+        assert source_a.fetched_count == 17
+        assert source_a.fresh_count == 14
+        assert source_a.processed_count == 9
+        assert source_a.skipped_stale_count == 3
+        assert source_a.skipped_cap_count == 3
+        assert source_a.error_count == 1
+        db.close()
+
     def test_build_source_scores_uses_window_and_global_first_source(
         self,
         tmp_path: Path,
@@ -198,6 +273,8 @@ class TestSourcesCli:
         payload = json.loads(result.stdout)
         assert payload[0]["source_id"] == "source-a"
         assert payload[0]["tracks_matched"] == 1
+        assert payload[0]["run_count"] == 0
+        assert payload[0]["fetched_count"] == 0
         assert payload[0]["score"] == 22.0
 
     def test_sources_command_min_tracks_filters_by_tracks_matched(
@@ -266,7 +343,7 @@ class TestSourcesCli:
         assert result.exit_code == 0
         assert "Source scores" in result.stdout
         assert "source-a" in result.stdout
-        assert "Found" in result.stdout
+        assert "Fnd" in result.stdout
         assert "22.0" in result.stdout
 
 

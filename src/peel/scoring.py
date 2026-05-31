@@ -1,11 +1,12 @@
-"""Source scoring using existing Peel data.
+"""Source scoring using persisted Peel data.
 
-The score is intentionally simple and observational. It uses only persisted data:
-matched tracks, unmatched candidates and explicit user feedback.
+The score is intentionally simple and observational. It combines:
+- matched tracks and unmatched candidates attributed to each source;
+- explicit user feedback;
+- source_runs telemetry (fetched/fresh/processed/stale/caps/errors) when available.
 
-Important limitation: without a historical ``source_runs`` table we cannot recover the
-raw number of items fetched by a source. ``tracks_found`` is therefore the known,
-persisted total: matched tracks + unmatched candidates in the selected window.
+``tracks_found`` remains the playlist-facing candidate count: matched + unmatched.
+Raw source volume is exposed separately via ``fetched_count`` and friends.
 """
 
 from __future__ import annotations
@@ -34,6 +35,13 @@ class SourceScore:
     duplicate_mentions: int = 0
     consensus_hits: int = 0
     unmatched_count: int = 0
+    run_count: int = 0
+    fetched_count: int = 0
+    fresh_count: int = 0
+    processed_count: int = 0
+    skipped_stale_count: int = 0
+    skipped_cap_count: int = 0
+    error_count: int = 0
     liked_count: int = 0
     skipped_count: int = 0
     rating_total: int = 0
@@ -142,7 +150,55 @@ def build_source_scores(
     for source_id, _, _ in unmatched_rows:
         summary(str(source_id)).unmatched_count += 1
 
+    _apply_source_run_metrics(db, scores, start_dt, end_dt)
+
     return sorted(scores.values(), key=lambda item: (-item.score, item.source_id))
+
+
+def _apply_source_run_metrics(
+    db: DB,
+    scores: dict[str, SourceScore],
+    start_dt: datetime,
+    end_dt: datetime,
+) -> None:
+    """Enriquece scores existentes com métricas agregadas de source_runs.
+
+    Só actualiza sources já presentes no scoring de tracks/unmatched. Assim o comando
+    continua focado em playlist sources e não passa a listar fontes puramente album/context.
+    """
+    if not scores:
+        return
+
+    rows = db.conn.execute(
+        """
+        SELECT
+            source_id,
+            COUNT(*) AS run_count,
+            COALESCE(SUM(fetched_count), 0) AS fetched_count,
+            COALESCE(SUM(fresh_count), 0) AS fresh_count,
+            COALESCE(SUM(processed_count), 0) AS processed_count,
+            COALESCE(SUM(skipped_stale_count), 0) AS skipped_stale_count,
+            COALESCE(SUM(skipped_cap_count), 0) AS skipped_cap_count,
+            COALESCE(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END), 0) AS error_count
+        FROM source_runs
+        WHERE run_at >= ? AND run_at < ?
+        GROUP BY source_id
+        """,
+        (start_dt.isoformat(), end_dt.isoformat()),
+    ).fetchall()
+
+    for row in rows:
+        source_id = str(row[0])
+        item = scores.get(source_id)
+        if item is None:
+            continue
+        item.run_count = int(row[1])
+        item.fetched_count = int(row[2])
+        item.fresh_count = int(row[3])
+        item.processed_count = int(row[4])
+        item.skipped_stale_count = int(row[5])
+        item.skipped_cap_count = int(row[6])
+        item.error_count = int(row[7])
 
 
 def _window_sources_by_uri(rows: list[tuple[str, str]]) -> dict[str, list[str]]:

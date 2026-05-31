@@ -112,6 +112,7 @@ uv run peel doctor sources --json
 ```bash
 uv run peel sources
 uv run peel sources --weeks 4
+uv run peel sources --json
 ```
 
 ### Playlist safety caps
@@ -124,7 +125,19 @@ PEEL_MAX_SOURCE_ITEM_AGE_DAYS=30
 
 Só sources `kind = "track"` podem entrar na playlist. Sources `album`, `context`, `podcast`, `scrape` ou `manual_spotify` ficam fora da playlist automática. Items publicados há mais de `PEEL_MAX_SOURCE_ITEM_AGE_DAYS` dias são ignorados quando a source expõe data.
 
-`tracks_found` é calculado a partir dos dados persistidos: matches + unmatched. O total bruto de items recolhidos por run só ficará disponível quando existir histórico `source_runs`.
+`tracks_found` é calculado a partir dos dados persistidos: matches + unmatched. O comando também mostra telemetria real de `source_runs` (`Runs`, `Fetched/Fresh`, `Proc`, `Stale/Cap/Err`) para distinguir qualidade de fonte, backlog, caps e falhas.
+
+### Playlists temporárias por semana
+
+Para recriar uma semana numa playlist Spotify existente:
+
+```bash
+uv run peel playlist fill-week 2026-W22 --playlist-id <spotify_playlist_id>
+uv run peel playlist fill-week 2026-W22 --playlist-id <spotify_playlist_id> --unrated-only
+uv run peel playlist fill-week 2026-W22 --playlist-id <spotify_playlist_id> --dry-run
+```
+
+Uso típico: criar manualmente uma playlist privada vazia no Spotify, copiar o ID e preencher com uma semana antiga para ouvir/avaliar.
 
 ### Sync
 
