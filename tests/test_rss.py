@@ -7,6 +7,7 @@ import pytest
 from peel.sources.rss import (
     GorillaVsBear,
     GuardianMusicAlbums,
+    NprNewMusicFridayStarting5,
     PitchforkBestAlbums,
     PitchforkBNT,
     StereogumNewMusic,
@@ -44,6 +45,11 @@ class TestSourceKind:
     def test_quietus_kind_is_album(self) -> None:
         """TheQuietus.kind == 'album'."""
         source = TheQuietus()
+        assert source.kind == "album"
+
+    def test_npr_starting5_kind_is_album(self) -> None:
+        """NprNewMusicFridayStarting5.kind == 'album'."""
+        source = NprNewMusicFridayStarting5()
         assert source.kind == "album"
 
     def test_quietus_tracks_of_month_kind_is_track(self) -> None:
@@ -634,6 +640,67 @@ class TestTheQuietusExtractArtistTitle:
             self._entry("Some Weird Title", "/quietus-reviews/some-slug-review/")
         )
         assert result is None
+
+
+class TestNprNewMusicFridayStarting5:
+    """Parser da secção The Starting 5 da NPR."""
+
+    @pytest.fixture
+    def section_fixture_path(self) -> Path:
+        return Path(__file__).parent / "fixtures" / "npr_new_music_friday_section.html"
+
+    @pytest.fixture
+    def article_fixture_path(self) -> Path:
+        return Path(__file__).parent / "fixtures" / "npr_new_music_friday_starting5.html"
+
+    def test_fixtures_exist(self, section_fixture_path: Path, article_fixture_path: Path) -> None:
+        assert section_fixture_path.exists(), f"Fixture not found: {section_fixture_path}"
+        assert article_fixture_path.exists(), f"Fixture not found: {article_fixture_path}"
+
+    def test_latest_article_url_from_section(self, section_fixture_path: Path) -> None:
+        source = NprNewMusicFridayStarting5()
+        html = section_fixture_path.read_text(encoding="utf-8")
+
+        url = source._latest_article_url(html)
+
+        assert url == (
+            "https://www.npr.org/2026/05/29/nx-s1-5830351/new-music-friday-best-albums-may-29-2026"
+        )
+
+    def test_parse_starting_5_only(self, article_fixture_path: Path) -> None:
+        source = NprNewMusicFridayStarting5()
+        html = article_fixture_path.read_text(encoding="utf-8")
+
+        albums = source._parse_article_html(
+            html,
+            "https://www.npr.org/2026/05/29/nx-s1-5830351/new-music-friday-best-albums-may-29-2026",
+        )
+
+        assert len(albums) == 5
+        albums_dict = {(album.artist.lower(), album.title.lower()): album for album in albums}
+        assert ("boards of canada", "inferno") in albums_dict
+        assert ("kurt vile", "philadelphia's been good to me") in albums_dict
+        assert ("iceage", "for love of grace the hereafter") in albums_dict
+        assert ("feeble little horse", "bitknot") in albums_dict
+        assert ("greg mendez", "beauty land") in albums_dict
+
+        # Lightning Round / Long List não entram nesta source.
+        assert ("rainao", "marcriá") not in albums_dict
+        assert ("brian jackson", "now more than ever") not in albums_dict
+
+        for album in albums:
+            assert album.source_id == "npr_new_music_friday_starting5"
+            assert album.source_url.startswith("https://www.npr.org/2026/05/29/")
+            assert album.published_at is not None
+            assert album.artist
+            assert album.title
+
+    def test_parse_article_without_storytext_returns_empty(self) -> None:
+        source = NprNewMusicFridayStarting5()
+
+        albums = source._parse_article_html("<html></html>", "https://example.com")
+
+        assert albums == []
 
 
 class TestTheQuietusTracksOfMonth:

@@ -125,6 +125,8 @@ PEEL_MAX_SOURCE_ITEM_AGE_DAYS=30
 
 Só sources `kind = "track"` podem entrar na playlist. Sources `album`, `context`, `podcast`, `scrape` ou `manual_spotify` ficam fora da playlist automática. Items publicados há mais de `PEEL_MAX_SOURCE_ITEM_AGE_DAYS` dias são ignorados quando a source expõe data.
 
+Fontes `album` activas incluem Guardian album reviews, The Quietus album reviews e NPR New Music Friday — The Starting 5. Entram em `Albums / Context`, relatório e Telegram, mas não vão para Spotify matching/playlist.
+
 `tracks_found` é calculado a partir dos dados persistidos: matches + unmatched. O comando também mostra telemetria real de `source_runs` (`Runs`, `Fetched/Fresh`, `Proc`, `Stale/Cap/Err`) para distinguir qualidade de fonte, backlog, caps e falhas.
 
 ### Playlists temporárias por semana

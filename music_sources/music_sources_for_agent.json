@@ -248,11 +248,11 @@
     },
     {
       "name": "NPR All Songs Considered - New Music Friday",
-      "id": "npr-new-music-friday",
+      "id": "npr-new-music-friday-starting5",
       "type": "scrape",
       "feed_url": "https://www.npr.org/sections/allsongs/606254804/new-music-friday",
       "site_url": "https://www.npr.org/sections/allsongs/606254804/new-music-friday",
-      "description": "Weekly NPR Music New Music Friday articles. High-signal album discovery with structured sections: The Starting 5, Lightning Round, Dora's Corner and Long List.",
+      "description": "Weekly NPR Music New Music Friday articles. Peel currently extracts only The Starting 5 as album/context recommendations.",
       "relevance": 9,
       "genres_covered": [
         "indie",
@@ -268,7 +268,7 @@
       "authority_score": 9,
       "user_taste_match_notes": "Start with The Starting 5. Consider Long List sections Rock/Alt/Indie, R&B/Soul and Rap/Hip-Hop only with strong caps/filters; avoid ingesting the full long list blindly.",
       "fetch_priority": "high",
-      "implementation_notes": "Scrape latest article links from the section page; parse The Starting 5 as album/context first. Optional later: extract best songs via NPR Spotify playlist or curated section-specific caps."
+      "implementation_notes": "Implemented as NprNewMusicFridayStarting5 (kind=album): scrape latest article from section page and parse only The Starting 5. Do not ingest Long List blindly."
     },
     {
       "name": "The Guardian - Music Blog",

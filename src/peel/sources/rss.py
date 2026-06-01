@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 from abc import abstractmethod
 from datetime import datetime
+from html import unescape
 from urllib.parse import urlparse
 
 import feedparser
@@ -508,6 +509,13 @@ def _clean_quietus_chart_text(value: str) -> str:
     return value.strip().strip("\u2018\u2019\u201c\u201d'\"").strip()
 
 
+def _clean_npr_text(value: str) -> str:
+    """Limpa texto extraído de HTML NPR."""
+    text = _strip_html_tags(unescape(value))
+    text = re.sub(r"\s+", " ", text).strip()
+    return text.strip("\u2018\u2019\u201c\u201d'\"").strip()
+
+
 def _split_artist_title_dash(title: str) -> tuple[str, str] | None:
     """Separa um título no formato 'Artist – Title' em tuplo.
 
@@ -524,6 +532,120 @@ def _split_artist_title_dash(title: str) -> tuple[str, str] | None:
     if not artist or not track:
         return None
     return artist, track
+
+
+class NprNewMusicFridayStarting5(Source):
+    """NPR New Music Friday — The Starting 5.
+
+    A NPR publica artigos semanais "New Music Friday" com várias secções. Esta
+    source extrai apenas ``The Starting 5``: cinco álbuns de alta curadoria.
+
+    Produz items ``kind = "album"``: entram no relatório/Telegram como contexto,
+    não na playlist automática.
+    """
+
+    id = "npr_new_music_friday_starting5"
+    name = "NPR New Music Friday — The Starting 5"
+    kind = "album"
+    section_url = "https://www.npr.org/sections/allsongs/606254804/new-music-friday"
+    request_headers = {"User-Agent": _BROWSER_UA}
+
+    def fetch(self) -> list[Track]:
+        """Procura o artigo New Music Friday mais recente e extrai The Starting 5."""
+        section_response = httpx.get(
+            self.section_url,
+            headers=self.request_headers,
+            follow_redirects=True,
+            timeout=20,
+        )
+        section_response.raise_for_status()
+        article_url = self._latest_article_url(section_response.text)
+        if article_url is None:
+            log.warning("npr_nmf.article_not_found", section_url=self.section_url)
+            return []
+
+        article_response = httpx.get(
+            article_url,
+            headers=self.request_headers,
+            follow_redirects=True,
+            timeout=20,
+        )
+        article_response.raise_for_status()
+        return self._parse_article_html(article_response.text, article_url)
+
+    def _latest_article_url(self, html: str) -> str | None:
+        parser = HTMLParser(html)
+        for link in parser.css("a"):
+            href = link.attributes.get("href", "").strip()
+            if "/new-music-friday-best-albums-" in href:
+                return href
+        return None
+
+    def _parse_article_html(self, html: str, source_url: str) -> list[Track]:
+        story = HTMLParser(html).css_first("#storytext")
+        if story is None:
+            log.warning("npr_nmf.storytext_not_found", source_url=source_url)
+            return []
+
+        published_at = self._published_at(html)
+        in_starting_5 = False
+        albums: list[Track] = []
+        for node in story.iter():
+            if node.tag == "h2":
+                heading = _clean_npr_text(node.text(strip=True))
+                if heading == "The Starting 5":
+                    in_starting_5 = True
+                    continue
+                if in_starting_5:
+                    break
+
+            if not in_starting_5 or node.tag != "p":
+                continue
+
+            parsed = self._parse_starting_5_paragraph(node.html)
+            if parsed is None:
+                continue
+            artist, album = parsed
+            albums.append(
+                Track(
+                    source_id=self.id,
+                    artist=artist,
+                    title=album,
+                    source_url=source_url,
+                    published_at=published_at,
+                    raw_title=f"{artist} — {album}",
+                )
+            )
+
+        return albums
+
+    def _parse_starting_5_paragraph(self, html: str) -> tuple[str, str] | None:
+        match = re.search(
+            r"<p>\s*🎵\s*(?P<artist>.*?),\s*<em>(?P<album>.*?)</em>",
+            html,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if match is None:
+            return None
+
+        artist = _clean_npr_text(match.group("artist"))
+        album = _clean_npr_text(match.group("album"))
+        if not artist or not album:
+            return None
+        return artist, album
+
+    def _published_at(self, html: str) -> datetime | None:
+        parser = HTMLParser(html)
+        time_node = parser.css_first("time[datetime]")
+        if time_node is None:
+            return None
+        value = time_node.attributes.get("datetime", "").strip()
+        if not value or value.startswith("P"):
+            return None
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
 
 
 class TheQuietusTracksOfMonth(Source):

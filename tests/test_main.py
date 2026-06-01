@@ -11,6 +11,7 @@ from peel.models import Track
 from peel.sources.rss import (
     GorillaVsBear,
     GuardianMusicAlbums,
+    NprNewMusicFridayStarting5,
     PitchforkBNT,
     StereogumNewMusic,
     TheQuietus,
@@ -69,6 +70,7 @@ class TestMainIntegration:
         with (
             patch("peel.sources.rss.PitchforkBNT.url", fixture_url),
             patch.object(GuardianMusicAlbums, "fetch", return_value=[]),
+            patch.object(NprNewMusicFridayStarting5, "fetch", return_value=[]),
             patch.object(TheQuietusTracksOfMonth, "fetch", return_value=[]),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
             patch("peel.main.send_digest"),  # Mocka Telegram
@@ -130,6 +132,7 @@ class TestMainIntegration:
         with (
             patch("peel.sources.rss.PitchforkBNT.url", fixture_url),
             patch.object(GuardianMusicAlbums, "fetch", return_value=[]),
+            patch.object(NprNewMusicFridayStarting5, "fetch", return_value=[]),
             patch.object(TheQuietusTracksOfMonth, "fetch", return_value=[]),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
             patch("peel.main.send_digest"),  # Mocka Telegram
@@ -195,6 +198,7 @@ class TestMainIntegration:
             patch.object(TheQuietusTracksOfMonth, "fetch", return_value=[]),
             patch.object(GorillaVsBear, "fetch", return_value=[]),
             patch.object(GuardianMusicAlbums, "fetch", return_value=[]),
+            patch.object(NprNewMusicFridayStarting5, "fetch", return_value=[]),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
             patch("peel.main.send_digest"),  # Mocka Telegram
         ):
@@ -258,6 +262,7 @@ class TestMainIntegration:
             patch.object(TheQuietusTracksOfMonth, "fetch", return_value=[]),
             patch.object(GorillaVsBear, "fetch", return_value=[]),
             patch.object(GuardianMusicAlbums, "fetch", return_value=[album]),
+            patch.object(NprNewMusicFridayStarting5, "fetch", return_value=[]),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
             patch("peel.main.send_digest"),
         ):
@@ -325,6 +330,7 @@ class TestPlaylistSafetyCaps:
             patch.object(TheQuietusTracksOfMonth, "fetch", return_value=[]),
             patch.object(GorillaVsBear, "fetch", return_value=[]),
             patch.object(GuardianMusicAlbums, "fetch", return_value=[]),
+            patch.object(NprNewMusicFridayStarting5, "fetch", return_value=[]),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
             patch("peel.main.send_digest"),
         ):
@@ -381,6 +387,7 @@ class TestPlaylistSafetyCaps:
             patch.object(TheQuietus, "fetch", return_value=[track("thequietus", 3)]),
             patch.object(GorillaVsBear, "fetch", return_value=[track("gorillavsbear", 4)]),
             patch.object(GuardianMusicAlbums, "fetch", return_value=[]),
+            patch.object(NprNewMusicFridayStarting5, "fetch", return_value=[]),
             patch.object(TheQuietusTracksOfMonth, "fetch", return_value=[]),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
             patch("peel.main.send_digest"),
@@ -427,6 +434,7 @@ class TestPlaylistSafetyCaps:
             patch.object(TheQuietusTracksOfMonth, "fetch", return_value=[]),
             patch.object(GorillaVsBear, "fetch", return_value=[]),
             patch.object(GuardianMusicAlbums, "fetch", return_value=[]),
+            patch.object(NprNewMusicFridayStarting5, "fetch", return_value=[]),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
             patch("peel.main.send_digest"),
         ):
@@ -647,6 +655,7 @@ class TestConsensusAttribution:
             patch.object(TheQuietusTracksOfMonth, "fetch", return_value=[]),
             patch.object(GorillaVsBear, "fetch", return_value=[shared_track_4]),
             patch.object(GuardianMusicAlbums, "fetch", return_value=[]),
+            patch.object(NprNewMusicFridayStarting5, "fetch", return_value=[]),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
             patch("peel.main.send_digest"),
         ):

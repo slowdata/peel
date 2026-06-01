@@ -26,6 +26,7 @@ from peel.models import Track
 from peel.sources.rss import (
     GorillaVsBear,
     GuardianMusicAlbums,
+    NprNewMusicFridayStarting5,
     PitchforkBNT,
     StereogumNewMusic,
     TheQuietus,
@@ -133,6 +134,7 @@ def run() -> None:
             TheQuietusTracksOfMonth(),
             GorillaVsBear(),
             GuardianMusicAlbums(),
+            NprNewMusicFridayStarting5(),
         ]
 
         for source in sources:
