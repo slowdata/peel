@@ -47,10 +47,10 @@ class TestSourceKind:
         source = TheQuietus()
         assert source.kind == "album"
 
-    def test_npr_starting5_kind_is_album(self) -> None:
-        """NprNewMusicFridayStarting5.kind == 'album'."""
+    def test_npr_starting5_kind_is_track(self) -> None:
+        """NprNewMusicFridayStarting5.kind == 'track'."""
         source = NprNewMusicFridayStarting5()
-        assert source.kind == "album"
+        assert source.kind == "track"
 
     def test_quietus_tracks_of_month_kind_is_track(self) -> None:
         """TheQuietusTracksOfMonth.kind == 'track'."""
@@ -671,36 +671,36 @@ class TestNprNewMusicFridayStarting5:
         source = NprNewMusicFridayStarting5()
         html = article_fixture_path.read_text(encoding="utf-8")
 
-        albums = source._parse_article_html(
+        tracks = source._parse_article_html(
             html,
             "https://www.npr.org/2026/05/29/nx-s1-5830351/new-music-friday-best-albums-may-29-2026",
         )
 
-        assert len(albums) == 5
-        albums_dict = {(album.artist.lower(), album.title.lower()): album for album in albums}
-        assert ("boards of canada", "inferno") in albums_dict
-        assert ("kurt vile", "philadelphia's been good to me") in albums_dict
-        assert ("iceage", "for love of grace the hereafter") in albums_dict
-        assert ("feeble little horse", "bitknot") in albums_dict
-        assert ("greg mendez", "beauty land") in albums_dict
+        assert len(tracks) == 5
+        tracks_dict = {(track.artist.lower(), track.title.lower()): track for track in tracks}
+        assert ("boards of canada", "inferno") in tracks_dict
+        assert ("kurt vile", "philadelphia's been good to me") in tracks_dict
+        assert ("iceage", "for love of grace the hereafter") in tracks_dict
+        assert ("feeble little horse", "bitknot") in tracks_dict
+        assert ("greg mendez", "beauty land") in tracks_dict
 
         # Lightning Round / Long List não entram nesta source.
-        assert ("rainao", "marcriá") not in albums_dict
-        assert ("brian jackson", "now more than ever") not in albums_dict
+        assert ("rainao", "marcriá") not in tracks_dict
+        assert ("brian jackson", "now more than ever") not in tracks_dict
 
-        for album in albums:
-            assert album.source_id == "npr_new_music_friday_starting5"
-            assert album.source_url.startswith("https://www.npr.org/2026/05/29/")
-            assert album.published_at is not None
-            assert album.artist
-            assert album.title
+        for track in tracks:
+            assert track.source_id == "npr_new_music_friday_starting5"
+            assert track.source_url.startswith("https://www.npr.org/2026/05/29/")
+            assert track.published_at is not None
+            assert track.artist
+            assert track.title
 
     def test_parse_article_without_storytext_returns_empty(self) -> None:
         source = NprNewMusicFridayStarting5()
 
-        albums = source._parse_article_html("<html></html>", "https://example.com")
+        tracks = source._parse_article_html("<html></html>", "https://example.com")
 
-        assert albums == []
+        assert tracks == []
 
 
 class TestTheQuietusTracksOfMonth:

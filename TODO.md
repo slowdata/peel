@@ -21,7 +21,7 @@
 - [x] Playlists temporárias por semana: `peel playlist fill-week`.
 - [x] Registry limpa: 9 feeds mortos arquivados em `archived_sources`.
 - [x] `peel sources` enriquecido com métricas reais de `source_runs`.
-- [x] NPR New Music Friday — The Starting 5 como fonte de álbuns/contexto.
+- [x] NPR New Music Friday — The Starting 5 como fonte de tracks.
 
 ## O que testar agora
 
@@ -57,8 +57,8 @@ uv run peel playlist fill-week 2026-W22 --playlist-id <spotify_playlist_id> --un
 ## Próximos TODOs pequenos
 
 1. [ ] NPR New Music Friday — avaliar próxima extensão:
-   - `The Lightning Round` como álbum/contexto?
-   - `Dora's Corner` como álbum/contexto?
+   - `The Lightning Round` como tracks?
+   - `Dora's Corner` como tracks/contexto?
    - Long List só com caps/filtros fortes (`Rock/Alt/Indie`, `R&B/Soul`, `Rap/Hip-Hop`).
    - Evitar ingestão cega da Long List completa.
 2. [ ] Adicionar Bandcamp Daily como source `context`/external inbox, sem playlist directa.

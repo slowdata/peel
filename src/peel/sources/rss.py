@@ -538,15 +538,15 @@ class NprNewMusicFridayStarting5(Source):
     """NPR New Music Friday — The Starting 5.
 
     A NPR publica artigos semanais "New Music Friday" com várias secções. Esta
-    source extrai apenas ``The Starting 5``: cinco álbuns de alta curadoria.
+    source extrai apenas ``The Starting 5``: cinco músicas de alta curadoria.
 
-    Produz items ``kind = "album"``: entram no relatório/Telegram como contexto,
-    não na playlist automática.
+    Produz items ``kind = "track"``: entram no Spotify matching, playlist,
+    feedback e scoring como qualquer outra source de faixas.
     """
 
     id = "npr_new_music_friday_starting5"
     name = "NPR New Music Friday — The Starting 5"
-    kind = "album"
+    kind = "track"
     section_url = "https://www.npr.org/sections/allsongs/606254804/new-music-friday"
     request_headers = {"User-Agent": _BROWSER_UA}
 
@@ -589,7 +589,7 @@ class NprNewMusicFridayStarting5(Source):
 
         published_at = self._published_at(html)
         in_starting_5 = False
-        albums: list[Track] = []
+        tracks: list[Track] = []
         for node in story.iter():
             if node.tag == "h2":
                 heading = _clean_npr_text(node.text(strip=True))
@@ -605,23 +605,23 @@ class NprNewMusicFridayStarting5(Source):
             parsed = self._parse_starting_5_paragraph(node.html)
             if parsed is None:
                 continue
-            artist, album = parsed
-            albums.append(
+            artist, title = parsed
+            tracks.append(
                 Track(
                     source_id=self.id,
                     artist=artist,
-                    title=album,
+                    title=title,
                     source_url=source_url,
                     published_at=published_at,
-                    raw_title=f"{artist} — {album}",
+                    raw_title=f"{artist} — {title}",
                 )
             )
 
-        return albums
+        return tracks
 
     def _parse_starting_5_paragraph(self, html: str) -> tuple[str, str] | None:
         match = re.search(
-            r"<p>\s*🎵\s*(?P<artist>.*?),\s*<em>(?P<album>.*?)</em>",
+            r"<p>\s*🎵\s*(?P<artist>.*?),\s*<em>(?P<title>.*?)</em>",
             html,
             flags=re.IGNORECASE | re.DOTALL,
         )
@@ -629,10 +629,10 @@ class NprNewMusicFridayStarting5(Source):
             return None
 
         artist = _clean_npr_text(match.group("artist"))
-        album = _clean_npr_text(match.group("album"))
-        if not artist or not album:
+        title = _clean_npr_text(match.group("title"))
+        if not artist or not title:
             return None
-        return artist, album
+        return artist, title
 
     def _published_at(self, html: str) -> datetime | None:
         parser = HTMLParser(html)
