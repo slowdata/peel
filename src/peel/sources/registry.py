@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 from peel.sources.base import Source
 from peel.sources.rss import (
+    AquariumDrunkard,
     GorillaVsBear,
     GuardianMusicAlbums,
     NprNewMusicFridayStarting5,
@@ -44,6 +45,7 @@ ACTIVE_SOURCES: list[SourceSpec] = [
     SourceSpec(GuardianMusicAlbums),
     SourceSpec(NprNewMusicFridayStarting5),
     SourceSpec(PitchforkBestAlbums),
+    SourceSpec(AquariumDrunkard),
 ]
 
 

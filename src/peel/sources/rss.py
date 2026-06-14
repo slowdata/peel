@@ -20,7 +20,7 @@ from urllib.parse import urlparse
 import feedparser
 import httpx
 import structlog
-from selectolax.parser import HTMLParser
+from selectolax.parser import HTMLParser, Node
 
 from peel.models import Track
 from peel.sources.base import Source
@@ -532,6 +532,108 @@ def _split_artist_title_dash(title: str) -> tuple[str, str] | None:
     if not artist or not track:
         return None
     return artist, track
+
+
+class AquariumDrunkard(Source):
+    """Aquarium Drunkard — On The Turntable.
+
+    Página: https://aquariumdrunkard.com/
+
+    A homepage tem um bloco editorial pequeno e server-rendered, ``On The
+    Turntable``, com álbuns em rotação. É uma fonte mais adequada do que o RSS
+    geral da AD: curada, curta e explicitamente album-oriented. Produz items
+    ``kind = "album"`` para digest/report, sem Spotify matching nem playlist.
+
+    Estratégia: parsear ``ul.on_the_turntable_content li.album``, separar o
+    ``h3`` no primeiro ``::`` e usar o link ``Read More`` como ``source_url``.
+    Itens malformados são saltados com warning; falha HTTP levanta exceção para
+    o orquestrador tratar por source.
+    """
+
+    id = "aquarium_drunkard"
+    name = "Aquarium Drunkard — On The Turntable"
+    kind = "album"
+    url = "https://aquariumdrunkard.com/"
+    request_headers = {"User-Agent": _BROWSER_UA}
+
+    def fetch(self) -> list[Track]:
+        """Extrai os álbuns do bloco On The Turntable da homepage."""
+        response = httpx.get(
+            self.url,
+            headers=self.request_headers,
+            follow_redirects=True,
+            timeout=20,
+        )
+        response.raise_for_status()
+        return self._parse_homepage_html(response.text)
+
+    def _parse_homepage_html(self, html: str) -> list[Track]:
+        parser = HTMLParser(html)
+        items = parser.css("div.turntable-items ul.on_the_turntable_content li.album")
+        if not items:
+            log.warning("aquariumdrunkard.turntable_not_found", url=self.url)
+            return []
+
+        albums: list[Track] = []
+        for item in items:
+            album = self._parse_album_item(item)
+            if album is not None:
+                albums.append(album)
+        return albums
+
+    def _parse_album_item(self, item: Node) -> Track | None:
+        heading = item.css_first("div.album-content h3") or item.css_first("h3")
+        if heading is None:
+            log.warning("aquariumdrunkard.album_heading_missing")
+            return None
+
+        raw_title = re.sub(r"\s+", " ", heading.text(strip=True)).strip()
+        parsed = self._split_turntable_title(raw_title)
+        if parsed is None:
+            log.warning("aquariumdrunkard.album_title_no_match", title=raw_title)
+            return None
+
+        artist, album_title = parsed
+        if not album_title:
+            log.warning("aquariumdrunkard.empty_album", title=raw_title)
+            return None
+
+        source_url = self._read_more_url(item)
+        if source_url is None:
+            # Decisão: manter o álbum mesmo sem link. O link é útil no digest,
+            # mas `Track.source_url` é opcional e a curadoria continua válida.
+            log.warning("aquariumdrunkard.read_more_missing", title=raw_title)
+
+        return Track(
+            source_id=self.id,
+            artist=artist,
+            title=album_title,
+            source_url=source_url,
+            raw_title=raw_title,
+        )
+
+    def _split_turntable_title(self, title: str) -> tuple[str, str] | None:
+        match = re.match(r"^(?P<artist>.+?)\s*::\s*(?P<album>.*)$", title)
+        if match is None:
+            return None
+
+        artist = self._clean_turntable_text(match.group("artist"))
+        album = self._clean_turntable_text(match.group("album"))
+        if not artist:
+            return None
+        return artist, album
+
+    def _read_more_url(self, item: Node) -> str | None:
+        for link in item.css("div.description a"):
+            href = link.attributes.get("href", "").strip()
+            text = link.text(strip=True).lower()
+            if href and "read more" in text:
+                return href
+        return None
+
+    def _clean_turntable_text(self, value: str) -> str:
+        text = _strip_html_tags(unescape(value))
+        return re.sub(r"\s+", " ", text).strip().strip("\u2018\u2019\u201c\u201d'\"").strip()
 
 
 class NprNewMusicFridayStarting5(Source):

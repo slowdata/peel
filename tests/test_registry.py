@@ -3,6 +3,7 @@ from __future__ import annotations
 from peel.sources.base import Source
 from peel.sources.registry import ACTIVE_SOURCES, SourceSpec, active_source_specs, active_sources
 from peel.sources.rss import (
+    AquariumDrunkard,
     GorillaVsBear,
     GuardianMusicAlbums,
     NprNewMusicFridayStarting5,
@@ -40,6 +41,7 @@ def test_active_sources_registry_contains_expected_order() -> None:
         GuardianMusicAlbums,
         NprNewMusicFridayStarting5,
         PitchforkBestAlbums,
+        AquariumDrunkard,
     ]
 
 

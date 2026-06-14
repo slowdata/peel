@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from peel.sources.rss import (
+    AquariumDrunkard,
     GorillaVsBear,
     GuardianMusicAlbums,
     NprNewMusicFridayStarting5,
@@ -56,6 +57,11 @@ class TestSourceKind:
         """TheQuietusTracksOfMonth.kind == 'track'."""
         source = TheQuietusTracksOfMonth()
         assert source.kind == "track"
+
+    def test_aquarium_drunkard_kind_is_album(self) -> None:
+        """AquariumDrunkard.kind == 'album'."""
+        source = AquariumDrunkard()
+        assert source.kind == "album"
 
 
 class TestPitchforkSlugify:
@@ -277,6 +283,92 @@ class TestPitchforkBestAlbumsFetchFixture:
         assert ("ratboys", "singin\u2019 to an empty chair") in tracks_dict
         t2 = tracks_dict[("ratboys", "singin\u2019 to an empty chair")]
         assert "ratboys-singin-to-an-empty-chair" in t2.source_url
+
+
+class TestAquariumDrunkard:
+    """Testa a source Aquarium Drunkard — On The Turntable."""
+
+    @pytest.fixture
+    def fixture_path(self) -> Path:
+        """Retorna o path do fixture HTML."""
+        return Path(__file__).parent / "fixtures" / "aquarium_drunkard_turntable.html"
+
+    @pytest.fixture
+    def fixture_html(self, fixture_path: Path) -> str:
+        return fixture_path.read_text(encoding="utf-8")
+
+    def test_parse_fixture_extracts_valid_albums(self, fixture_html: str) -> None:
+        source = AquariumDrunkard()
+
+        albums = source._parse_homepage_html(fixture_html)
+        album_keys = {(album.artist, album.title) for album in albums}
+
+        assert len(albums) == 7
+        assert album_keys == {
+            ("Wax Machine", "The Sky Unfurls, The Dance Goes On"),
+            ("Masayoshi Takanaka", "All of Me"),
+            ("Lifetones", "For A Reason"),
+            ("This Heat", "Made Available: John Peel Sessions"),
+            ("Boards of Canada", "Inferno"),
+            ("Jeff Parker ETA IVtet", "Happy Today"),
+            ("Setting", "S/T"),
+        }
+
+    def test_parse_fixture_decodes_ampersand_and_skips_empty_album(self, fixture_html: str) -> None:
+        source = AquariumDrunkard()
+
+        albums = source._parse_homepage_html(fixture_html)
+
+        assert all(album.artist != "Cedric IM Brooks & The Light of Saba" for album in albums)
+
+    def test_split_title_handles_ampersand_artist(self) -> None:
+        source = AquariumDrunkard()
+
+        assert source._split_turntable_title(
+            "Cedric IM Brooks & The Light of Saba :: The Magical Light of Saba"
+        ) == ("Cedric IM Brooks & The Light of Saba", "The Magical Light of Saba")
+
+    def test_parse_fixture_preserves_source_metadata(self, fixture_html: str) -> None:
+        source = AquariumDrunkard()
+
+        albums = source._parse_homepage_html(fixture_html)
+        wax_machine = next(album for album in albums if album.artist == "Wax Machine")
+
+        assert wax_machine.source_id == "aquarium_drunkard"
+        assert wax_machine.source_url == (
+            "https://aquariumdrunkard.com/2026/05/29/wax-machine-the-sky-unfurls-the-dance-goes-on/"
+        )
+        assert wax_machine.raw_title == "Wax Machine :: The Sky Unfurls, The Dance Goes On"
+
+    def test_missing_read_more_keeps_album_without_source_url(self, fixture_html: str) -> None:
+        source = AquariumDrunkard()
+
+        albums = source._parse_homepage_html(fixture_html)
+        jeff_parker = next(album for album in albums if album.artist == "Jeff Parker ETA IVtet")
+
+        assert jeff_parker.title == "Happy Today"
+        assert jeff_parker.source_url is None
+
+    def test_malformed_html_without_turntable_returns_empty_list(self) -> None:
+        source = AquariumDrunkard()
+
+        assert source._parse_homepage_html("<html><body>No turntable here</body></html>") == []
+
+    def test_fetch_uses_http_homepage_response(
+        self, fixture_html: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        class Response:
+            text = fixture_html
+
+            def raise_for_status(self) -> None:
+                return None
+
+        monkeypatch.setattr("peel.sources.rss.httpx.get", lambda *args, **kwargs: Response())
+
+        source = AquariumDrunkard()
+        albums = source.fetch()
+
+        assert len(albums) == 7
 
 
 class TestGuardianMusicAlbums:
