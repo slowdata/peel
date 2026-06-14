@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from peel.sources.bandcamp import BandcampLabel
 from peel.sources.base import Source
-from peel.sources.registry import ACTIVE_SOURCES, SourceSpec, active_source_specs, active_sources
+from peel.sources.registry import (
+    ACTIVE_SOURCES,
+    SourceSpec,
+    active_source_specs,
+    active_sources,
+    source_label,
+)
 from peel.sources.rss import (
     AquariumDrunkard,
     GorillaVsBear,
@@ -62,6 +68,12 @@ def test_active_sources_instantiates_enabled_sources(monkeypatch) -> None:
 
     assert len(sources) == 1
     assert isinstance(sources[0], DummySource)
+
+
+def test_source_label_returns_short_labels_and_fallback() -> None:
+    assert source_label("npr_new_music_friday_starting5") == "NPR"
+    assert source_label("pitchfork_best_albums") == "Pitchfork"
+    assert source_label("custom_source") == "Custom Source"
 
 
 def test_active_sources_instantiates_configured_bandcamp_labels() -> None:

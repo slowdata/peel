@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -7,7 +8,7 @@ from unittest.mock import MagicMock
 from typer.testing import CliRunner
 
 import peel.cli as cli
-from peel.db import DB
+from peel.db import DB, iso_week
 
 runner = CliRunner()
 
@@ -210,6 +211,27 @@ class TestCliReport:
         assert result.exit_code == 0
         assert "Report written" in result.stdout
         assert (output_dir / "2026-W18.md").exists()
+
+
+class TestCliSite:
+    def test_site_export_writes_week_json(self, tmp_path: Path, monkeypatch) -> None:
+        db_path = tmp_path / "peel.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        db.close()
+        site_dir = tmp_path / "peel-sept"
+        current_week = iso_week(datetime.now(UTC))
+
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+
+        result = runner.invoke(
+            cli.app,
+            ["site", "export", "--site-dir", str(site_dir), "--weeks", "1"],
+        )
+
+        assert result.exit_code == 0
+        assert f"Exported {current_week}" in result.stdout
+        assert (site_dir / "src" / "data" / "weeks" / f"{current_week}.json").exists()
 
 
 class TestCliPlaylist:

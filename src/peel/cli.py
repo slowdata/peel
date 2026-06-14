@@ -32,6 +32,7 @@ from peel.doctor_sources import inspect_registered_sources
 from peel.main import run as run_pipeline
 from peel.report import generate_weekly_report
 from peel.scoring import SourceScore, build_source_scores
+from peel.site_export import export_site
 from peel.spotify_client import SpotifyClient
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -40,9 +41,11 @@ app = typer.Typer(add_completion=False, help="Peel — música curada, sincroniz
 sync_app = typer.Typer(add_completion=False, help="Sincronização local/GitHub.")
 doctor_app = typer.Typer(add_completion=False, help="Diagnósticos do Peel.")
 playlist_app = typer.Typer(add_completion=False, help="Ferramentas de playlists Spotify.")
+site_app = typer.Typer(add_completion=False, help="Exportação para o site peel-sept.")
 app.add_typer(sync_app, name="sync")
 app.add_typer(doctor_app, name="doctor")
 app.add_typer(playlist_app, name="playlist")
+app.add_typer(site_app, name="site")
 
 
 @dataclass(slots=True)
@@ -355,6 +358,36 @@ def playlist_fill_week(
     client = SpotifyClient()
     client.replace_playlist_items(playlist_id, [row[0] for row in rows])
     console.print(f"Playlist filled: {playlist_id} ({len(rows)} tracks).")
+
+
+@site_app.command("export")
+def site_export(
+    site_dir: Annotated[
+        Path,
+        typer.Option("--site-dir", help="Diretório do site Astro peel-sept"),
+    ] = Path("../peel-sept"),
+    weeks: Annotated[int, typer.Option("--weeks", min=1, help="Nº de semanas a exportar")] = 2,
+    playlist_id: Annotated[
+        str | None,
+        typer.Option("--playlist-id", help="ID/URI/URL da playlist Spotify"),
+    ] = None,
+) -> None:
+    """Exporta JSON semanal para o site Astro peel-sept."""
+    db = DB(str(_resolve_path(settings.db_path)))
+    try:
+        db.init_schema()
+        target_site_dir = _resolve_path(str(site_dir))
+        exported = export_site(
+            db,
+            target_site_dir,
+            weeks=weeks,
+            playlist_id=playlist_id or settings.peel_playlist_id,
+        )
+    finally:
+        db.close()
+
+    for item in exported:
+        console.print(f"Exported {item.week}: {item.path}")
 
 
 @sync_app.command("status")
