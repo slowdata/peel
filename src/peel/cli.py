@@ -256,6 +256,12 @@ def sources(
         min=0,
         help="Filtra sources com menos tracks matched",
     ),
+    min_data_tracks: int = typer.Option(
+        5,
+        "--min-data-tracks",
+        min=1,
+        help="Tracks matched mínimas para mostrar score como confiável",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Saída JSON"),
 ) -> None:
     """Mostra scoring das sources com base nos dados existentes."""
@@ -264,7 +270,7 @@ def sources(
             rows = _source_score_rows(weeks, min_tracks)
         typer.echo(
             json.dumps(
-                [_source_score_to_dict(row) for row in rows],
+                [_source_score_to_dict(row, min_data_tracks) for row in rows],
                 ensure_ascii=False,
                 indent=2,
             )
@@ -290,9 +296,12 @@ def sources(
     table.add_column("Like", justify="right", header_style="bold", overflow="fold")
     table.add_column("Skip", justify="right", header_style="bold", overflow="fold")
     table.add_column("Avg", justify="right", header_style="bold", overflow="fold")
+    table.add_column("Data", justify="right", header_style="bold", overflow="fold")
     table.add_column("Score", justify="right", header_style="bold", overflow="fold")
 
     for row in rows:
+        confidence = _source_confidence(row, min_data_tracks)
+        score_display = "—" if confidence == "insufficient data" else f"{row.score:.1f}"
         table.add_row(
             row.source_id,
             str(row.tracks_found),
@@ -307,7 +316,8 @@ def sources(
             str(row.liked_count),
             str(row.skipped_count),
             row.avg_rating_display,
-            f"{row.score:.1f}",
+            confidence,
+            score_display,
         )
 
     console.print(table)
@@ -525,7 +535,13 @@ def _weekly_playlist_rows(
         db.close()
 
 
-def _source_score_to_dict(row: SourceScore) -> dict[str, object]:
+def _source_confidence(row: SourceScore, min_data_tracks: int) -> str:
+    """Label visual para evitar scores enganadores com pouca amostra."""
+    return "ok" if row.tracks_matched >= min_data_tracks else "insufficient data"
+
+
+def _source_score_to_dict(row: SourceScore, min_data_tracks: int) -> dict[str, object]:
+    confidence = _source_confidence(row, min_data_tracks)
     return {
         "source_id": row.source_id,
         "tracks_found": row.tracks_found,
@@ -544,7 +560,9 @@ def _source_score_to_dict(row: SourceScore) -> dict[str, object]:
         "liked_count": row.liked_count,
         "skipped_count": row.skipped_count,
         "avg_rating": row.avg_rating,
+        "confidence": confidence,
         "score": row.score,
+        "score_display": "—" if confidence == "insufficient data" else f"{row.score:.1f}",
     }
 
 

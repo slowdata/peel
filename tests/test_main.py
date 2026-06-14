@@ -13,11 +13,18 @@ from peel.sources.rss import (
     GorillaVsBear,
     GuardianMusicAlbums,
     NprNewMusicFridayStarting5,
+    PitchforkBestAlbums,
     PitchforkBNT,
     StereogumNewMusic,
     TheQuietus,
     TheQuietusTracksOfMonth,
 )
+
+
+@pytest.fixture(autouse=True)
+def _disable_pitchfork_best_albums(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Evita rede nos testes de main; o registry já valida que a source está activa."""
+    monkeypatch.setattr(PitchforkBestAlbums, "fetch", lambda self: [])
 
 
 class TestMainIntegration:
@@ -232,6 +239,46 @@ class TestMainIntegration:
         assert "simulated source crash" in run_row[1]
 
         db.close()
+
+    def test_run_iterates_active_source_registry(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        db_path = tmp_path / "test.db"
+        monkeypatch.setenv("PEEL_PLAYLIST_ID", "spotify:playlist:test")
+        monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test_id")
+        monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "test_secret")
+        monkeypatch.setenv("SPOTIFY_REFRESH_TOKEN", "test_token")
+
+        from peel import config as config_module
+
+        monkeypatch.setattr(config_module.settings, "db_path", str(db_path))
+
+        source = MagicMock()
+        source.id = "registry_source"
+        source.kind = "track"
+        source.fetch.return_value = [
+            Track(source_id="registry_source", artist="Registry Artist", title="Registry Track")
+        ]
+
+        mock_sp = MagicMock()
+        mock_sp.search_track.return_value = [
+            {
+                "uri": "spotify:track:registry",
+                "name": "Registry Track",
+                "artists": ["Registry Artist"],
+            }
+        ]
+        mock_sp.replace_playlist_items = MagicMock()
+
+        with (
+            patch("peel.main.active_sources", return_value=[source]),
+            patch("peel.main.SpotifyClient", return_value=mock_sp),
+            patch("peel.main.send_digest"),
+        ):
+            run()
+
+        source.fetch.assert_called_once()
+        assert mock_sp.replace_playlist_items.call_args.args[1] == ["spotify:track:registry"]
 
     def test_run_records_guardian_album_source(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

@@ -338,13 +338,41 @@ class TestSourcesCli:
 
         monkeypatch.setattr(cli, "settings", _settings(db_path))
 
-        result = runner.invoke(cli.app, ["sources", "--weeks", "4"])
+        result = runner.invoke(cli.app, ["sources", "--weeks", "4", "--min-data-tracks", "1"])
 
         assert result.exit_code == 0
         assert "Source scores" in result.stdout
         assert "source-a" in result.stdout
         assert "Fnd" in result.stdout
+        assert "ok" in result.stdout
         assert "22.0" in result.stdout
+
+    def test_sources_command_marks_insufficient_data(
+        self, tmp_path: Path, monkeypatch: MonkeyPatch
+    ) -> None:
+        db_path = tmp_path / "peel.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        now = datetime.now(UTC)
+        _insert_track(
+            db,
+            uri="spotify:track:1",
+            source_id="source-a",
+            artist="Artist A",
+            title="Track A",
+            added_at=now.isoformat(),
+        )
+        db.upsert_feedback("spotify:track:1", "love", None)
+        db.close()
+
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+
+        result = runner.invoke(cli.app, ["sources", "--weeks", "4"])
+
+        assert result.exit_code == 0
+        assert "source-a" in result.stdout
+        assert "insufficient data" in result.stdout
+        assert "22.0" not in result.stdout
 
 
 def _insert_track(

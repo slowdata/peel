@@ -24,15 +24,7 @@ from peel.db import DB, iso_week
 from peel.matcher import best_match, normalize
 from peel.models import Track
 from peel.scoring import SourceScore, build_source_scores
-from peel.sources.rss import (
-    GorillaVsBear,
-    GuardianMusicAlbums,
-    NprNewMusicFridayStarting5,
-    PitchforkBNT,
-    StereogumNewMusic,
-    TheQuietus,
-    TheQuietusTracksOfMonth,
-)
+from peel.sources.registry import active_sources
 from peel.spotify_client import SpotifyClient
 from peel.telegram import DigestItem, send_digest
 
@@ -138,18 +130,10 @@ def run() -> None:
         tracks_added += len(new_track_entries) - digest_count_before_retry
         playlist_slots_used = tracks_added
 
-        # Sources a processar (hardcoded por agora, virá de config v2)
-        sources = [
-            PitchforkBNT(),
-            StereogumNewMusic(),
-            TheQuietus(),
-            TheQuietusTracksOfMonth(),
-            GorillaVsBear(),
-            GuardianMusicAlbums(),
-            NprNewMusicFridayStarting5(),
-        ]
-
-        for source in sources:
+        # Sources a processar: registo declarativo em sources/registry.py.
+        # Adicionar/remover/desligar uma source não deve exigir mexer neste
+        # orquestrador.
+        for source in active_sources():
             sources_processed += 1
             source_stats = SourceRunStats(
                 source_id=source.id,
