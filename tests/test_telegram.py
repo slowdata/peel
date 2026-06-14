@@ -154,6 +154,22 @@ class TestFormatMessage:
         assert "stereogum_new_music" in msg
         assert '<a href="https://stereogum.com/example">' in msg
 
+    def test_format_message_marks_consensus_tracks(self) -> None:
+        """Tracks com mais de uma source mostram estrela e contagem."""
+        msg = _format_message(
+            [
+                ("source-a", "Artist A", "Shared", None, 2),
+                ("source-b", "Artist B", "Single", None),
+            ],
+            [],
+            "test_id",
+        )
+
+        assert "⭐ Artist A — Shared" in msg
+        assert "source-a, 2 fontes" in msg
+        assert "⭐ Artist B — Single" not in msg
+        assert "Artist B — Single <i>(source-b)</i>" in msg
+
 
 class TestSendDigest:
     """Testa a função send_digest."""

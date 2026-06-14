@@ -21,8 +21,9 @@ import structlog
 
 from peel.config import settings
 from peel.db import DB, iso_week
-from peel.matcher import best_match
+from peel.matcher import best_match, normalize
 from peel.models import Track
+from peel.scoring import SourceScore, build_source_scores
 from peel.sources.rss import (
     GorillaVsBear,
     GuardianMusicAlbums,
@@ -112,6 +113,16 @@ def run() -> None:
     try:
         db.init_schema()
 
+        # Feedback acionável: bans e caps por source são carregados uma vez por
+        # run para evitar queries repetidas dentro dos loops. `ban` é semântica
+        # de faixa/sugestão, não bloqueio automático de artista.
+        banned_track_keys = _load_banned_track_keys(db)
+        source_scores = _load_source_scores(db)
+        source_slot_caps = _build_source_slot_caps(
+            source_scores, settings.peel_max_tracks_per_source
+        )
+        source_quality = _source_quality_map(source_scores)
+
         # 0. Retry de tracks unmatched recentes — muitos blogs publicam picks
         # antes do release global de sexta, ou os tracks chegam ao Spotify com
         # dias/semanas de atraso. Reprocessa antes das sources novas para maximizar
@@ -122,6 +133,7 @@ def run() -> None:
             sp,
             new_track_entries,
             max_new_tracks=settings.peel_max_tracks_per_run,
+            banned_track_keys=banned_track_keys,
         )
         tracks_added += len(new_track_entries) - digest_count_before_retry
         playlist_slots_used = tracks_added
@@ -199,12 +211,26 @@ def run() -> None:
                     # Processa como tracks (único kind que pode ir para playlist).
                     # O slice por source evita backfill infinito de feeds longos: a próxima
                     # run volta a olhar para os mesmos N itens do topo, não para backlog.
-                    source_candidates = fresh_tracks[: settings.peel_max_tracks_per_source]
+                    source_cap = source_slot_caps.get(
+                        source.id,
+                        settings.peel_max_tracks_per_source,
+                    )
+                    source_candidates = fresh_tracks[:source_cap]
                     source_stats.skipped_cap_count += max(
                         0, len(fresh_tracks) - len(source_candidates)
                     )
                     for track in source_candidates:
                         try:
+                            if _track_key(track.artist, track.title) in banned_track_keys:
+                                log.info(
+                                    "track.skipped_banned",
+                                    source_id=source.id,
+                                    artist=track.artist,
+                                    title=track.title,
+                                    reason="artist_title",
+                                )
+                                continue
+
                             if _track_cap_reached(playlist_slots_used):
                                 source_stats.skipped_cap_count += 1
                                 log.info(
@@ -248,6 +274,17 @@ def run() -> None:
                                     source_id=source.id,
                                     artist=track.artist,
                                     title=track.title,
+                                )
+                                continue
+
+                            if db.is_banned_uri(uri):
+                                log.info(
+                                    "track.skipped_banned",
+                                    source_id=source.id,
+                                    artist=track.artist,
+                                    title=track.title,
+                                    uri=uri,
+                                    reason="uri",
                                 )
                                 continue
 
@@ -336,7 +373,15 @@ def run() -> None:
 
         # 3. Rotação: substitui playlist pelos URIs da janela recente
         current_week = iso_week(datetime.now(UTC))
-        window_uris = db.tracks_in_window(current_week, settings.peel_playlist_window_weeks)
+        try:
+            window_uris = db.ranked_tracks_in_window(
+                current_week,
+                settings.peel_playlist_window_weeks,
+                source_quality,
+            )
+        except Exception as e:
+            log.exception("playlist.ranking_failed", error=str(e))
+            window_uris = db.tracks_in_window(current_week, settings.peel_playlist_window_weeks)
         try:
             sp.replace_playlist_items(settings.peel_playlist_id, window_uris)
             log.info(
@@ -359,7 +404,7 @@ def run() -> None:
         #    send_digest tem a sua própria protecção contra HTTP errors.
         try:
             send_digest(
-                new_track_entries,
+                _with_source_counts(db, new_track_entries),
                 new_album_entries,
                 settings.peel_playlist_id,
                 external_entries=external_entries,
@@ -414,11 +459,94 @@ def _track_cap_reached(playlist_slots_used: int) -> bool:
     return playlist_slots_used >= settings.peel_max_tracks_per_run
 
 
+def _track_key(artist: str, title: str) -> tuple[str, str]:
+    """Identidade normalizada de uma faixa para evitar reentrada de bans."""
+    return normalize(artist), normalize(title)
+
+
+def _load_banned_track_keys(db: DB) -> set[tuple[str, str]]:
+    """Carrega bans explícitos uma vez por run.
+
+    Fail-open: se esta leitura falhar, a run continua. Em condições normais a
+    DB já foi inicializada; falhas aqui indicam problema estrutural maior.
+    """
+    try:
+        return db.banned_track_keys()
+    except Exception as e:
+        log.exception("feedback.bans_load_failed", error=str(e))
+        return set()
+
+
+def slots_for_source(
+    score: SourceScore | None,
+    default: int,
+    min_ratings: int = 5,
+) -> int:
+    """Calcula cap por source a partir do feedback recente.
+
+    DECISÃO: só ajustamos depois de uma amostra mínima. Sources cold-start usam
+    o default; sources boas ganham espaço; sources com rating médio negativo
+    perdem espaço, mas mantêm pelo menos 2 slots para não matar descoberta.
+    """
+    if score is None or score.avg_rating is None or score.rating_count < min_ratings:
+        return default
+    if score.avg_rating >= 1.0:
+        return default + 4
+    if score.avg_rating < 0:
+        return max(2, default - 4)
+    return default
+
+
+def _load_source_scores(db: DB) -> list[SourceScore]:
+    """Carrega scoring uma vez; falha de scoring não pode rebentar a run."""
+    try:
+        return build_source_scores(db, weeks=4)
+    except Exception as e:
+        log.exception("source_scores.failed", error=str(e))
+        return []
+
+
+def _build_source_slot_caps(scores: list[SourceScore], default: int) -> dict[str, int]:
+    """Constrói caps por source com base no scoring observacional recente."""
+    caps = {score.source_id: slots_for_source(score, default) for score in scores}
+    log.info("source_slots.computed", caps=caps, default=default)
+    return caps
+
+
+def _source_quality_map(scores: list[SourceScore]) -> dict[str, tuple[float, float]]:
+    """Mapa usado para ranking da playlist: source -> (avg_rating, score)."""
+    return {score.source_id: (score.avg_rating or 0.0, score.score) for score in scores}
+
+
+def _with_source_counts(db: DB, entries: list[DigestItem]) -> list[DigestItem]:
+    """Enriquece digest com nº de fontes para destacar consenso.
+
+    Fail-open: se a consulta falhar para um item, mantém o formato antigo com
+    4 campos e o Telegram mostra a track sem marca de consenso.
+    """
+    enriched: list[DigestItem] = []
+    for source_id, artist, title, url in entries:
+        try:
+            source_count = db.source_count_for_track_identity(artist, title)
+            enriched.append((source_id, artist, title, url, source_count))
+        except Exception as e:
+            log.exception(
+                "digest.source_count_failed",
+                source_id=source_id,
+                artist=artist,
+                title=title,
+                error=str(e),
+            )
+            enriched.append((source_id, artist, title, url))
+    return enriched
+
+
 def _retry_unmatched(
     db: DB,
     sp: SpotifyClient,
     new_track_entries: list[DigestItem],
     max_new_tracks: int | None = None,
+    banned_track_keys: set[tuple[str, str]] | None = None,
 ) -> tuple[int, int]:
     """Re-tenta tracks unmatched recentes contra o Spotify.
 
@@ -436,11 +564,24 @@ def _retry_unmatched(
 
     total = len(rows)
     matched = 0
+    banned_track_keys = banned_track_keys or _load_banned_track_keys(db)
 
     log.info("unmatched.retry_start", pending=total)
 
     for source_id, artist, title, source_url in rows:
         try:
+            if _track_key(artist, title) in banned_track_keys:
+                db.delete_unmatched(source_id, artist, title)
+                log.info(
+                    "track.skipped_banned",
+                    source_id=source_id,
+                    artist=artist,
+                    title=title,
+                    reason="artist_title",
+                    phase="retry",
+                )
+                continue
+
             candidates = sp.search_track(artist, title, limit=5)
             if not candidates:
                 continue
@@ -449,6 +590,19 @@ def _retry_unmatched(
             track = Track(source_id=source_id, artist=artist, title=title)
             uri = best_match(track, candidates, threshold=settings.match_threshold)
             if uri is None:
+                continue
+
+            if db.is_banned_uri(uri):
+                db.delete_unmatched(source_id, artist, title)
+                log.info(
+                    "track.skipped_banned",
+                    source_id=source_id,
+                    artist=artist,
+                    title=title,
+                    uri=uri,
+                    reason="uri",
+                    phase="retry",
+                )
                 continue
 
             already = db.already_added(uri)

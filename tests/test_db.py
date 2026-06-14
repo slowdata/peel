@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from peel.db import DB, iso_week
+from peel.db import DB, iso_week, rank_window_uris
+from peel.matcher import normalize
 
 
 class TestInitSchema:
@@ -529,6 +530,70 @@ class TestFeedback:
 
         assert {row[0] for row in rows} == {"spotify:track:other"}
 
+    def test_is_banned_uri(self, tmp_path: Path) -> None:
+        db = DB(str(tmp_path / "test.db"))
+        db.init_schema()
+
+        db.upsert_feedback("spotify:track:banned", "ban", None)
+        db.upsert_feedback("spotify:track:loved", "love", None)
+
+        assert db.is_banned_uri("spotify:track:banned") is True
+        assert db.is_banned_uri("spotify:track:loved") is False
+        assert db.is_banned_uri("spotify:track:unknown") is False
+
+    def test_banned_track_keys_uses_normalized_artist_title(self, tmp_path: Path) -> None:
+        db = DB(str(tmp_path / "test.db"))
+        db.init_schema()
+
+        db.record_track("spotify:track:ban", "source-a", "Beyoncé", "Halo (feat. Jay-Z)", None)
+        db.record_track("spotify:track:ok", "source-b", "Beyoncé", "Formation", None)
+        db.upsert_feedback("spotify:track:ban", "ban", None)
+        db.upsert_feedback("spotify:track:ok", "love", None)
+
+        assert db.banned_track_keys() == {(normalize("Beyoncé"), normalize("Halo"))}
+
+
+class TestRankWindowUris:
+    def test_rank_window_uris_prioritizes_consensus_then_quality_then_recency(self) -> None:
+        rows = [
+            ("spotify:track:single-recent", "A", "Recent", "low", "2026-06-14T10:00:00+00:00"),
+            ("spotify:track:consensus-low", "B", "Low", "low", "2026-06-10T10:00:00+00:00"),
+            ("spotify:track:consensus-low", "B", "Low", "neutral", "2026-06-10T11:00:00+00:00"),
+            ("spotify:track:consensus-high", "C", "High", "high", "2026-06-09T10:00:00+00:00"),
+            ("spotify:track:consensus-high", "C", "High", "neutral", "2026-06-09T11:00:00+00:00"),
+            ("spotify:track:neutral-new", "D", "New", "unknown", "2026-06-08T10:00:00+00:00"),
+            ("spotify:track:neutral-old", "E", "Old", "unknown", "2026-06-07T10:00:00+00:00"),
+        ]
+        source_quality = {
+            "high": (1.5, 30.0),
+            "low": (-0.5, -5.0),
+            "neutral": (0.0, 0.0),
+        }
+
+        ranked = rank_window_uris(rows, source_quality)
+
+        assert ranked == [
+            "spotify:track:consensus-high",
+            "spotify:track:consensus-low",
+            "spotify:track:neutral-new",
+            "spotify:track:neutral-old",
+            "spotify:track:single-recent",
+        ]
+
+    def test_rank_window_uris_uses_score_then_uri_as_deterministic_tiebreaker(self) -> None:
+        rows = [
+            ("spotify:track:b", "B", "Track", "source-b", "2026-06-10T10:00:00+00:00"),
+            ("spotify:track:a", "A", "Track", "source-a", "2026-06-10T10:00:00+00:00"),
+        ]
+        source_quality = {
+            "source-a": (1.0, 10.0),
+            "source-b": (1.0, 5.0),
+        }
+
+        ranked = rank_window_uris(rows, source_quality)
+
+        assert ranked == ["spotify:track:a", "spotify:track:b"]
+
 
 class TestDatetimeISO8601:
     """Testa que as datas são armazenadas em ISO 8601 UTC."""
@@ -896,6 +961,56 @@ class TestTracksInWindow:
         result = db.tracks_in_window("2026-W16", window=1)
         assert result == ["spotify:track:123"]
         assert len(result) == 1
+
+    def test_tracks_in_window_filters_banned_tracks(self, tmp_path: Path) -> None:
+        """Bans explícitos não entram na rotação, mesmo com outra URI."""
+        db_path = tmp_path / "test.db"
+        db = DB(str(db_path))
+        db.init_schema()
+
+        for uri, artist, title in [
+            ("spotify:track:banned", "Artist", "Bad Song"),
+            ("spotify:track:alt", "Artist", "Bad Song - Radio Edit"),
+            ("spotify:track:ok", "Artist", "Good Song"),
+        ]:
+            db.conn.execute(
+                """
+                INSERT INTO tracks
+                (spotify_uri, source_id, artist, title, source_url, added_at, added_at_week)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    uri,
+                    "source1",
+                    artist,
+                    title,
+                    None,
+                    "2026-04-19T10:00:00+00:00",
+                    "2026-W16",
+                ),
+            )
+        db.conn.commit()
+        db.upsert_feedback("spotify:track:banned", "ban", None)
+
+        result = db.tracks_in_window("2026-W16", window=1)
+
+        assert result == ["spotify:track:ok"]
+
+    def test_ranked_tracks_in_window_keeps_bans_filtered(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "test.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        db.record_track("spotify:track:banned", "source-a", "Artist", "Bad Song", None)
+        db.record_track("spotify:track:ok", "source-a", "Artist", "Good Song", None)
+        db.upsert_feedback("spotify:track:banned", "ban", None)
+
+        result = db.ranked_tracks_in_window(
+            iso_week(datetime.now(UTC)),
+            window=1,
+            source_quality={"source-a": (2.0, 20.0)},
+        )
+
+        assert result == ["spotify:track:ok"]
 
 
 class TestUnmatchedRetryHelpers:

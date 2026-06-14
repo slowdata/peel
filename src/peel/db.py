@@ -19,10 +19,13 @@ Dates: ISO 8601 UTC via datetime.now(UTC).isoformat().
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import structlog
+
+from peel.matcher import normalize
 
 FEEDBACK_RATINGS: dict[str, int] = {
     "love": 2,
@@ -32,7 +35,66 @@ FEEDBACK_RATINGS: dict[str, int] = {
     "ban": -2,
 }
 
+WindowTrackRow = tuple[str, str, str, str, str]
+SourceQuality = tuple[float, float]  # (avg_rating, score)
+
 log = structlog.get_logger()
+
+
+def rank_window_uris(
+    rows: Iterable[WindowTrackRow],
+    source_quality: Mapping[str, SourceQuality] | None = None,
+) -> list[str]:
+    """Ordena URIs de uma janela por qualidade sem remover nada.
+
+    Chave, por ordem: consenso (nº de sources), melhor avg_rating de source,
+    melhor score de source e recência. Sources sem score são neutras (0, 0).
+    """
+    quality = source_quality or {}
+    buckets: dict[str, dict[str, object]] = {}
+    for spotify_uri, _artist, _title, source_id, added_at in rows:
+        uri = str(spotify_uri)
+        bucket = buckets.setdefault(
+            uri,
+            {
+                "uri": uri,
+                "sources": set(),
+                "best_avg": None,
+                "best_score": None,
+                "latest_ts": 0.0,
+            },
+        )
+        sources = bucket["sources"]
+        assert isinstance(sources, set)
+        sources.add(str(source_id))
+        avg_rating, score = quality.get(str(source_id), (0.0, 0.0))
+        current_avg = bucket["best_avg"]
+        current_score = bucket["best_score"]
+        bucket["best_avg"] = (
+            avg_rating if current_avg is None else max(float(current_avg), avg_rating)
+        )
+        bucket["best_score"] = score if current_score is None else max(float(current_score), score)
+        bucket["latest_ts"] = max(float(bucket["latest_ts"]), _timestamp_sort_value(added_at))
+
+    def sort_key(bucket: dict[str, object]) -> tuple[int, float, float, float, str]:
+        sources = bucket["sources"]
+        assert isinstance(sources, set)
+        return (
+            -len(sources),
+            -float(bucket["best_avg"] or 0.0),
+            -float(bucket["best_score"] or 0.0),
+            -float(bucket["latest_ts"]),
+            str(bucket["uri"]),
+        )
+
+    return [str(bucket["uri"]) for bucket in sorted(buckets.values(), key=sort_key)]
+
+
+def _timestamp_sort_value(value: str) -> float:
+    try:
+        return datetime.fromisoformat(value).timestamp()
+    except ValueError:
+        return 0.0
 
 
 def iso_week(dt: datetime) -> str:
@@ -365,6 +427,50 @@ class DB:
             return None
         return int(row[0]), str(row[1]), row[2]
 
+    def is_banned_uri(self, spotify_uri: str) -> bool:
+        """True se a URI tem feedback explícito `ban`.
+
+        `ban` é semântica de faixa/sugestão, não ban automático de artista.
+        """
+        cursor = self.conn.execute(
+            """
+            SELECT 1
+            FROM feedback
+            WHERE spotify_uri = ? AND rating = ?
+            LIMIT 1
+            """,
+            (spotify_uri, FEEDBACK_RATINGS["ban"]),
+        )
+        return cursor.fetchone() is not None
+
+    def banned_track_keys(self) -> set[tuple[str, str]]:
+        """Identidades normalizadas `(artist, title)` com feedback `ban`.
+
+        DECISÃO: isto evita reintroduzir a mesma música se o Spotify devolver
+        outra URI, mas não bloqueia automaticamente o artista inteiro.
+        """
+        rows = self.conn.execute(
+            """
+            SELECT DISTINCT t.artist, t.title
+            FROM tracks t
+            JOIN feedback f ON f.spotify_uri = t.spotify_uri
+            WHERE f.rating = ?
+            """,
+            (FEEDBACK_RATINGS["ban"],),
+        ).fetchall()
+        return {(normalize(str(artist)), normalize(str(title))) for artist, title in rows}
+
+    def _banned_uris(self) -> set[str]:
+        rows = self.conn.execute(
+            """
+            SELECT spotify_uri
+            FROM feedback
+            WHERE rating = ?
+            """,
+            (FEEDBACK_RATINGS["ban"],),
+        ).fetchall()
+        return {str(row[0]) for row in rows}
+
     def upsert_feedback(
         self,
         spotify_uri: str,
@@ -674,24 +780,78 @@ class DB:
         Returns:
             Lista de URIs únicos, ordenados por added_at DESC (mais recentes primeiro)
         """
-        # Calcula a semana cutoff: current_week - (window - 1)
-        year, week = map(int, current_week.split("-W"))
+        rows = self._filtered_window_track_rows(current_week, window)
+        uris: list[str] = []
+        seen: set[str] = set()
+        for spotify_uri, *_ in rows:
+            uri = str(spotify_uri)
+            if uri in seen:
+                continue
+            seen.add(uri)
+            uris.append(uri)
+        return uris
 
-        # Converte para datetime da primeira segunda-feira da semana
-        cutoff_dt = datetime.fromisocalendar(year, week, 1) - timedelta(weeks=window - 1)
-        cutoff_week_year, cutoff_week_num, _ = cutoff_dt.isocalendar()
-        cutoff_week = f"{cutoff_week_year}-W{cutoff_week_num:02d}"
+    def ranked_tracks_in_window(
+        self,
+        current_week: str,
+        window: int,
+        source_quality: Mapping[str, SourceQuality] | None = None,
+    ) -> list[str]:
+        """URIs da janela ordenados por qualidade, mantendo filtro de bans.
 
-        # Query: tracks cuja semana >= cutoff_week
+        DECISÃO: este método só reordena o resultado elegível da janela. Se a
+        chamada falhar no orquestrador, `tracks_in_window` continua como fallback
+        de recência.
+        """
+        rows = self._filtered_window_track_rows(current_week, window)
+        return rank_window_uris(rows, source_quality)
+
+    def source_count_for_track_identity(self, artist: str, title: str) -> int:
+        """Maior nº de sources para uma faixa com o mesmo artist/title normalizado."""
+        target = (normalize(artist), normalize(title))
+        rows = self.conn.execute(
+            """
+            SELECT spotify_uri, artist, title, source_id
+            FROM tracks
+            """
+        ).fetchall()
+        sources_by_uri: dict[str, set[str]] = {}
+        for spotify_uri, row_artist, row_title, source_id in rows:
+            if (normalize(str(row_artist)), normalize(str(row_title))) != target:
+                continue
+            sources_by_uri.setdefault(str(spotify_uri), set()).add(str(source_id))
+        if not sources_by_uri:
+            return 1
+        return max(len(sources) for sources in sources_by_uri.values())
+
+    def _filtered_window_track_rows(self, current_week: str, window: int) -> list[WindowTrackRow]:
+        cutoff_week = self._cutoff_week(current_week, window)
         cursor = self.conn.execute(
             """
-            SELECT DISTINCT spotify_uri FROM tracks
+            SELECT spotify_uri, artist, title, source_id, added_at
+            FROM tracks
             WHERE added_at_week >= ?
             ORDER BY added_at DESC
             """,
             (cutoff_week,),
         )
-        return [row[0] for row in cursor.fetchall()]
+        banned_uris = self._banned_uris()
+        banned_keys = self.banned_track_keys()
+        rows: list[WindowTrackRow] = []
+        for spotify_uri, artist, title, source_id, added_at in cursor.fetchall():
+            if str(spotify_uri) in banned_uris:
+                continue
+            if (normalize(str(artist)), normalize(str(title))) in banned_keys:
+                continue
+            rows.append((str(spotify_uri), str(artist), str(title), str(source_id), str(added_at)))
+        return rows
+
+    def _cutoff_week(self, current_week: str, window: int) -> str:
+        # Calcula a semana cutoff: current_week - (window - 1)
+        year, week = map(int, current_week.split("-W"))
+        cutoff_dt = datetime.fromisocalendar(year, week, 1) - timedelta(weeks=window - 1)
+        cutoff_week_year, cutoff_week_num, _ = cutoff_dt.isocalendar()
+        return f"{cutoff_week_year}-W{cutoff_week_num:02d}"
 
     def close(self) -> None:
         """Fecha a conexão ao banco.

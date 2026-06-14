@@ -12,7 +12,9 @@ from peel.config import settings
 log = structlog.get_logger()
 
 API_BASE = "https://api.telegram.org"
-DigestItem = tuple[str, str, str, str | None]  # (source_id, artist, title/album, url)
+DigestItem = (
+    tuple[str, str, str, str | None] | tuple[str, str, str, str | None, int]
+)  # (source_id, artist, title/album, url[, source_count])
 
 
 def send_digest(
@@ -74,8 +76,8 @@ def _format_message(
 
     if new_tracks:
         lines.append(f"<b>Novas tracks ({len(new_tracks)})</b>")
-        for source_id, artist, title, url_ in new_tracks[:20]:
-            lines.append(_format_item(source_id, artist, title, url_))
+        for item in new_tracks[:20]:
+            lines.append(_format_digest_item(item))
         if len(new_tracks) > 20:
             lines.append(f"<i>... e mais {len(new_tracks) - 20}</i>")
         lines.append("")
@@ -85,8 +87,8 @@ def _format_message(
 
     if new_albums:
         lines.append(f"<b>💿 Álbuns da semana ({len(new_albums)})</b>")
-        for source_id, artist, album, url_ in new_albums[:15]:
-            lines.append(_format_item(source_id, artist, album, url_))
+        for item in new_albums[:15]:
+            lines.append(_format_digest_item(item))
     else:
         lines.append("<i>Sem álbuns novos esta semana.</i>")
 
@@ -94,8 +96,8 @@ def _format_message(
     if external_items:
         lines.append("")
         lines.append(f"<b>🔗 Escutas externas ({len(external_items)})</b>")
-        for source_id, artist, title, url_ in external_items[:15]:
-            lines.append(_format_item(source_id, artist, title, url_))
+        for item in external_items[:15]:
+            lines.append(_format_digest_item(item))
         if len(external_items) > 15:
             lines.append(f"<i>... e mais {len(external_items) - 15}</i>")
 
@@ -107,9 +109,33 @@ def _format_message(
     return "\n".join(lines)
 
 
-def _format_item(source_id: str, artist: str, title: str, url_: str | None) -> str:
+def _format_digest_item(item: DigestItem) -> str:
+    source_id, artist, title, url_, source_count = _unpack_item(item)
+    return _format_item(source_id, artist, title, url_, source_count)
+
+
+def _unpack_item(item: DigestItem) -> tuple[str, str, str, str | None, int]:
+    if len(item) == 5:
+        source_id, artist, title, url_, source_count = item
+        return source_id, artist, title, url_, source_count
+    source_id, artist, title, url_ = item
+    return source_id, artist, title, url_, 1
+
+
+def _format_item(
+    source_id: str,
+    artist: str,
+    title: str,
+    url_: str | None,
+    source_count: int = 1,
+) -> str:
     label = f"{escape(artist)} — {escape(title)}"
-    source = f" <i>({escape(source_id)})</i>"
+    consensus = source_count > 1
+    prefix = "• ⭐ " if consensus else "• "
+    source_label = escape(source_id)
+    if consensus:
+        source_label = f"{source_label}, {source_count} fontes"
+    source = f" <i>({source_label})</i>"
     if url_:
-        return f'• <a href="{escape(url_)}">{label}</a>{source}'
-    return f"• {label}{source}"
+        return f'{prefix}<a href="{escape(url_)}">{label}</a>{source}'
+    return f"{prefix}{label}{source}"
