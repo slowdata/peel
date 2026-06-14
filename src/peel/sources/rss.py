@@ -545,9 +545,10 @@ class AquariumDrunkard(Source):
     ``kind = "album"`` para digest/report, sem Spotify matching nem playlist.
 
     Estratégia: parsear ``ul.on_the_turntable_content li.album``, separar o
-    ``h3`` no primeiro ``::`` e usar o link ``Read More`` como ``source_url``.
-    Itens malformados são saltados com warning; falha HTTP levanta exceção para
-    o orquestrador tratar por source.
+    ``h3`` no primeiro ``::``, usar o link ``Read More`` como ``source_url`` e
+    converter ``a.spotify-link`` em ``spotify:album:<id>`` quando existe. Itens
+    malformados são saltados com warning; falha HTTP levanta exceção para o
+    orquestrador tratar por source.
     """
 
     id = "aquarium_drunkard"
@@ -610,6 +611,7 @@ class AquariumDrunkard(Source):
             title=album_title,
             source_url=source_url,
             raw_title=raw_title,
+            spotify_album_uri=self._spotify_album_uri(item),
         )
 
     def _split_turntable_title(self, title: str) -> tuple[str, str] | None:
@@ -629,6 +631,23 @@ class AquariumDrunkard(Source):
             text = link.text(strip=True).lower()
             if href and "read more" in text:
                 return href
+        return None
+
+    def _spotify_album_uri(self, item: Node) -> str | None:
+        link = item.css_first("a.spotify-link")
+        if link is None:
+            return None
+        href = link.attributes.get("href", "").strip()
+        if not href:
+            return None
+        if href.startswith("spotify:album:"):
+            return href
+
+        parsed = urlparse(href)
+        parts = [part for part in parsed.path.split("/") if part]
+        if parsed.netloc == "open.spotify.com" and len(parts) >= 2 and parts[0] == "album":
+            return f"spotify:album:{parts[1]}"
+        log.warning("aquariumdrunkard.spotify_album_url_invalid", href=href)
         return None
 
     def _clean_turntable_text(self, value: str) -> str:

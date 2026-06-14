@@ -10,6 +10,7 @@ from peel.main import _filter_fresh_source_items, _retry_unmatched, run, slots_f
 from peel.models import Track
 from peel.scoring import SourceScore
 from peel.sources.rss import (
+    AquariumDrunkard,
     GorillaVsBear,
     GuardianMusicAlbums,
     NprNewMusicFridayStarting5,
@@ -22,9 +23,10 @@ from peel.sources.rss import (
 
 
 @pytest.fixture(autouse=True)
-def _disable_pitchfork_best_albums(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Evita rede nos testes de main; o registry já valida que a source está activa."""
+def _disable_network_album_sources(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Evita rede nos testes de main; o registry valida que as sources estão activas."""
     monkeypatch.setattr(PitchforkBestAlbums, "fetch", lambda self: [])
+    monkeypatch.setattr(AquariumDrunkard, "fetch", lambda self: [])
 
 
 class TestMainIntegration:

@@ -10,6 +10,7 @@ Schema:
 - unmatched: source_id + artist + title + source_url + seen_at — faixas não encontradas
 - feedback: spotify_uri PRIMARY KEY — feedback do utilizador por track
 - albums: (artist, album) PRIMARY KEY — álbuns curados (não vão para playlist)
+- album_mentions: uma linha por source/álbum para consenso cross-source
 - source_runs: histórico por source/run para métricas futuras
 
 Conexão: single connection longo-vivido (por run inteira como transacção conceptual).
@@ -272,6 +273,38 @@ class DB:
             """
         )
 
+        # Tabela: menções de álbuns por source.
+        # DECISÃO: manter `albums` como dedupe canónico e pôr consenso aqui,
+        # evitando recriar a tabela antiga ou perder dados existentes.
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS album_mentions (
+                artist            TEXT NOT NULL,
+                album             TEXT NOT NULL,
+                artist_key        TEXT NOT NULL,
+                album_key         TEXT NOT NULL,
+                source_id         TEXT NOT NULL,
+                source_url        TEXT,
+                spotify_album_uri TEXT,
+                seen_at           TEXT NOT NULL,
+                added_at_week     TEXT NOT NULL,
+                PRIMARY KEY (artist_key, album_key, source_id)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_album_mentions_week
+            ON album_mentions (added_at_week)
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_album_mentions_album
+            ON album_mentions (artist_key, album_key)
+            """
+        )
+
         # Tabela: histórico de runs por source (para scoring futuro)
         cursor.execute(
             """
@@ -311,6 +344,48 @@ class DB:
             self._backfill_week("albums", "seen_at")
 
         self._ensure_column("unmatched", "source_url", "TEXT")
+        self._ensure_column("album_mentions", "spotify_album_uri", "TEXT")
+        self._backfill_album_mentions()
+
+    def _backfill_album_mentions(self) -> None:
+        """Migra álbuns canónicos antigos para menções por source.
+
+        Idempotente: `INSERT OR IGNORE` garante que correr `init_schema()` várias
+        vezes não duplica menções já migradas.
+        """
+        rows = self.conn.execute(
+            """
+            SELECT artist, album, source_id, source_url, seen_at, added_at_week
+            FROM albums
+            """
+        ).fetchall()
+        count = 0
+        for artist, album, source_id, source_url, seen_at, added_at_week in rows:
+            week = (
+                str(added_at_week) if added_at_week else iso_week(datetime.fromisoformat(seen_at))
+            )
+            cursor = self.conn.execute(
+                """
+                INSERT OR IGNORE INTO album_mentions
+                (artist, album, artist_key, album_key, source_id, source_url,
+                 spotify_album_uri, seen_at, added_at_week)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(artist),
+                    str(album),
+                    normalize(str(artist)),
+                    normalize(str(album)),
+                    str(source_id),
+                    source_url,
+                    None,
+                    str(seen_at),
+                    week,
+                ),
+            )
+            count += cursor.rowcount
+        self.conn.commit()
+        log.info("db.album_mentions_backfilled", count=count)
 
     def already_added(self, spotify_uri: str) -> bool:
         """Verifica se um URI já foi adicionado (por qualquer source).
@@ -635,40 +710,99 @@ class DB:
         self.conn.commit()
         return cursor.rowcount
 
-    def record_album(self, artist: str, album: str, source_id: str, source_url: str | None) -> bool:
-        """Insere um álbum se novo. Retorna True se inserido, False se já existia.
+    def record_album(
+        self,
+        artist: str,
+        album: str,
+        source_id: str,
+        source_url: str | None,
+        spotify_album_uri: str | None = None,
+    ) -> bool:
+        """Insere álbum canónico e grava a menção da source.
 
-        Usa INSERT OR IGNORE com PRIMARY KEY (artist, album) e verifica rowcount.
-
-        Args:
-            artist: Nome do artista
-            album: Nome do álbum
-            source_id: ID da fonte
-            source_url: URL opcional (link para review, etc.)
-
-        Returns:
-            True se o álbum foi inserido (novo), False se já existia.
+        O valor de retorno mantém a semântica antiga: True só quando o álbum
+        canónico em `albums` é novo. Mesmo quando retorna False, a menção por
+        source é gravada/actualizada em `album_mentions` para permitir consenso.
         """
         cursor = self.conn.cursor()
         now = datetime.now(UTC)
+        now_iso = now.isoformat()
+        week = iso_week(now)
         cursor.execute(
             """
             INSERT OR IGNORE INTO albums
             (artist, album, source_id, source_url, seen_at, added_at_week)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (artist, album, source_id, source_url, now.isoformat(), iso_week(now)),
+            (artist, album, source_id, source_url, now_iso, week),
+        )
+        inserted = cursor.rowcount > 0
+        self._record_album_mention(
+            artist=artist,
+            album=album,
+            source_id=source_id,
+            source_url=source_url,
+            spotify_album_uri=spotify_album_uri,
+            seen_at=now_iso,
+            added_at_week=week,
         )
         self.conn.commit()
-        inserted = cursor.rowcount > 0
         log.debug(
             "db.album_recorded",
             artist=artist,
             album=album,
             source_id=source_id,
             is_new=inserted,
+            spotify_album_uri=spotify_album_uri,
         )
         return inserted
+
+    def _record_album_mention(
+        self,
+        *,
+        artist: str,
+        album: str,
+        source_id: str,
+        source_url: str | None,
+        spotify_album_uri: str | None,
+        seen_at: str,
+        added_at_week: str,
+    ) -> None:
+        """Grava/actualiza uma menção de álbum por source.
+
+        DECISÃO: se a mesma source voltar a mencionar o álbum noutra semana,
+        actualizamos `seen_at`/`added_at_week`; assim a selecção semanal reflecte
+        a rotação actual, não apenas a primeira vez que vimos o álbum.
+        """
+        self.conn.execute(
+            """
+            INSERT INTO album_mentions
+            (artist, album, artist_key, album_key, source_id, source_url,
+             spotify_album_uri, seen_at, added_at_week)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(artist_key, album_key, source_id) DO UPDATE SET
+                artist = excluded.artist,
+                album = excluded.album,
+                source_url = COALESCE(excluded.source_url, album_mentions.source_url),
+                spotify_album_uri = COALESCE(
+                    excluded.spotify_album_uri,
+                    album_mentions.spotify_album_uri
+                ),
+                seen_at = excluded.seen_at,
+                added_at_week = excluded.added_at_week
+            """,
+            (
+                artist,
+                album,
+                normalize(artist),
+                normalize(album),
+                source_id,
+                source_url,
+                spotify_album_uri,
+                seen_at,
+                added_at_week,
+            ),
+        )
 
     def record_source_run(
         self,

@@ -10,7 +10,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import structlog
+
+from peel.albums import AlbumRecommendation, top_album_recommendations
 from peel.db import DB, iso_week
+from peel.scoring import build_source_scores
+
+log = structlog.get_logger()
 
 REPORTS_DIR = Path("data/reports")
 
@@ -69,6 +75,7 @@ class WeeklyReport:
     week: str
     tracks: list[WeeklyTrack]
     albums: list[WeeklyAlbum]
+    recommended_albums: list[AlbumRecommendation]
     unmatched: list[tuple[str, str, str, str | None]]
     summaries: list[SourceSummary]
 
@@ -94,6 +101,7 @@ def build_weekly_report(db: DB, week: str) -> str:
     week = _normalize_week(week)
     tracks = _load_weekly_tracks(db, week)
     albums = _load_weekly_albums(db, week)
+    recommended_albums = _load_recommended_albums(db, week)
     unmatched = _load_weekly_unmatched(db, week)
     summaries = _build_source_summaries(tracks, unmatched)
 
@@ -101,6 +109,7 @@ def build_weekly_report(db: DB, week: str) -> str:
         week=week,
         tracks=tracks,
         albums=albums,
+        recommended_albums=recommended_albums,
         unmatched=unmatched,
         summaries=summaries,
     )
@@ -192,6 +201,32 @@ def _load_weekly_albums(db: DB, week: str) -> list[WeeklyAlbum]:
     ]
 
 
+def _load_recommended_albums(db: DB, week: str) -> list[AlbumRecommendation]:
+    """Carrega a seleção "7 Álbuns a Ouvir" sem poder rebentar o relatório."""
+    try:
+        scores = build_source_scores(db, weeks=4)
+        source_quality = {
+            score.source_id: (score.avg_rating or 0.0, score.score) for score in scores
+        }
+    except Exception as e:
+        log.exception("report.album_source_scores_failed", error=str(e))
+        source_quality = {}
+
+    try:
+        # DECISÃO: 2 semanas dá pool suficiente para consenso entre críticos sem
+        # transformar a seleção semanal num backlog longo.
+        return top_album_recommendations(
+            db,
+            week,
+            weeks=2,
+            limit=7,
+            source_quality=source_quality,
+        )
+    except Exception as e:
+        log.exception("report.album_recommendations_failed", week=week, error=str(e))
+        return []
+
+
 def _load_weekly_unmatched(db: DB, week: str) -> list[tuple[str, str, str, str | None]]:
     start, end = _week_bounds(week)
     rows = db.conn.execute(
@@ -269,6 +304,22 @@ def _render_markdown(report: WeeklyReport) -> str:
             if album.source_url:
                 source_line += f" — {album.source_url}"
             lines.append(source_line)
+    else:
+        lines.append("- None")
+
+    lines.append("\n## 🎧 7 Álbuns a Ouvir")
+    if report.recommended_albums:
+        for album in report.recommended_albums:
+            artist = _md_escape(album.artist)
+            title = _md_escape(album.album)
+            line = f"- {artist} — {title} — {album.source_count} fontes"
+            if album.link_url:
+                line += f" — {album.link_url}"
+            lines.append(line)
+            lines.append(f"  - Sources: {', '.join(album.sources)}")
+            for source_id, source_url in album.source_urls:
+                if source_url:
+                    lines.append(f"    - {source_id}: {source_url}")
     else:
         lines.append("- None")
 

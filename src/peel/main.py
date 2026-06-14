@@ -19,6 +19,7 @@ from datetime import UTC, datetime, timedelta
 
 import structlog
 
+from peel.albums import AlbumRecommendation, top_album_recommendations
 from peel.config import settings
 from peel.db import DB, iso_week
 from peel.matcher import best_match, normalize
@@ -97,6 +98,7 @@ def run() -> None:
     new_track_entries: list[DigestItem] = []  # (source_id, artist, title, url)
     new_album_entries: list[DigestItem] = []  # (source_id, artist, album, url)
     external_entries: list[DigestItem] = []  # unmatched com URL para ouvir fora do Spotify
+    album_recommendations: list[AlbumRecommendation] = []
 
     # Métricas do retry de unmatched (reportadas no log final)
     retried_total = 0
@@ -166,6 +168,7 @@ def run() -> None:
                                 track.title,
                                 source.id,
                                 track.source_url,
+                                spotify_album_uri=track.spotify_album_uri,
                             )
 
                             if is_new:
@@ -367,6 +370,18 @@ def run() -> None:
             log.exception("playlist.ranking_failed", error=str(e))
             window_uris = db.tracks_in_window(current_week, settings.peel_playlist_window_weeks)
         try:
+            album_recommendations = top_album_recommendations(
+                db,
+                current_week,
+                weeks=2,
+                limit=7,
+                source_quality=source_quality,
+            )
+        except Exception as e:
+            log.exception("albums.recommendations_failed", error=str(e))
+            album_recommendations = []
+
+        try:
             sp.replace_playlist_items(settings.peel_playlist_id, window_uris)
             log.info(
                 "playlist.rotated",
@@ -392,6 +407,7 @@ def run() -> None:
                 new_album_entries,
                 settings.peel_playlist_id,
                 external_entries=external_entries,
+                album_recommendations=_album_digest_items(album_recommendations),
             )
         except Exception:
             log.exception("digest.crashed")
@@ -500,6 +516,22 @@ def _build_source_slot_caps(scores: list[SourceScore], default: int) -> dict[str
 def _source_quality_map(scores: list[SourceScore]) -> dict[str, tuple[float, float]]:
     """Mapa usado para ranking da playlist: source -> (avg_rating, score)."""
     return {score.source_id: (score.avg_rating or 0.0, score.score) for score in scores}
+
+
+def _album_digest_items(
+    recommendations: list[AlbumRecommendation],
+) -> list[tuple[str, str, int, tuple[str, ...], str | None]]:
+    """Converte recomendações de álbuns para o formato compacto do Telegram."""
+    return [
+        (
+            item.artist,
+            item.album,
+            item.source_count,
+            item.sources,
+            item.link_url,
+        )
+        for item in recommendations
+    ]
 
 
 def _with_source_counts(db: DB, entries: list[DigestItem]) -> list[DigestItem]:

@@ -339,6 +339,7 @@ class TestAquariumDrunkard:
             "https://aquariumdrunkard.com/2026/05/29/wax-machine-the-sky-unfurls-the-dance-goes-on/"
         )
         assert wax_machine.raw_title == "Wax Machine :: The Sky Unfurls, The Dance Goes On"
+        assert wax_machine.spotify_album_uri == "spotify:album:1WaxMachineAlbum"
 
     def test_missing_read_more_keeps_album_without_source_url(self, fixture_html: str) -> None:
         source = AquariumDrunkard()

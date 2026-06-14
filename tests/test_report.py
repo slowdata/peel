@@ -108,6 +108,66 @@ class TestWeeklyReport:
         assert "| source-c | 1 | 1 | 0 | 0 | — |" in report
         db.close()
 
+    def test_build_weekly_report_renders_album_recommendations(self, tmp_path: Path) -> None:
+        db = DB(str(tmp_path / "peel.db"))
+        db.init_schema()
+        week = "2026-W18"
+
+        db.conn.executemany(
+            """
+            INSERT INTO album_mentions
+            (artist, album, artist_key, album_key, source_id, source_url,
+             spotify_album_uri, seen_at, added_at_week)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    "Wax Machine",
+                    "The Sky Unfurls",
+                    "wax machine",
+                    "the sky unfurls",
+                    "aquarium_drunkard",
+                    "https://ad/wax",
+                    "spotify:album:abc123",
+                    "2026-05-01T10:00:00+00:00",
+                    week,
+                ),
+                (
+                    "Wax Machine",
+                    "The Sky Unfurls",
+                    "wax machine",
+                    "the sky unfurls",
+                    "pitchfork_best_albums",
+                    "https://pitchfork/wax",
+                    None,
+                    "2026-05-01T11:00:00+00:00",
+                    week,
+                ),
+                (
+                    "No Spotify",
+                    "Fallback Album",
+                    "no spotify",
+                    "fallback album",
+                    "guardian_music_albums",
+                    "https://guardian/fallback",
+                    None,
+                    "2026-05-01T12:00:00+00:00",
+                    week,
+                ),
+            ],
+        )
+        db.conn.commit()
+
+        report = build_weekly_report(db, week)
+
+        assert "## 🎧 7 Álbuns a Ouvir" in report
+        assert (
+            "Wax Machine — The Sky Unfurls — 2 fontes — https://open.spotify.com/album/abc123"
+        ) in report
+        assert "Sources: aquarium_drunkard, pitchfork_best_albums" in report
+        assert "No Spotify — Fallback Album — 1 fontes — https://guardian/fallback" in report
+        db.close()
+
     def test_generate_weekly_report_writes_file(self, tmp_path: Path) -> None:
         db = DB(str(tmp_path / "peel.db"))
         db.init_schema()

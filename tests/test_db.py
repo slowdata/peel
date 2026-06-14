@@ -22,6 +22,7 @@ class TestInitSchema:
         cursor = db.conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
         tables = [row[0] for row in cursor.fetchall()]
 
+        assert "album_mentions" in tables
         assert "albums" in tables
         assert "feedback" in tables
         assert "source_runs" in tables
@@ -42,6 +43,7 @@ class TestInitSchema:
         cursor = db.conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
         tables = {row[0] for row in cursor.fetchall()}
         assert {
+            "album_mentions",
             "albums",
             "feedback",
             "source_runs",
@@ -475,6 +477,58 @@ class TestRecordAlbum:
         row = cursor.fetchone()
         assert row[0] is None
 
+    def test_record_album_writes_album_mention_with_spotify_uri(self, tmp_path: Path) -> None:
+        db = DB(str(tmp_path / "test.db"))
+        db.init_schema()
+
+        db.record_album(
+            "Wax Machine",
+            "The Sky Unfurls",
+            "aquarium_drunkard",
+            "https://example.com/review",
+            spotify_album_uri="spotify:album:abc123",
+        )
+
+        row = db.conn.execute(
+            """
+            SELECT artist, album, artist_key, album_key, source_id, source_url,
+                   spotify_album_uri
+            FROM album_mentions
+            WHERE source_id = ?
+            """,
+            ("aquarium_drunkard",),
+        ).fetchone()
+
+        assert row == (
+            "Wax Machine",
+            "The Sky Unfurls",
+            "wax machine",
+            "the sky unfurls",
+            "aquarium_drunkard",
+            "https://example.com/review",
+            "spotify:album:abc123",
+        )
+
+    def test_record_album_duplicate_album_still_records_new_source_mention(
+        self, tmp_path: Path
+    ) -> None:
+        db = DB(str(tmp_path / "test.db"))
+        db.init_schema()
+
+        assert db.record_album("Artist", "Album", "source-a", "https://a") is True
+        assert db.record_album("Artist", "Album", "source-b", "https://b") is False
+
+        count = db.conn.execute(
+            """
+            SELECT COUNT(DISTINCT source_id)
+            FROM album_mentions
+            WHERE artist_key = ? AND album_key = ?
+            """,
+            ("artist", "album"),
+        ).fetchone()[0]
+
+        assert count == 2
+
 
 class TestFeedback:
     """Testa feedback explícito do utilizador."""
@@ -730,6 +784,59 @@ class TestMigrationBackfill:
         row = cursor.fetchone()
         assert row is not None
         assert row[0] == "2026-W16"  # 2026-04-19 é semana 16
+
+    def test_migration_backfill_album_mentions_is_idempotent(self, tmp_path: Path) -> None:
+        """Migração cria album_mentions e faz backfill sem duplicar."""
+        db_path = tmp_path / "test.db"
+        db = DB(str(db_path))
+
+        cursor = db.conn.cursor()
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS albums (
+                artist     TEXT NOT NULL,
+                album      TEXT NOT NULL,
+                source_id  TEXT NOT NULL,
+                source_url TEXT,
+                seen_at    TEXT NOT NULL,
+                PRIMARY KEY (artist, album)
+            )
+            """
+        )
+        iso_timestamp = datetime(2026, 4, 19, 10, 30, 0, tzinfo=UTC).isoformat()
+        cursor.execute(
+            """
+            INSERT INTO albums
+            (artist, album, source_id, source_url, seen_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            ("Artist1", "Album1", "source1", "https://album", iso_timestamp),
+        )
+        db.conn.commit()
+
+        db.init_schema()
+        db.init_schema()
+
+        rows = db.conn.execute(
+            """
+            SELECT artist, album, artist_key, album_key, source_id, source_url,
+                   spotify_album_uri, added_at_week
+            FROM album_mentions
+            """
+        ).fetchall()
+
+        assert rows == [
+            (
+                "Artist1",
+                "Album1",
+                "artist1",
+                "album1",
+                "source1",
+                "https://album",
+                None,
+                "2026-W16",
+            )
+        ]
 
     def test_migration_backfill_albums(self, tmp_path: Path) -> None:
         """Migração backfill added_at_week em albums."""

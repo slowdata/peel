@@ -45,6 +45,13 @@ class Track(BaseModel):
     """Título original antes de split artist/title, em caso de parsing complexo.
     Útil para debugging quando o split foi mal feito."""
 
+    spotify_album_uri: str | None = None
+    """URI opcional de álbum Spotify quando uma source de álbuns o fornece.
+
+    DECISÃO: manter no mesmo envelope Track para evitar criar um segundo modelo
+    só para album/context sources; default None preserva compatibilidade.
+    """
+
     @field_validator("artist", "title")
     @classmethod
     def _not_blank(cls, v: str) -> str:

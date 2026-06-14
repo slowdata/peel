@@ -15,6 +15,8 @@ API_BASE = "https://api.telegram.org"
 DigestItem = (
     tuple[str, str, str, str | None] | tuple[str, str, str, str | None, int]
 )  # (source_id, artist, title/album, url[, source_count])
+AlbumPickItem = tuple[str, str, int, tuple[str, ...], str | None]
+# (artist, album, source_count, sources, preferred_url)
 
 
 def send_digest(
@@ -22,6 +24,7 @@ def send_digest(
     new_albums: list[DigestItem],
     playlist_id: str,
     external_entries: list[DigestItem] | None = None,
+    album_recommendations: list[AlbumPickItem] | None = None,
 ) -> None:
     """Envia digest semanal via Telegram.
 
@@ -33,12 +36,19 @@ def send_digest(
         new_albums: Lista de (source_id, artist, album, url) dos álbuns novos
         playlist_id: ID da playlist Spotify
         external_entries: Items com link externo que não entraram no Spotify
+        album_recommendations: Seleção semanal "7 Álbuns a Ouvir"
     """
     if not settings.telegram_bot_token or not settings.telegram_chat_id:
         log.info("telegram.skipped", reason="credentials_missing")
         return
 
-    text = _format_message(new_tracks, new_albums, playlist_id, external_entries or [])
+    text = _format_message(
+        new_tracks,
+        new_albums,
+        playlist_id,
+        external_entries or [],
+        album_recommendations or [],
+    )
     url = f"{API_BASE}/bot{settings.telegram_bot_token}/sendMessage"
     payload = {
         "chat_id": settings.telegram_chat_id,
@@ -60,6 +70,7 @@ def _format_message(
     new_albums: list[DigestItem],
     playlist_id: str,
     external_entries: list[DigestItem] | None = None,
+    album_recommendations: list[AlbumPickItem] | None = None,
 ) -> str:
     """Formata mensagem HTML do Telegram.
 
@@ -68,6 +79,7 @@ def _format_message(
         new_albums: Lista de (source_id, artist, album, url)
         playlist_id: ID da playlist Spotify
         external_entries: Items com link externo que não entraram no Spotify
+        album_recommendations: Seleção semanal "7 Álbuns a Ouvir"
 
     Returns:
         Mensagem formatada em HTML para Telegram
@@ -92,6 +104,13 @@ def _format_message(
     else:
         lines.append("<i>Sem álbuns novos esta semana.</i>")
 
+    album_picks = album_recommendations or []
+    if album_picks:
+        lines.append("")
+        lines.append(f"<b>🎧 7 Álbuns a Ouvir ({len(album_picks)})</b>")
+        for item in album_picks[:7]:
+            lines.append(_format_album_pick(item))
+
     external_items = external_entries or []
     if external_items:
         lines.append("")
@@ -107,6 +126,20 @@ def _format_message(
     )
 
     return "\n".join(lines)
+
+
+def _format_album_pick(item: AlbumPickItem) -> str:
+    artist, album, source_count, sources, url_ = item
+    label = f"{escape(artist)} — {escape(album)}"
+    consensus = source_count > 1
+    prefix = "• ⭐ " if consensus else "• "
+    source_label = ", ".join(escape(source) for source in sources)
+    if consensus:
+        source_label = f"{source_count} fontes: {source_label}"
+    source = f" <i>({source_label})</i>" if source_label else ""
+    if url_:
+        return f'{prefix}<a href="{escape(url_)}">{label}</a>{source}'
+    return f"{prefix}{label}{source}"
 
 
 def _format_digest_item(item: DigestItem) -> str:

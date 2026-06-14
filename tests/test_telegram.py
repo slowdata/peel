@@ -170,6 +170,36 @@ class TestFormatMessage:
         assert "⭐ Artist B — Single" not in msg
         assert "Artist B — Single <i>(source-b)</i>" in msg
 
+    def test_format_message_renders_album_recommendations(self) -> None:
+        """7 Álbuns a Ouvir mostra consenso e link preferido."""
+        msg = _format_message(
+            [],
+            [],
+            "test_id",
+            album_recommendations=[
+                (
+                    "Wax Machine",
+                    "The Sky Unfurls",
+                    2,
+                    ("aquarium_drunkard", "pitchfork_best_albums"),
+                    "https://open.spotify.com/album/abc123",
+                ),
+                (
+                    "No Spotify",
+                    "Fallback Album",
+                    1,
+                    ("guardian_music_albums",),
+                    "https://guardian/fallback",
+                ),
+            ],
+        )
+
+        assert "🎧 7 Álbuns a Ouvir (2)" in msg
+        assert "⭐ " in msg
+        assert "2 fontes: aquarium_drunkard, pitchfork_best_albums" in msg
+        assert '<a href="https://open.spotify.com/album/abc123">Wax Machine' in msg
+        assert '<a href="https://guardian/fallback">No Spotify' in msg
+
 
 class TestSendDigest:
     """Testa a função send_digest."""
