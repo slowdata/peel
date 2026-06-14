@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from peel.sources.bandcamp import BandcampLabel
 from peel.sources.base import Source
 from peel.sources.registry import ACTIVE_SOURCES, SourceSpec, active_source_specs, active_sources
 from peel.sources.rss import (
@@ -32,16 +33,21 @@ class DisabledSource(Source):
 
 
 def test_active_sources_registry_contains_expected_order() -> None:
-    assert [spec.source_cls for spec in ACTIVE_SOURCES] == [
-        PitchforkBNT,
-        StereogumNewMusic,
-        TheQuietus,
-        TheQuietusTracksOfMonth,
-        GorillaVsBear,
-        GuardianMusicAlbums,
-        NprNewMusicFridayStarting5,
-        PitchforkBestAlbums,
-        AquariumDrunkard,
+    assert [spec.source_id for spec in ACTIVE_SOURCES] == [
+        PitchforkBNT.id,
+        StereogumNewMusic.id,
+        TheQuietus.id,
+        TheQuietusTracksOfMonth.id,
+        GorillaVsBear.id,
+        GuardianMusicAlbums.id,
+        NprNewMusicFridayStarting5.id,
+        PitchforkBestAlbums.id,
+        AquariumDrunkard.id,
+        "bandcamp_dfa",
+        "bandcamp_sacred_bones",
+        "bandcamp_sub_pop",
+        "bandcamp_stones_throw",
+        "bandcamp_ghostly",
     ]
 
 
@@ -56,3 +62,18 @@ def test_active_sources_instantiates_enabled_sources(monkeypatch) -> None:
 
     assert len(sources) == 1
     assert isinstance(sources[0], DummySource)
+
+
+def test_active_sources_instantiates_configured_bandcamp_labels() -> None:
+    sources = active_sources()
+    bandcamp_sources = [source for source in sources if isinstance(source, BandcampLabel)]
+
+    assert [source.id for source in bandcamp_sources] == [
+        "bandcamp_dfa",
+        "bandcamp_sacred_bones",
+        "bandcamp_sub_pop",
+        "bandcamp_stones_throw",
+        "bandcamp_ghostly",
+    ]
+    assert all(source.kind == "album" for source in bandcamp_sources)
+    assert all(source.max_items == 5 for source in bandcamp_sources)
