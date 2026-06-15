@@ -944,20 +944,21 @@ class DB:
         self,
         week: str,
         source_quality: Mapping[str, SourceQuality] | None = None,
+        limit: int = 7,
     ) -> list[str]:
-        """URIs da semana que o utilizador quer guardar (feedback love/like).
+        """Top N da semana pelo ranking, sem o que o utilizador rejeitou.
 
-        Usado por ``peel finalize`` para construir a playlist final a partir da
-        triagem avaliada: mantém só rating >= like (love/like), exclui
-        meh/skip/ban. Ordem segue o ranking da janela (consenso/qualidade).
+        Regra (site + ``peel finalize``): top `limit` faixas da semana ordenadas
+        pelo ranking (consenso/qualidade/recência), EXCLUINDO ban/meh/skip e
+        MANTENDO love/like e as ainda não avaliadas. Bans já saem do ranking.
         """
         keep = FEEDBACK_RATINGS["like"]
         keepers: list[str] = []
         for uri in self.ranked_tracks_in_window(week, 1, source_quality):
             feedback = self.feedback_for_track(uri)
-            if feedback is not None and feedback[0] >= keep:
+            if feedback is None or feedback[0] >= keep:
                 keepers.append(uri)
-        return keepers
+        return keepers[:limit]
 
     def source_count_for_track_identity(self, artist: str, title: str) -> int:
         """Maior nº de sources para uma faixa com o mesmo artist/title normalizado."""

@@ -23,11 +23,11 @@ class TestFormatMessage:
         assert "<b>Novas tracks (1)</b>" in msg
         assert "Artist A" in msg
         assert "Track 1" in msg
-        assert "(source-a)" in msg
+        assert "(Source A)" in msg
         assert "<b>💿 Álbuns da semana (1)</b>" in msg
         assert "Artist B" in msg
         assert "Album 1" in msg
-        assert "(source-b)" in msg
+        assert "(Source B)" in msg
         assert "spotify:playlist:test123" in msg
         assert '<a href="http://example.com/album">' in msg
 
@@ -106,7 +106,7 @@ class TestFormatMessage:
         assert "Track &amp; Title" in msg
         assert "Artist &quot;quotes&quot;" in msg
         assert "Album &lt;script&gt;" in msg
-        assert "source&amp;" in msg
+        assert "Source&amp;" in msg
 
     def test_format_message_album_with_url(self) -> None:
         """Formata álbum com URL como link."""
@@ -151,7 +151,7 @@ class TestFormatMessage:
         assert "Escutas externas (1)" in msg
         assert "Helado Negro" in msg
         assert "Dance To The Music" in msg
-        assert "stereogum_new_music" in msg
+        assert "Stereogum" in msg
         assert '<a href="https://stereogum.com/example">' in msg
 
     def test_format_message_marks_consensus_tracks(self) -> None:
@@ -166,9 +166,9 @@ class TestFormatMessage:
         )
 
         assert "⭐ Artist A — Shared" in msg
-        assert "source-a, 2 fontes" in msg
+        assert "Source A, 2 fontes" in msg
         assert "⭐ Artist B — Single" not in msg
-        assert "Artist B — Single <i>(source-b)</i>" in msg
+        assert "Artist B — Single <i>(Source B)</i>" in msg
 
     def test_format_message_renders_album_recommendations(self) -> None:
         """7 Álbuns a Ouvir mostra consenso e link preferido."""
@@ -196,7 +196,7 @@ class TestFormatMessage:
 
         assert "🎧 7 Álbuns a Ouvir (2)" in msg
         assert "⭐ " in msg
-        assert "2 fontes: aquarium_drunkard, pitchfork_best_albums" in msg
+        assert "2 fontes: Aquarium Drunkard, Pitchfork" in msg
         assert '<a href="https://open.spotify.com/album/abc123">Wax Machine' in msg
         assert '<a href="https://guardian/fallback">No Spotify' in msg
 

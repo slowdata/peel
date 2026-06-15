@@ -194,6 +194,14 @@ def _export_tracks(
         source_quality,
     )
     buckets = _track_buckets(rows, source_quality)
+    # Mostra o top dos críticos pelo ranking, sem o que o utilizador rejeitou:
+    # exclui ban/meh/skip, mantém love/like e não-avaliadas.
+    keep = FEEDBACK_RATINGS["like"]
+    ranked_uris = [
+        uri
+        for uri in ranked_uris
+        if (fb := db.feedback_for_track(uri)) is None or fb[0] >= keep
+    ]
     tracks: list[dict[str, Any]] = []
     for rank, uri in enumerate(ranked_uris[:SITE_TRACK_LIMIT], start=1):
         bucket = buckets.get(uri)

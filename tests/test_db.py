@@ -1198,7 +1198,7 @@ class TestUnmatchedRetryHelpers:
         assert remaining == [("pitchfork_bnt", "Fresh", "Track")]
 
 
-def test_week_keeper_uris_keeps_only_love_and_like(tmp_path: Path) -> None:
+def test_week_keeper_uris_excludes_meh_skip_ban_keeps_unrated(tmp_path: Path) -> None:
     db = DB(str(tmp_path / "keepers.db"))
     db.init_schema()
     week = iso_week(datetime.now(UTC))
@@ -1217,4 +1217,5 @@ def test_week_keeper_uris_keeps_only_love_and_like(tmp_path: Path) -> None:
 
     keepers = db.week_keeper_uris(week)
     db.close()
-    assert set(keepers) == {"spotify:track:lov", "spotify:track:lik"}
+    # Mantém love/like e o não-avaliado; exclui meh/skip/ban.
+    assert set(keepers) == {"spotify:track:lov", "spotify:track:lik", "spotify:track:non"}

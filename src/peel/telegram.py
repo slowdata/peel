@@ -8,6 +8,7 @@ import httpx
 import structlog
 
 from peel.config import settings
+from peel.sources.registry import source_label as _friendly
 
 log = structlog.get_logger()
 
@@ -133,7 +134,7 @@ def _format_album_pick(item: AlbumPickItem) -> str:
     label = f"{escape(artist)} — {escape(album)}"
     consensus = source_count > 1
     prefix = "• ⭐ " if consensus else "• "
-    source_label = ", ".join(escape(source) for source in sources)
+    source_label = ", ".join(escape(_friendly(source)) for source in sources)
     if consensus:
         source_label = f"{source_count} fontes: {source_label}"
     source = f" <i>({source_label})</i>" if source_label else ""
@@ -165,7 +166,7 @@ def _format_item(
     label = f"{escape(artist)} — {escape(title)}"
     consensus = source_count > 1
     prefix = "• ⭐ " if consensus else "• "
-    source_label = escape(source_id)
+    source_label = escape(_friendly(source_id))
     if consensus:
         source_label = f"{source_label}, {source_count} fontes"
     source = f" <i>({source_label})</i>"
