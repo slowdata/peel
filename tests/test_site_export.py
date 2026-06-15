@@ -90,6 +90,30 @@ def test_album_resolver_fills_spotify_url_in_payload(tmp_path: Path) -> None:
     assert match["spotify_url"] == "https://open.spotify.com/album/ABC"
 
 
+def test_export_site_skips_empty_current_week(tmp_path: Path) -> None:
+    db = DB(str(tmp_path / "peel.db"))
+    db.init_schema()
+    _insert_track(
+        db,
+        uri="spotify:track:aaa",
+        source_id="stereogum_new_music",
+        artist="Snag",
+        title="Unarrest Me",
+        added_at="2026-06-10T00:00:00+00:00",
+        week="2026-W24",
+    )
+    site_dir = tmp_path / "site"
+    # Semana corrente W25 está vazia (sem faixas) → não deve ser escrita.
+    exported = export_site(
+        db, site_dir, weeks=2, playlist_id=None, current_week="2026-W25", album_resolver=None
+    )
+    db.close()
+    written = {item.week for item in exported}
+    assert "2026-W24" in written
+    assert "2026-W25" not in written
+    assert not (site_dir / "src" / "data" / "weeks" / "2026-W25.json").exists()
+
+
 def test_week_helpers() -> None:
     assert week_label("2026-W24") == "Semana 24 · 2026"
     assert week_date_range("2026-W24") == "8 — 14 Jun 2026"
@@ -279,6 +303,16 @@ def test_build_site_week_payload_empty_week_is_valid(tmp_path: Path) -> None:
 def test_export_site_writes_idempotent_json_files(tmp_path: Path) -> None:
     db = DB(str(tmp_path / "peel.db"))
     db.init_schema()
+    for week in ("2026-W23", "2026-W24"):
+        _insert_track(
+            db,
+            uri=f"spotify:track:{week}",
+            source_id="stereogum_new_music",
+            artist="Snag",
+            title="Unarrest Me",
+            added_at=f"{week[:4]}-06-10T00:00:00+00:00",
+            week=week,
+        )
     site_dir = tmp_path / "site"
 
     exported = export_site(

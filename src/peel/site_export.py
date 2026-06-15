@@ -102,6 +102,12 @@ def export_site(
         payload = build_site_week_payload(
             db, week, playlist_url, source_quality, album_resolver=album_resolver
         )
+        # Não publicar semanas sem faixas (ex. a semana ISO atual antes do run
+        # semanal): a homepage do site é a semana mais recente, e uma semana
+        # vazia faria a homepage "saltar" para um hero sem músicas.
+        if not payload["tracks"]:
+            log.info("site_export.skipped_empty_week", week=week)
+            continue
         path = output_dir / f"{week}.json"
         path.write_text(_json_dumps(payload), encoding="utf-8")
         exported.append(ExportedWeek(week=week, path=path))

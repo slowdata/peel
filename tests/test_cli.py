@@ -218,6 +218,11 @@ class TestCliSite:
         db_path = tmp_path / "peel.db"
         db = DB(str(db_path))
         db.init_schema()
+        # Semana corrente precisa de pelo menos uma faixa, senão o export
+        # (corretamente) salta semanas vazias e não escreve ficheiro.
+        db.record_track(
+            "spotify:track:cli1", "stereogum_new_music", "Snag", "Unarrest Me", None
+        )
         db.close()
         site_dir = tmp_path / "peel-sept"
         current_week = iso_week(datetime.now(UTC))
@@ -226,7 +231,7 @@ class TestCliSite:
 
         result = runner.invoke(
             cli.app,
-            ["site", "export", "--site-dir", str(site_dir), "--weeks", "1"],
+            ["site", "export", "--site-dir", str(site_dir), "--weeks", "1", "--no-resolve-albums"],
         )
 
         assert result.exit_code == 0
