@@ -194,13 +194,12 @@ def _export_tracks(
         source_quality,
     )
     buckets = _track_buckets(rows, source_quality)
-    # Mostra o top dos críticos pelo ranking, sem o que o utilizador rejeitou:
-    # exclui ban/meh/skip, mantém love/like e não-avaliadas.
-    keep = FEEDBACK_RATINGS["like"]
+    # "Peel 7" público: SEMPRE o top 7 dos críticos pelo teu ranking, excluindo
+    # apenas bans (rejeição dura). meh/skip ficam — o ranking já os afunda — para
+    # a marca "7" não esvaziar. O filtro estrito (meh/skip) vive no finalize/playlist.
+    ban = FEEDBACK_RATINGS["ban"]
     ranked_uris = [
-        uri
-        for uri in ranked_uris
-        if (fb := db.feedback_for_track(uri)) is None or fb[0] >= keep
+        uri for uri in ranked_uris if (fb := db.feedback_for_track(uri)) is None or fb[0] > ban
     ]
     tracks: list[dict[str, Any]] = []
     for rank, uri in enumerate(ranked_uris[:SITE_TRACK_LIMIT], start=1):
