@@ -408,7 +408,9 @@ def run() -> None:
             send_digest(
                 _with_source_counts(db, new_track_entries),
                 new_album_entries,
-                settings.peel_playlist_id,
+                # Link para a TRIAGEM (o que há para ouvir/avaliar esta semana);
+                # cai na playlist principal se não houver triagem definida.
+                settings.peel_review_playlist_id or settings.peel_playlist_id,
                 external_entries=external_entries,
                 album_recommendations=_album_digest_items(album_recommendations),
             )
