@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Peel Sept — a semana, curada à mão</title>
+<meta name="description" content="Sete músicas por semana, escolhidas e avaliadas à mão. Sem algoritmos, sem bolhas." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,18..72,400;0,18..72,500;1,18..72,400;1,18..72,500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --fg: #f3f1ee;
+    --muted: #8d8a86;
+    --faint: #5a5854;
+    --line: #211f1d;
+    --hover: #131211;
+    --accent: #e2895a;          /* casca — só no rating ativo */
+    --maxw: 720px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  body {
+    font-family: "Geist", "Inter", system-ui, sans-serif;
+    background: var(--bg); color: var(--fg);
+    line-height: 1.5; padding: 0 28px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wrap { max-width: var(--maxw); margin: 0 auto; }
+  .mono {
+    font-family: "Geist Mono", "IBM Plex Mono", monospace;
+    text-transform: uppercase; letter-spacing: 2px; font-size: 11.5px;
+    color: var(--faint);
+  }
+
+  /* ---------- top bar ---------- */
+  .topbar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 56px 0 64px;
+  }
+
+  /* ---------- masthead ---------- */
+  .mark {
+    font-family: "Newsreader", Georgia, serif;
+    font-weight: 500; font-size: 60px; line-height: 1; letter-spacing: -1.6px;
+  }
+  .mark em { font-style: italic; color: var(--muted); }
+  .lede {
+    margin-top: 20px; max-width: 30em;
+    font-size: 16px; color: var(--muted); font-weight: 400;
+  }
+  .dates { margin-top: 20px; }
+
+  /* ---------- section heads ---------- */
+  .sec-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin: 92px 0 8px;
+  }
+  .sec-head h2 {
+    font-family: "Newsreader", Georgia, serif;
+    font-weight: 500; font-size: 30px; letter-spacing: -0.6px;
+  }
+
+  /* ---------- track list ---------- */
+  .row {
+    display: grid;
+    grid-template-columns: 40px 1fr 150px;
+    align-items: center; gap: 20px;
+    padding: 22px 0;
+    border-top: 1px solid var(--line);
+  }
+  .num { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--faint); }
+  .title { font-size: 16px; font-weight: 500; letter-spacing: -0.1px; }
+  .artist { margin-top: 3px; font-size: 13.5px; color: var(--muted); }
+  .artist .src { color: var(--faint); }
+
+  /* ---------- rating (5-step, peel model) ---------- */
+  .rate { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; }
+  .bar { display: flex; gap: 4px; }
+  .seg {
+    width: 18px; height: 4px; border-radius: 3px;
+    background: var(--line); border: none; padding: 0; cursor: pointer;
+    transition: background .14s ease, transform .14s ease;
+  }
+  .seg:hover { transform: scaleY(1.6); }
+  .seg.on { background: var(--fg); }
+  .row[data-rated="love"] .seg.on,
+  .row[data-rated="like"] .seg.on { background: var(--accent); }
+  .rlabel {
+    font-family: "Geist Mono", "IBM Plex Mono", monospace;
+    font-size: 10.5px; letter-spacing: 1.6px; text-transform: uppercase;
+    color: var(--faint); transition: color .14s ease;
+  }
+  .row[data-rated] .rlabel { color: var(--muted); }
+
+  /* ---------- albums teaser ---------- */
+  .albgrid {
+    display: grid; grid-template-columns: repeat(7, 1fr); gap: 12px;
+    margin-top: 26px;
+  }
+  .alb {
+    aspect-ratio: 1; border: 1px dashed var(--line); border-radius: 10px;
+    display: grid; place-items: center; position: relative;
+    transition: border-color .18s ease, background .18s ease;
+  }
+  .alb:hover { border-color: var(--faint); background: var(--hover); }
+  .alb .n { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--faint); }
+  .alb .tip {
+    position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+    background: var(--fg); color: var(--bg); font-size: 11px; font-weight: 500;
+    padding: 5px 9px; border-radius: 6px; white-space: nowrap;
+    opacity: 0; pointer-events: none; transition: opacity .15s ease;
+  }
+  .alb:hover .tip { opacity: 1; }
+  .alb-cap { margin-top: 22px; font-size: 14px; color: var(--muted); }
+
+  /* ---------- footer ---------- */
+  footer { margin: 100px 0 70px; padding-top: 30px; border-top: 1px solid var(--line); }
+  .thanks { font-size: 15px; color: var(--muted); max-width: 34em; }
+  .ethos { font-family: "Newsreader", serif; font-style: italic; color: var(--fg); }
+  .botbar { display: flex; justify-content: space-between; margin-top: 30px; }
+  a { color: inherit; }
+
+  @media (max-width: 560px) {
+    .mark { font-size: 46px; }
+    .row { grid-template-columns: 28px 1fr auto; gap: 14px; }
+    .rate { gap: 6px; }
+    .albgrid { grid-template-columns: repeat(4, 1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <span class="mono">peel.sept.pt</span>
+    <span class="mono">Semana 24 · 2026</span>
+  </div>
+
+  <header>
+    <h1 class="mark">Peel <em>Sept</em></h1>
+    <p class="lede">Sete músicas, escolhidas e avaliadas todas as semanas. Um diário sonoro, atualizado ao domingo.</p>
+    <p class="mono dates">9 — 15 Jun 2026</p>
+  </header>
+
+  <section>
+    <div class="sec-head"><h2>A semana</h2><span class="mono">7 faixas · à mão</span></div>
+    <div id="playlist"></div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>7 Álbuns</h2><span class="mono">em breve</span></div>
+    <div class="albgrid" id="albums"></div>
+    <p class="alb-cap">Um espaço para sete álbuns a ouvir de fio a pavio. A chegar.</p>
+  </section>
+
+  <footer>
+    <p class="thanks"><span class="ethos">Obrigado por passares por aqui.</span> O Peel Sept é um projeto pessoal, atualizado todas as semanas com aquilo que ando a ouvir.</p>
+    <div class="botbar">
+      <span class="mono">© 2026 Peel Sept</span>
+      <span class="mono">Feito com gosto</span>
+    </div>
+  </footer>
+
+</div>
+
+<script>
+  // Escala real do peel: love > like > meh > skip > ban
+  const LEVELS = [
+    { key: "ban",  label: "Ban" },
+    { key: "skip", label: "Passo" },
+    { key: "meh",  label: "Meh" },
+    { key: "like", label: "Gosto" },
+    { key: "love", label: "Amo" },
+  ]; // índice 0..4 da esquerda p/ direita
+
+  const tracks = [
+    { artist: "Six Sex", title: "ULTRA", src: "NPR" },
+    { artist: "Hayley Kiyoko", title: "girls like girls", src: "NPR" },
+    { artist: "YHWH Nailgun", title: "Magazine", src: "NPR" },
+    { artist: "Pussy Riot", title: "CYKA", src: "NPR" },
+    { artist: "Paycheque", title: "Heatwave", src: "Gorilla vs Bear" },
+    { artist: "Marci", title: "Butterfly Sticker", src: "Gorilla vs Bear" },
+    { artist: "Snag", title: "Unarrest Me", src: "Stereogum" },
+  ];
+
+  const albums = [
+    "Vince Staples — Cry Baby",
+    "Olivia Rodrigo — You Seem Pretty Sad…",
+    "Káryyn — Physics Universal Love…",
+    "Bill Orcutt & Mabe Fratti — Almost Waking",
+    "Zoh Amba — Eyes Full",
+    "YHWH Nailgun — Magazine",
+    "Gintė Preisaitė — Instruments of Forgetting…",
+  ];
+
+  const store = JSON.parse(localStorage.getItem("peel_ratings") || "{}");
+  const save = () => localStorage.setItem("peel_ratings", JSON.stringify(store));
+  const labelFor = k => (LEVELS.find(l => l.key === k) || {}).label || "Avaliar";
+  const idxFor = k => LEVELS.findIndex(l => l.key === k);
+
+  const pl = document.getElementById("playlist");
+  tracks.forEach((t, i) => {
+    const id = t.artist + "|" + t.title;
+    const row = document.createElement("div");
+    row.className = "row";
+    if (store[id]) row.dataset.rated = store[id];
+
+    const bar = document.createElement("div");
+    bar.className = "bar";
+    LEVELS.forEach((lv, j) => {
+      const seg = document.createElement("button");
+      seg.className = "seg";
+      seg.title = lv.label;
+      seg.setAttribute("aria-label", lv.label);
+      bar.appendChild(seg);
+    });
+
+    const rlabel = document.createElement("span");
+    rlabel.className = "rlabel";
+
+    const paint = () => {
+      const cur = store[id];
+      const sel = cur ? idxFor(cur) : -1;
+      [...bar.children].forEach((s, j) => s.classList.toggle("on", sel >= 0 && j <= sel));
+      rlabel.textContent = labelFor(cur);
+      if (cur) row.dataset.rated = cur; else delete row.dataset.rated;
+    };
+
+    [...bar.children].forEach((seg, j) => {
+      seg.onclick = () => {
+        const k = LEVELS[j].key;
+        if (store[id] === k) delete store[id]; else store[id] = k;
+        save(); paint();
+      };
+    });
+
+    row.innerHTML =
+      `<div class="num">${String(i + 1).padStart(2, "0")}</div>` +
+      `<div><div class="title">${t.title}</div>` +
+      `<div class="artist">${t.artist} · <span class="src">${t.src}</span></div></div>`;
+    const rate = document.createElement("div");
+    rate.className = "rate";
+    rate.append(bar, rlabel);
+    row.appendChild(rate);
+    pl.appendChild(row);
+    paint();
+  });
+
+  const ag = document.getElementById("albums");
+  albums.forEach((name, i) => {
+    const cell = document.createElement("div");
+    cell.className = "alb";
+    cell.innerHTML = `<span class="tip">${name}</span><span class="n">${String(i + 1).padStart(2, "0")}</span>`;
+    ag.appendChild(cell);
+  });
+</script>
+</body>
+</html>

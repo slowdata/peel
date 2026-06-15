@@ -18,6 +18,7 @@ import tomllib
 import webbrowser
 from contextlib import redirect_stdout
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -27,7 +28,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from peel.config import settings
-from peel.db import DB, FEEDBACK_RATINGS
+from peel.db import DB, FEEDBACK_RATINGS, iso_week
 from peel.doctor_sources import inspect_registered_sources
 from peel.main import run as run_pipeline
 from peel.report import generate_weekly_report
@@ -85,6 +86,42 @@ class GitSyncState:
 def run_command() -> None:
     """Executa a pipeline semanal do Peel."""
     run_pipeline()
+
+
+@app.command("finalize")
+def finalize(
+    week: Annotated[
+        str | None, typer.Option("--week", help="Semana ISO a publicar (default: a atual)")
+    ] = None,
+    site_dir: Annotated[
+        Path, typer.Option("--site-dir", help="Diretório do site peel-sept")
+    ] = Path("../peel-sept"),
+    export: Annotated[
+        bool, typer.Option("--export/--no-export", help="Exportar o site após finalizar")
+    ] = True,
+) -> None:
+    """Publica a semana: keepers (love/like) da triagem → playlist Weekly + export do site."""
+    target_week = week or iso_week(datetime.now(UTC))
+    db = DB(str(_resolve_path(settings.db_path)))
+    try:
+        db.init_schema()
+        keepers = db.week_keeper_uris(target_week)
+        sp = SpotifyClient()
+        sp.replace_playlist_items(settings.peel_playlist_id, keepers)
+        console.print(
+            f"Finalized {target_week}: {len(keepers)} keepers → {settings.peel_playlist_id}"
+        )
+        if export:
+            export_site(
+                db,
+                _resolve_path(str(site_dir)),
+                weeks=2,
+                playlist_id=settings.peel_playlist_id,
+                album_resolver=make_album_resolver(sp),
+            )
+            console.print("Site exported.")
+    finally:
+        db.close()
 
 
 @app.command()

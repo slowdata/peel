@@ -1,76 +1,136 @@
-# Peel — TODO actual
+# Peel — Estado actual / TODO
 
-Última actualização: 2026-05-31
+Última actualização: 2026-06-15
 
-## Pronto / feito
+## Estado operacional
+
+Peel é agora um motor Python semanal de descoberta musical + exportador para o site estático
+`peel-sept`.
+
+Superfícies activas:
+
+1. `peel` — ingestão, matching Spotify, feedback, scoring, reports, playlist e export JSON.
+2. `peel-sept` — site Astro público em Cloudflare Pages (`https://peel.sept.pt`).
+3. Spotify — playlist pública canónica `Peel — Weekly Discoveries`.
+
+Playlist canónica actual:
+
+```text
+PEEL_PLAYLIST_ID=3iHETIGrWBdoY3a8jNrMox
+https://open.spotify.com/playlist/3iHETIGrWBdoY3a8jNrMox
+```
+
+## Validação conhecida
+
+Última validação local completa:
+
+```bash
+uv run pytest                  # 288 passed
+uv run ruff check src/ tests/  # All checks passed
+```
+
+Site:
+
+```bash
+npm run build                  # 6 pages + OG/IG PNGs gerados
+```
+
+Rotas públicas verificadas:
+
+```text
+https://peel.sept.pt/
+https://peel.sept.pt/2026-W24/
+https://peel.sept.pt/2026-W23/
+https://peel.sept.pt/pt/
+https://peel.sept.pt/pt/2026-W24/
+https://peel.sept.pt/og/2026-W24.png
+https://peel.sept.pt/ig/2026-W24.png
+```
+
+## Feito
 
 - [x] MVP semanal com Spotify, SQLite e GitHub Actions.
 - [x] CLI backoffice com Typer/Rich.
 - [x] Source attribution e consenso por música.
 - [x] Feedback local (`love`, `like`, `meh`, `skip`, `ban`).
+- [x] `ban` filtra URI + `artist/title` normalizados sem banir artista inteiro.
 - [x] Relatório semanal Markdown em `data/reports/`.
 - [x] Sync local/GitHub para `data/peel.db` e reports.
-- [x] Source scoring inicial.
-- [x] `peel doctor sources` para validar registry de fontes.
-- [x] Caps de segurança por source/run e filtro de items antigos.
-- [x] Guardian Music como fonte de álbuns/contexto.
-- [x] The Quietus tratado como álbum/contexto, não playlist directa.
+- [x] Source scoring inicial + `insufficient data`.
+- [x] Registry declarativa de sources.
+- [x] Guardian/The Quietus como fontes de álbuns/contexto.
 - [x] The Quietus Tracks of the Month como fonte de tracks.
-- [x] `unmatched.source_url` para preservar links externos.
-- [x] Telegram digest com tracks, álbuns e escutas externas.
-- [x] Playlists temporárias por semana: `peel playlist fill-week`.
-- [x] Registry limpa: 9 feeds mortos arquivados em `archived_sources`.
-- [x] `peel sources` enriquecido com métricas reais de `source_runs`.
 - [x] NPR New Music Friday — The Starting 5 como fonte de tracks.
+- [x] Aquarium Drunkard “On The Turntable” como fonte de álbuns.
+- [x] Bandcamp labels como fontes de álbuns.
+- [x] Feature “7 Álbuns a Ouvir” com `album_mentions`.
+- [x] Telegram digest com tracks, álbuns e escutas externas.
+- [x] Exportador `peel site export` para `peel-sept/src/data/weeks/*.json`.
+- [x] Export JSON com datas ISO `start_date`/`end_date`.
+- [x] Export JSON com Spotify album links resolvidos para On Rotation.
+- [x] Export JSON com `sources` como `{name, url}` para creditar curadores.
+- [x] Playlist pública canónica consolidada e usada pela fonte de verdade.
 
-## O que testar agora
+## Estado do site `peel-sept`
 
-### Sanidade local
+- [x] Astro estático em Cloudflare Pages.
+- [x] EN por defeito; PT em `/pt/`.
+- [x] Dados musicais únicos; só UI/chrome traduzida.
+- [x] Datas formatadas por locale a partir de `start_date`/`end_date`.
+- [x] Social cards OG (`1200x630`) e Instagram (`1080x1080`) gerados no build.
+- [x] Botões de partilha X/Web Share/download Instagram.
+- [x] Spotify privacy-first: iframe só é criado após clique.
+- [x] Player Spotify aparece só na semana mais recente; histórico mostra nota e tracks individuais.
+- [x] Source chips linkam para homepages dos curadores.
 
-```bash
-uv run ruff check
-uv run pytest
-uv run peel doctor
-uv run peel doctor sources
-uv run peel status
-```
+## Atenções / riscos actuais
 
-### Backoffice diário
+1. **`peel site export --weeks 2` usa a semana ISO actual.**
+   - Em 2026-06-15 gerou `2026-W25.json` vazio ao correr sem override.
+   - Se isto for publicado antes de haver dados reais W25, a homepage pode saltar para uma semana vazia.
+   - Próximo fix recomendado: o exportador deve exportar a última semana com dados, ou aceitar `--week/current-week`, ou o cron deve correr só depois da run real criar dados.
 
-```bash
-uv run peel sync pull
-uv run peel tracks --sources
-uv run peel feedback
-uv run peel report
-uv run peel sources --weeks 4
-uv run peel sync push
-```
+2. **`peel playlist fill-week` não representa o Top 7 do site.**
+   - O comando repõe todas as tracks da DB da semana (ex.: 11 em W24), incluindo items que o site filtra/rankeia fora do Top 7.
+   - Para a playlist canónica semanal, usar a mesma lógica do export/site ranking.
+   - Próximo fix recomendado: adicionar `peel playlist fill-site-week` ou alterar `fill-week` com opção `--site-top`.
 
-### Playlists temporárias
+3. **GitHub Actions secret deve manter o ID canónico.**
+   - Valor esperado: `3iHETIGrWBdoY3a8jNrMox`.
+   - Já foi actualizado manualmente pelo Dias em 2026-06-15.
 
-```bash
-uv run peel playlist fill-week 2026-W22 --playlist-id <spotify_playlist_id> --dry-run
-uv run peel playlist fill-week 2026-W22 --playlist-id <spotify_playlist_id>
-uv run peel playlist fill-week 2026-W22 --playlist-id <spotify_playlist_id> --unrated-only
-```
+4. **`web/` no repo `peel` continua untracked.**
+   - É mock/reference visual; não faz parte do build actual.
 
 ## Próximos TODOs pequenos
 
-1. [ ] NPR New Music Friday — avaliar próxima extensão:
-   - `The Lightning Round` como tracks?
-   - `Dora's Corner` como tracks/contexto?
-   - Long List só com caps/filtros fortes (`Rock/Alt/Indie`, `R&B/Soul`, `Rap/Hip-Hop`).
-   - Evitar ingestão cega da Long List completa.
-2. [ ] Adicionar Bandcamp Daily como source `context`/external inbox, sem playlist directa.
-3. [ ] Adicionar Pitchfork Best New Albums como source de álbuns.
-4. [ ] Adicionar First Floor/Substacks como contexto, uma de cada vez.
-5. [ ] Em `peel sources`, mostrar “insufficient data” para fontes com poucas tracks.
-6. [ ] Só depois considerar matcher Spotify mais agressivo.
+1. [ ] Corrigir comportamento do `peel site export` para não criar semana vazia por defeito.
+2. [ ] Alinhar comando de playlist com o Top 7 do site/export.
+3. [ ] Documentar workflow semanal completo:
+   - run Peel;
+   - feedback;
+   - export JSON;
+   - validar playlist;
+   - commit/push `peel-sept`.
+4. [ ] Limpar docs antigas (`README.md`, `ROADMAP_V2.md`, `PLAN.md`) ou marcá-las como históricas.
+5. [ ] Reavaliar source scoring após ~8 semanas de dados reais.
+6. [ ] Continuar limpeza de feeds mortos / sources instáveis.
 
-## Notas de cautela
+## Comandos úteis
 
-- `data/peel.db` é versionado intencionalmente, mas não deve guardar tokens ou dados sensíveis.
-- `.env` nunca deve ser commitado.
-- Push SSH pode falhar sem chave carregada; workaround: `gh`/HTTPS.
-- Para playlists temporárias, criar playlist vazia manualmente no Spotify e usar `peel playlist fill-week`.
-- Anthropic/Claude API esteve bloqueada por billing/credits baixos; usar GPT mini para tarefas fechadas.
+```bash
+# Motor
+uv run pytest
+uv run ruff check src/ tests/
+uv run peel run
+uv run peel report
+uv run peel sources
+uv run peel doctor sources
+
+# Export site — cuidado com semana vazia se usado em segunda-feira sem dados
+uv run peel site export --weeks 2
+
+# Site
+cd ../peel-sept
+npm run build
+```

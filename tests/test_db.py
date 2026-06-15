@@ -1196,3 +1196,25 @@ class TestUnmatchedRetryHelpers:
 
         remaining = db.list_unmatched(max_age_days=365 * 10)
         assert remaining == [("pitchfork_bnt", "Fresh", "Track")]
+
+
+def test_week_keeper_uris_keeps_only_love_and_like(tmp_path: Path) -> None:
+    db = DB(str(tmp_path / "keepers.db"))
+    db.init_schema()
+    week = iso_week(datetime.now(UTC))
+    specs = [
+        ("spotify:track:lov", "love"),
+        ("spotify:track:lik", "like"),
+        ("spotify:track:meh", "meh"),
+        ("spotify:track:skp", "skip"),
+        ("spotify:track:ban", "ban"),
+        ("spotify:track:non", None),
+    ]
+    for uri, label in specs:
+        db.record_track(uri, "stereogum_new_music", "Artist", uri[-3:], None)
+        if label is not None:
+            db.upsert_feedback(uri, label)
+
+    keepers = db.week_keeper_uris(week)
+    db.close()
+    assert set(keepers) == {"spotify:track:lov", "spotify:track:lik"}

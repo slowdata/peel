@@ -358,17 +358,20 @@ def run() -> None:
         if pruned:
             log.info("unmatched.pruned", count=pruned, max_age_days=settings.unmatched_retry_days)
 
-        # 3. Rotação: substitui playlist pelos URIs da janela recente
+        # 3. Rotação. Com playlist de TRIAGEM definida, escrevemos lá as candidatas
+        #    da SEMANA ATUAL (para ouvir e avaliar). A playlist final ("Weekly") é
+        #    construída depois, à mão, por `peel finalize` a partir dos keepers.
+        #    Sem triagem → comportamento antigo (janela na playlist principal).
         current_week = iso_week(datetime.now(UTC))
+        review_id = settings.peel_review_playlist_id
+        target_playlist = review_id or settings.peel_playlist_id
+        rotation_weeks = 1 if review_id else settings.peel_playlist_window_weeks
         try:
-            window_uris = db.ranked_tracks_in_window(
-                current_week,
-                settings.peel_playlist_window_weeks,
-                source_quality,
-            )
+            window_uris = db.ranked_tracks_in_window(current_week, rotation_weeks, source_quality)
         except Exception as e:
             log.exception("playlist.ranking_failed", error=str(e))
-            window_uris = db.tracks_in_window(current_week, settings.peel_playlist_window_weeks)
+            window_uris = db.tracks_in_window(current_week, rotation_weeks)
+        window_uris = window_uris[: settings.peel_max_tracks_per_run]
         try:
             album_recommendations = top_album_recommendations(
                 db,
@@ -382,18 +385,18 @@ def run() -> None:
             album_recommendations = []
 
         try:
-            sp.replace_playlist_items(settings.peel_playlist_id, window_uris)
+            sp.replace_playlist_items(target_playlist, window_uris)
             log.info(
                 "playlist.rotated",
-                playlist_id=settings.peel_playlist_id,
+                playlist_id=target_playlist,
                 track_count=len(window_uris),
-                window_weeks=settings.peel_playlist_window_weeks,
+                is_review=bool(review_id),
                 current_week=current_week,
             )
         except Exception as e:
             log.exception(
                 "playlist.replace_failed",
-                playlist_id=settings.peel_playlist_id,
+                playlist_id=target_playlist,
                 error=str(e),
             )
             # Não levantamos — digest ainda vai enviar

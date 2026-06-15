@@ -940,6 +940,25 @@ class DB:
         rows = self._filtered_window_track_rows(current_week, window)
         return rank_window_uris(rows, source_quality)
 
+    def week_keeper_uris(
+        self,
+        week: str,
+        source_quality: Mapping[str, SourceQuality] | None = None,
+    ) -> list[str]:
+        """URIs da semana que o utilizador quer guardar (feedback love/like).
+
+        Usado por ``peel finalize`` para construir a playlist final a partir da
+        triagem avaliada: mantém só rating >= like (love/like), exclui
+        meh/skip/ban. Ordem segue o ranking da janela (consenso/qualidade).
+        """
+        keep = FEEDBACK_RATINGS["like"]
+        keepers: list[str] = []
+        for uri in self.ranked_tracks_in_window(week, 1, source_quality):
+            feedback = self.feedback_for_track(uri)
+            if feedback is not None and feedback[0] >= keep:
+                keepers.append(uri)
+        return keepers
+
     def source_count_for_track_identity(self, artist: str, title: str) -> int:
         """Maior nº de sources para uma faixa com o mesmo artist/title normalizado."""
         target = (normalize(artist), normalize(title))

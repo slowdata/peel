@@ -23,12 +23,16 @@ class Settings(BaseSettings):
     spotify_client_secret: str = Field(alias="SPOTIFY_CLIENT_SECRET")
     spotify_refresh_token: str = Field(alias="SPOTIFY_REFRESH_TOKEN")
     peel_playlist_id: str = Field(alias="PEEL_PLAYLIST_ID")
+    # Playlist de triagem (candidatas da semana, para ouvir e avaliar). Se vazia,
+    # o run mantém o comportamento antigo (escreve na playlist principal).
+    peel_review_playlist_id: str = Field(default="", alias="PEEL_REVIEW_PLAYLIST_ID")
 
     db_path: str = "data/peel.db"
     match_threshold: int = 85
     peel_playlist_window_weeks: int = Field(default=2, alias="PEEL_PLAYLIST_WINDOW_WEEKS")
     peel_max_tracks_per_source: int = Field(default=8, alias="PEEL_MAX_TRACKS_PER_SOURCE")
-    peel_max_tracks_per_run: int = Field(default=40, alias="PEEL_MAX_TRACKS_PER_RUN")
+    # Candidatas por semana na triagem (múltiplo de 7 para caber bem; 14 ≈ "15 perfeito").
+    peel_max_tracks_per_run: int = Field(default=14, alias="PEEL_MAX_TRACKS_PER_RUN")
     peel_max_source_item_age_days: int = Field(
         default=30,
         alias="PEEL_MAX_SOURCE_ITEM_AGE_DAYS",
