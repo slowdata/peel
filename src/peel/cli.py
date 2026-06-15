@@ -32,7 +32,7 @@ from peel.doctor_sources import inspect_registered_sources
 from peel.main import run as run_pipeline
 from peel.report import generate_weekly_report
 from peel.scoring import SourceScore, build_source_scores
-from peel.site_export import export_site
+from peel.site_export import export_site, make_album_resolver
 from peel.spotify_client import SpotifyClient
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -371,8 +371,22 @@ def site_export(
         str | None,
         typer.Option("--playlist-id", help="ID/URI/URL da playlist Spotify"),
     ] = None,
+    resolve_albums: Annotated[
+        bool,
+        typer.Option(
+            "--resolve-albums/--no-resolve-albums",
+            help="Procura cada álbum no Spotify para preencher o link (On Rotation)",
+        ),
+    ] = True,
 ) -> None:
     """Exporta JSON semanal para o site Astro peel-sept."""
+    album_resolver = None
+    if resolve_albums:
+        try:
+            album_resolver = make_album_resolver(SpotifyClient())
+        except Exception as exc:  # noqa: BLE001 - sem Spotify, álbuns ficam com link editorial
+            console.print(f"[yellow]Spotify indisponível; álbuns sem link Spotify: {exc}[/yellow]")
+
     db = DB(str(_resolve_path(settings.db_path)))
     try:
         db.init_schema()
@@ -382,6 +396,7 @@ def site_export(
             target_site_dir,
             weeks=weeks,
             playlist_id=playlist_id or settings.peel_playlist_id,
+            album_resolver=album_resolver,
         )
     finally:
         db.close()

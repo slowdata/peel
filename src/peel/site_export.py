@@ -8,6 +8,7 @@ idempotente.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -17,11 +18,43 @@ import structlog
 
 from peel.albums import AlbumRecommendation, spotify_album_url, top_album_recommendations
 from peel.db import DB, FEEDBACK_RATINGS, SourceQuality, iso_week, rank_window_uris
-from peel.matcher import normalize
+from peel.matcher import normalize, score
 from peel.scoring import build_source_scores
 from peel.sources.registry import source_label
 
 log = structlog.get_logger()
+
+# Resolve (artist, album) -> URL Spotify do álbum, ou None se não houver match.
+AlbumResolver = Callable[[str, str], str | None]
+
+
+def make_album_resolver(sp: Any, threshold: int = 85) -> AlbumResolver:
+    """Cria um resolver que procura o álbum no Spotify e confirma o match.
+
+    Exige artista E título do álbum acima do threshold (fuzzy), como no matcher
+    de faixas. `sp` é um SpotifyClient (Any para evitar import circular/pesado).
+    Falhas devolvem None → o cartão cai no link editorial.
+    """
+
+    def resolve(artist: str, album: str) -> str | None:
+        try:
+            candidates = sp.search_album(artist, album)
+        except Exception as exc:  # noqa: BLE001 - resolver nunca pode rebentar o export
+            log.warning(
+                "site_export.album_resolve_failed", artist=artist, album=album, error=str(exc)
+            )
+            return None
+        norm_artist, norm_album = normalize(artist), normalize(album)
+        for cand in candidates:
+            cand_artist = normalize(", ".join(cand.get("artists") or []))
+            cand_album = normalize(cand.get("name") or "")
+            artist_ok = score(norm_artist, cand_artist) >= threshold
+            album_ok = score(norm_album, cand_album) >= threshold
+            if artist_ok and album_ok:
+                return cand.get("url")
+        return None
+
+    return resolve
 
 SITE_TRACK_LIMIT = 7
 SITE_ALBUM_WINDOW_WEEKS = 2
@@ -49,6 +82,7 @@ def export_site(
     weeks: int,
     playlist_id: str | None,
     current_week: str | None = None,
+    album_resolver: AlbumResolver | None = None,
 ) -> list[ExportedWeek]:
     """Exporta N semanas para o diretório do site.
 
@@ -65,7 +99,9 @@ def export_site(
     playlist_url = playlist_url_from_id(playlist_id)
     exported: list[ExportedWeek] = []
     for week in weeks_to_export(resolved_current_week, weeks):
-        payload = build_site_week_payload(db, week, playlist_url, source_quality)
+        payload = build_site_week_payload(
+            db, week, playlist_url, source_quality, album_resolver=album_resolver
+        )
         path = output_dir / f"{week}.json"
         path.write_text(_json_dumps(payload), encoding="utf-8")
         exported.append(ExportedWeek(week=week, path=path))
@@ -77,11 +113,12 @@ def build_site_week_payload(
     week: str,
     playlist_url: str | None,
     source_quality: dict[str, SourceQuality] | None = None,
+    album_resolver: AlbumResolver | None = None,
 ) -> dict[str, Any]:
     """Constrói o JSON de uma semana seguindo exactamente o contrato do site."""
     quality = source_quality or _load_source_quality(db)
     tracks = _export_tracks(db, week, quality)
-    albums = _export_albums(db, week, quality)
+    albums = _export_albums(db, week, quality, album_resolver=album_resolver)
     sources = _sources_for_payload(tracks, albums)
     start = _week_start(week)
     end = start + timedelta(days=6)
@@ -174,6 +211,7 @@ def _export_albums(
     db: DB,
     week: str,
     source_quality: dict[str, SourceQuality],
+    album_resolver: AlbumResolver | None = None,
 ) -> list[dict[str, Any]]:
     recommendations = top_album_recommendations(
         db,
@@ -183,7 +221,8 @@ def _export_albums(
         source_quality=source_quality,
     )
     return [
-        _album_to_json(index, item, source_quality) for index, item in enumerate(recommendations, 1)
+        _album_to_json(index, item, source_quality, album_resolver)
+        for index, item in enumerate(recommendations, 1)
     ]
 
 
@@ -191,8 +230,13 @@ def _album_to_json(
     rank: int,
     item: AlbumRecommendation,
     source_quality: dict[str, SourceQuality],
+    album_resolver: AlbumResolver | None = None,
 ) -> dict[str, Any]:
     spotify_url = spotify_album_url(item.spotify_album_uri) if item.spotify_album_uri else None
+    # Se a source não trouxe URI Spotify (ex. Guardian/Quietus), tenta resolver
+    # pelo nome no Spotify. Sem match → fica None e o cartão usa o link editorial.
+    if spotify_url is None and album_resolver is not None:
+        spotify_url = album_resolver(item.artist, item.album)
     editorial_link = _first_source_url(item)
     return {
         "rank": rank,

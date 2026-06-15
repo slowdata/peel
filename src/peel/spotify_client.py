@@ -160,6 +160,31 @@ class SpotifyClient:
             log.exception("spotify.search_failed", query=query, error=str(e))
             return []
 
+    def search_album(self, artist: str, album: str, limit: int = 5) -> list[dict]:
+        """Procura um álbum no Spotify; devolve candidatos brutos.
+
+        Returns:
+            Lista de dicts {"uri", "url", "name", "artists"}. [] se nada/erro.
+            O matching fuzzy fica para quem chama (como no search_track).
+        """
+        clean_artist = _clean_for_query(artist)
+        clean_album = _clean_for_query(album)
+        try:
+            results = self.sp.search(q=f"{clean_artist} {clean_album}", type="album", limit=limit)
+            items = results.get("albums", {}).get("items", [])
+            return [
+                {
+                    "uri": item.get("uri"),
+                    "url": (item.get("external_urls") or {}).get("spotify"),
+                    "name": item.get("name"),
+                    "artists": [a["name"] for a in item.get("artists", [])],
+                }
+                for item in items
+            ]
+        except Exception as e:
+            log.exception("spotify.album_search_failed", artist=artist, album=album, error=str(e))
+            return []
+
     def add_to_playlist(self, playlist_id: str, uris: list[str]) -> None:
         """Adiciona faixas a uma playlist em chunks de 100 (limite da API).
 

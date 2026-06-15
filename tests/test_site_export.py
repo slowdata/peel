@@ -8,11 +8,86 @@ from peel.matcher import normalize
 from peel.site_export import (
     build_site_week_payload,
     export_site,
+    make_album_resolver,
     playlist_url_from_id,
     week_date_range,
     week_label,
     weeks_to_export,
 )
+
+
+class _FakeSpotify:
+    """SpotifyClient mínimo para testar o resolver de álbuns sem rede."""
+
+    def __init__(self, candidates: list[dict] | Exception) -> None:
+        self._candidates = candidates
+
+    def search_album(self, artist: str, album: str) -> list[dict]:
+        if isinstance(self._candidates, Exception):
+            raise self._candidates
+        return self._candidates
+
+
+def test_make_album_resolver_returns_url_on_confident_match() -> None:
+    sp = _FakeSpotify(
+        [
+            {
+                "url": "https://open.spotify.com/album/RIGHT",
+                "name": "Cry Baby",
+                "artists": ["Vince Staples"],
+            }
+        ]
+    )
+    resolve = make_album_resolver(sp)
+    assert resolve("Vince Staples", "Cry Baby") == "https://open.spotify.com/album/RIGHT"
+
+
+def test_make_album_resolver_rejects_mismatch() -> None:
+    sp = _FakeSpotify(
+        [
+            {
+                "url": "https://open.spotify.com/album/WRONG",
+                "name": "Totally Other",
+                "artists": ["Someone"],
+            }
+        ]
+    )
+    assert make_album_resolver(sp)("Vince Staples", "Cry Baby") is None
+
+
+def test_make_album_resolver_is_fail_open_on_error() -> None:
+    sp = _FakeSpotify(RuntimeError("boom"))
+    assert make_album_resolver(sp)("X", "Y") is None
+
+
+def test_album_resolver_fills_spotify_url_in_payload(tmp_path: Path) -> None:
+    db = DB(str(tmp_path / "peel.db"))
+    db.init_schema()
+    _insert_album_mention(
+        db,
+        artist="Vince Staples",
+        album="Cry Baby",
+        source_id="thequietus",
+        source_url="https://thequietus.com/x",
+        spotify_album_uri=None,
+        seen_at="2026-06-10T00:00:00+00:00",
+        week="2026-W24",
+    )
+    resolver = make_album_resolver(
+        _FakeSpotify(
+            [
+                {
+                    "url": "https://open.spotify.com/album/ABC",
+                    "name": "Cry Baby",
+                    "artists": ["Vince Staples"],
+                }
+            ]
+        )
+    )
+    payload = build_site_week_payload(db, "2026-W24", None, album_resolver=resolver)
+    db.close()
+    match = next(a for a in payload["albums"] if a["title"] == "Cry Baby")
+    assert match["spotify_url"] == "https://open.spotify.com/album/ABC"
 
 
 def test_week_helpers() -> None:
