@@ -160,7 +160,10 @@ def test_build_site_week_payload_ranks_tracks_and_counts_sources(tmp_path: Path)
         "spotify_url": "https://open.spotify.com/track/shared",
     }
     assert payload["tracks"][1]["source"] == "Pitchfork"
-    assert payload["sources"] == ["NPR", "Pitchfork"]
+    assert payload["sources"] == [
+        {"name": "NPR", "url": "https://www.npr.org/music"},
+        {"name": "Pitchfork", "url": "https://pitchfork.com"},
+    ]
 
 
 def test_build_site_week_payload_limits_tracks_to_seven(tmp_path: Path) -> None:
@@ -248,7 +251,10 @@ def test_build_site_week_payload_exports_album_recommendations(tmp_path: Path) -
         "link": "https://pitchfork.example/review",
         "spotify_url": "https://open.spotify.com/album/abc123",
     }
-    assert payload["sources"] == ["Pitchfork", "Aquarium Drunkard"]
+    assert payload["sources"] == [
+        {"name": "Pitchfork", "url": "https://pitchfork.com"},
+        {"name": "Aquarium Drunkard", "url": "https://aquariumdrunkard.com"},
+    ]
 
 
 def test_build_site_week_payload_empty_week_is_valid(tmp_path: Path) -> None:

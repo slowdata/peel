@@ -20,7 +20,7 @@ from peel.albums import AlbumRecommendation, spotify_album_url, top_album_recomm
 from peel.db import DB, FEEDBACK_RATINGS, SourceQuality, iso_week, rank_window_uris
 from peel.matcher import normalize, score
 from peel.scoring import build_source_scores
-from peel.sources.registry import source_label
+from peel.sources.registry import source_homepage, source_label
 
 log = structlog.get_logger()
 
@@ -335,9 +335,11 @@ def _first_source_url(item: AlbumRecommendation) -> str | None:
     return None
 
 
-def _sources_for_payload(tracks: list[dict[str, Any]], albums: list[dict[str, Any]]) -> list[str]:
+def _sources_for_payload(
+    tracks: list[dict[str, Any]], albums: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     seen: set[str] = set()
-    sources: list[str] = []
+    sources: list[dict[str, Any]] = []
     for row in [*tracks, *albums]:
         raw_source = row.get("source")
         if not raw_source:
@@ -346,7 +348,7 @@ def _sources_for_payload(tracks: list[dict[str, Any]], albums: list[dict[str, An
             if source in seen:
                 continue
             seen.add(source)
-            sources.append(source)
+            sources.append({"name": source, "url": source_homepage(source)})
     return sources
 
 

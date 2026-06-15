@@ -132,3 +132,26 @@ def source_label(source_id: str) -> str:
     if source_id in labels:
         return labels[source_id]
     return source_id.replace("_", " ").replace("-", " ").title()
+
+
+# Homepage de cada curador, por LABEL (a array `sources` do site usa labels).
+# Credita os curadores e dá ao visitante um caminho para a fonte.
+SOURCE_HOMEPAGE: dict[str, str] = {
+    "Pitchfork": "https://pitchfork.com",
+    "Stereogum": "https://www.stereogum.com",
+    "The Quietus": "https://thequietus.com",
+    "Gorilla vs Bear": "https://www.gorillavsbear.net",
+    "The Guardian": "https://www.theguardian.com/music",
+    "NPR": "https://www.npr.org/music",
+    "Aquarium Drunkard": "https://aquariumdrunkard.com",
+    "DFA Records (Bandcamp)": "https://dfarecords.bandcamp.com",
+    "Sacred Bones (Bandcamp)": "https://sacredbonesrecords.bandcamp.com",
+    "Sub Pop (Bandcamp)": "https://subpop.bandcamp.com",
+    "Stones Throw (Bandcamp)": "https://stonesthrow.bandcamp.com",
+    "Ghostly International (Bandcamp)": "https://ghostly.bandcamp.com",
+}
+
+
+def source_homepage(label: str) -> str | None:
+    """Homepage do curador para um label amigável, ou None se desconhecida."""
+    return SOURCE_HOMEPAGE.get(label)
