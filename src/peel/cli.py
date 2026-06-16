@@ -83,9 +83,17 @@ class GitSyncState:
 
 
 @app.command("run")
-def run_command() -> None:
-    """Executa a pipeline semanal do Peel."""
-    run_pipeline()
+def run_command(
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="Simula a run e envia o digest, sem escrever na DB nem nas playlists",
+        ),
+    ] = False,
+) -> None:
+    """Executa a pipeline semanal do Peel (use --dry-run para pré-visualizar sem impacto)."""
+    run_pipeline(dry_run=dry_run)
 
 
 @app.command("finalize")

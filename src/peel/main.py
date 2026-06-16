@@ -14,6 +14,10 @@ Resiliência:
 
 from __future__ import annotations
 
+import contextlib
+import os
+import shutil
+import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -73,7 +77,7 @@ class SourceRunStats:
         )
 
 
-def run() -> None:
+def run(dry_run: bool = False) -> None:
     """Executa uma run semanal do Peel.
 
     - Fetch de sources (Pitchfork, etc.)
@@ -84,8 +88,18 @@ def run() -> None:
     # Timestamp de início (para duration logging)
     start_time = datetime.now(UTC)
 
+    # Dry run: opera numa CÓPIA descartável da DB e não escreve nas playlists.
+    # As escritas (record_track, etc.) vão para a cópia e são deitadas fora; só
+    # o digest do Telegram é enviado, para veres o que a run produziria.
+    db_path = settings.db_path
+    if dry_run:
+        fd, db_path = tempfile.mkstemp(prefix="peel-dryrun-", suffix=".db")
+        os.close(fd)
+        shutil.copyfile(settings.db_path, db_path)
+        log.info("run.dry_run_started", db_copy=db_path)
+
     # Inicializar DB e SpotifyClient
-    db = DB(settings.db_path)
+    db = DB(db_path)
     sp = SpotifyClient()
 
     # Contadores
@@ -384,14 +398,23 @@ def run() -> None:
             log.exception("albums.recommendations_failed", error=str(e))
             album_recommendations = []
 
+        if dry_run:
+            log.info(
+                "playlist.rotation_skipped_dry_run",
+                playlist_id=target_playlist,
+                track_count=len(window_uris),
+                current_week=current_week,
+            )
         try:
-            sp.replace_playlist_items(target_playlist, window_uris)
+            if not dry_run:
+                sp.replace_playlist_items(target_playlist, window_uris)
             log.info(
                 "playlist.rotated",
                 playlist_id=target_playlist,
                 track_count=len(window_uris),
                 is_review=bool(review_id),
                 current_week=current_week,
+                dry_run=dry_run,
             )
         except Exception as e:
             log.exception(
@@ -419,6 +442,11 @@ def run() -> None:
 
         # 5. Fecha DB (sempre, mesmo com erros)
         db.close()
+
+        # 5b. Dry run: descarta a cópia temporária da DB (zero impacto no real).
+        if dry_run and db_path != settings.db_path:
+            with contextlib.suppress(OSError):
+                os.remove(db_path)
 
         # 6. Log final com totais
         duration_seconds = (datetime.now(UTC) - start_time).total_seconds()

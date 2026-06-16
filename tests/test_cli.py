@@ -58,7 +58,16 @@ class TestCliRun:
         result = runner.invoke(cli.app, ["run"])
 
         assert result.exit_code == 0
-        mock_run.assert_called_once_with()
+        mock_run.assert_called_once_with(dry_run=False)
+
+    def test_run_command_dry_run_passes_flag(self, monkeypatch) -> None:
+        mock_run = MagicMock()
+        monkeypatch.setattr(cli, "run_pipeline", mock_run)
+
+        result = runner.invoke(cli.app, ["run", "--dry-run"])
+
+        assert result.exit_code == 0
+        mock_run.assert_called_once_with(dry_run=True)
 
 
 class TestCliStatus:
