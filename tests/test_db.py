@@ -964,6 +964,29 @@ class TestTracksInWindow:
         result = db.tracks_in_window("2026-W16", window=3)
         assert set(result) == {"spotify:track:w14", "spotify:track:w15", "spotify:track:w16"}
 
+    def test_tracks_in_window_does_not_include_future_weeks(self, tmp_path: Path) -> None:
+        """Consultar uma semana histórica não pode apanhar semanas posteriores."""
+        db_path = tmp_path / "test.db"
+        db = DB(str(db_path))
+        db.init_schema()
+
+        for uri, week, added_at in [
+            ("spotify:track:w24", "2026-W24", "2026-06-13T10:00:00+00:00"),
+            ("spotify:track:w25", "2026-W25", "2026-06-20T10:00:00+00:00"),
+        ]:
+            db.conn.execute(
+                """
+                INSERT INTO tracks
+                (spotify_uri, source_id, artist, title, source_url, added_at, added_at_week)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (uri, "source1", "Artist", uri.rsplit(":", 1)[-1], None, added_at, week),
+            )
+        db.conn.commit()
+
+        assert db.tracks_in_window("2026-W24", window=1) == ["spotify:track:w24"]
+        assert db.ranked_tracks_in_window("2026-W24", window=1) == ["spotify:track:w24"]
+
     def test_tracks_in_window_year_wrap(self, tmp_path: Path) -> None:
         """tracks_in_window() funciona com wrap de ano (2025-W52 → 2026-W01)."""
         db_path = tmp_path / "test.db"

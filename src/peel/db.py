@@ -985,9 +985,10 @@ class DB:
             SELECT spotify_uri, artist, title, source_id, added_at
             FROM tracks
             WHERE added_at_week >= ?
+              AND added_at_week <= ?
             ORDER BY added_at DESC
             """,
-            (cutoff_week,),
+            (cutoff_week, current_week),
         )
         banned_uris = self._banned_uris()
         banned_keys = self.banned_track_keys()
