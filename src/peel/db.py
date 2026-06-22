@@ -46,25 +46,49 @@ def rank_window_uris(
     rows: Iterable[WindowTrackRow],
     source_quality: Mapping[str, SourceQuality] | None = None,
 ) -> list[str]:
-    """Ordena URIs de uma janela por qualidade sem remover nada.
+    """Ordena URIs de uma janela por qualidade, deduplicando por faixa.
 
-    Chave, por ordem: consenso (nº de sources), melhor avg_rating de source,
-    melhor score de source e recência. Sources sem score são neutras (0, 0).
+    Chave, por ordem: consenso (nº de sources distinas), melhor avg_rating de
+    source, melhor score de source e recência. Sources sem score são neutras
+    (0, 0).
+
+    DEDUP DE FAIXA: o mesmo (artista, título) pode aparecer com URIs Spotify
+    diferentes (variantes de edição/região/clean/explicit). Se deduplicassemos
+    só por URI, a mesma música apareceria duas vezes na playlist. Aqui
+    bucketeamos por (artista, título) normalizados e escolhemos um URI
+    representativo — o com mais sources (consenso); empate → mais recente →
+    URI lexicográfico (determinismo). O consenso agregado cruza URIs: uma faixa
+    citada por 3 fontes (em 2 URIs) continua a contar como consenso 3.
     """
     quality = source_quality or {}
-    buckets: dict[str, dict[str, object]] = {}
-    for spotify_uri, _artist, _title, source_id, added_at in rows:
+    # bucket: (artist_key, title_key) -> estado agregado + mapa per-URI
+    buckets: dict[tuple[str, str], dict[str, object]] = {}
+    for spotify_uri, artist, title, source_id, added_at in rows:
         uri = str(spotify_uri)
+        key = (normalize(str(artist)), normalize(str(title)))
         bucket = buckets.setdefault(
-            uri,
+            key,
             {
-                "uri": uri,
-                "sources": set(),
+                "key": key,
+                "uris": set(),
+                "uri_sources": {},  # uri -> set[source_id]
+                "uri_latest_ts": {},  # uri -> float
+                "sources": set(),  # consenso agregado (cruza URIs)
                 "best_avg": None,
                 "best_score": None,
                 "latest_ts": 0.0,
             },
         )
+        uris = bucket["uris"]
+        assert isinstance(uris, set)
+        uris.add(uri)
+        uri_sources = bucket["uri_sources"]
+        assert isinstance(uri_sources, dict)
+        uri_sources.setdefault(uri, set()).add(str(source_id))
+        uri_latest = bucket["uri_latest_ts"]
+        assert isinstance(uri_latest, dict)
+        ts = _timestamp_sort_value(added_at)
+        uri_latest[uri] = max(float(uri_latest.get(uri, 0.0)), ts)
         sources = bucket["sources"]
         assert isinstance(sources, set)
         sources.add(str(source_id))
@@ -75,7 +99,18 @@ def rank_window_uris(
             avg_rating if current_avg is None else max(float(current_avg), avg_rating)
         )
         bucket["best_score"] = score if current_score is None else max(float(current_score), score)
-        bucket["latest_ts"] = max(float(bucket["latest_ts"]), _timestamp_sort_value(added_at))
+        bucket["latest_ts"] = max(float(bucket["latest_ts"]), ts)
+
+    # Escolhe o URI representativo de cada faixa: mais sources (consenso),
+    # depois mais recente, depois URI lexicográfico (determinismo).
+    for bucket in buckets.values():
+        uri_sources = bucket["uri_sources"]
+        uri_latest = bucket["uri_latest_ts"]
+        assert isinstance(uri_sources, dict) and isinstance(uri_latest, dict)
+        bucket["uri"] = min(
+            bucket["uris"],  # type: ignore[arg-type]
+            key=lambda u: (-len(uri_sources[u]), -uri_latest[u], u),
+        )
 
     def sort_key(bucket: dict[str, object]) -> tuple[int, float, float, float, str]:
         sources = bucket["sources"]

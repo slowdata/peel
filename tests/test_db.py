@@ -648,6 +648,54 @@ class TestRankWindowUris:
 
         assert ranked == ["spotify:track:a", "spotify:track:b"]
 
+    def test_rank_window_uris_dedupes_same_artist_title_with_different_uris(self) -> None:
+        """Diferentes URIs do mesmo (artista, título) devem colapsar para uma faixa.
+
+        Spotify devolve às vezes URIs distintos para a mesma música (variantes de
+        edição/região/clean/explicit). Sem dedupe por (artista, título) a mesma
+        música apareceria duas vezes na playlist. Aqui:
+          - "Dopamine" (Robyn) entra com URI-A (1 source) e URI-B (2 sources).
+          - Deve sobrar só 1 URI na saída — o com mais sources (URI-B).
+          - Consenso agregado = 3 sources (cruza URIs), à frente da faixa com 1 source.
+        """
+        rows = [
+            (
+                "spotify:track:dopamine-a",
+                "Robyn",
+                "Dopamine",
+                "pitchfork_bnt",
+                "2026-04-19T16:57:00+00:00",
+            ),
+            (
+                "spotify:track:dopamine-b",
+                "Robyn",
+                "Dopamine",
+                "pitchfork_bnt",
+                "2026-04-19T23:01:00+00:00",
+            ),
+            (
+                "spotify:track:dopamine-b",
+                "Robyn",
+                "Dopamine",
+                "stereogum_new_music",
+                "2026-04-20T10:00:00+00:00",
+            ),
+            (
+                "spotify:track:other",
+                "Other",
+                "Other Track",
+                "gorillavsbear",
+                "2026-04-18T10:00:00+00:00",
+            ),
+        ]
+
+        ranked = rank_window_uris(rows)
+
+        assert len(ranked) == 2
+        # Dopamine collapsed → sobra o URI com mais sources (b), não o URI-a.
+        assert ranked[0] == "spotify:track:dopamine-b"  # consenso 3 > 1
+        assert ranked[1] == "spotify:track:other"
+
 
 class TestDatetimeISO8601:
     """Testa que as datas são armazenadas em ISO 8601 UTC."""
