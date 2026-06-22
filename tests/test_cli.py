@@ -229,9 +229,7 @@ class TestCliSite:
         db.init_schema()
         # Semana corrente precisa de pelo menos uma faixa, senão o export
         # (corretamente) salta semanas vazias e não escreve ficheiro.
-        db.record_track(
-            "spotify:track:cli1", "stereogum_new_music", "Snag", "Unarrest Me", None
-        )
+        db.record_track("spotify:track:cli1", "stereogum_new_music", "Snag", "Unarrest Me", None)
         db.close()
         site_dir = tmp_path / "peel-sept"
         current_week = iso_week(datetime.now(UTC))

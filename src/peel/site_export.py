@@ -56,6 +56,7 @@ def make_album_resolver(sp: Any, threshold: int = 85) -> AlbumResolver:
 
     return resolve
 
+
 SITE_TRACK_LIMIT = 7
 SITE_ALBUM_WINDOW_WEEKS = 2
 _MONTHS_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
