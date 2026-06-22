@@ -398,7 +398,13 @@ def run(dry_run: bool = False) -> None:
         current_week = iso_week(datetime.now(UTC))
         review_id = settings.peel_review_playlist_id
         target_playlist = review_id or settings.peel_playlist_id
-        rotation_weeks = 1 if review_id else settings.peel_playlist_window_weeks
+        # A triagem usa uma janela mais larga (várias semanas) para acumular
+        # material de avaliação; a playlist final usa a janela curta.
+        rotation_weeks = (
+            settings.peel_review_playlist_window_weeks
+            if review_id
+            else settings.peel_playlist_window_weeks
+        )
         try:
             window_uris = db.ranked_tracks_in_window(current_week, rotation_weeks, source_quality)
         except Exception as e:

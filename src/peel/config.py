@@ -30,9 +30,15 @@ class Settings(BaseSettings):
     db_path: str = "data/peel.db"
     match_threshold: int = 85
     peel_playlist_window_weeks: int = Field(default=2, alias="PEEL_PLAYLIST_WINDOW_WEEKS")
-    peel_max_tracks_per_source: int = Field(default=8, alias="PEEL_MAX_TRACKS_PER_SOURCE")
-    # Candidatas por semana na triagem (múltiplo de 7 para caber bem; 14 ≈ "15 perfeito").
-    peel_max_tracks_per_run: int = Field(default=14, alias="PEEL_MAX_TRACKS_PER_RUN")
+    # Janela da playlist de TRIAGEM (review): mais larga que a final, para acumular
+    # material de várias semanas e dar 20-30 candidatas para avaliar de uma vez.
+    peel_review_playlist_window_weeks: int = Field(
+        default=4, alias="PEEL_REVIEW_PLAYLIST_WINDOW_WEEKS"
+    )
+    peel_max_tracks_per_source: int = Field(default=12, alias="PEEL_MAX_TRACKS_PER_SOURCE")
+    # Candidatas por run na triagem. A final (peel finalize) corta depois ao Top 7
+    # por semana, mas a triagem pode ter múltiplos de 7 para ouvir e avaliar.
+    peel_max_tracks_per_run: int = Field(default=28, alias="PEEL_MAX_TRACKS_PER_RUN")
     peel_max_source_item_age_days: int = Field(
         default=30,
         alias="PEEL_MAX_SOURCE_ITEM_AGE_DAYS",
