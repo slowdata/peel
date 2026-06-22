@@ -13,6 +13,10 @@ from peel.sources.registry import source_label as _friendly
 log = structlog.get_logger()
 
 API_BASE = "https://api.telegram.org"
+# Limite hard da API Telegram para o texto de sendMessage (4096 chars).
+# Sem chunking, uma semana cheia (14 tracks + 15 álbuns + 7 picks + external)
+# pode exceder e falhar com HTTP 400, calado pelo except do send_digest.
+MAX_MESSAGE_LENGTH = 4096
 DigestItem = (
     tuple[str, str, str, str | None] | tuple[str, str, str, str | None, int]
 )  # (source_id, artist, title/album, url[, source_count])
@@ -51,19 +55,76 @@ def send_digest(
         album_recommendations or [],
     )
     url = f"{API_BASE}/bot{settings.telegram_bot_token}/sendMessage"
-    payload = {
-        "chat_id": settings.telegram_chat_id,
-        "text": text,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": True,
-    }
 
-    try:
-        response = httpx.post(url, json=payload, timeout=15)
-        response.raise_for_status()
-        log.info("telegram.sent", tracks=len(new_tracks), albums=len(new_albums))
-    except Exception as e:
-        log.exception("telegram.failed", error=str(e))
+    # Chunking: semanas grandes podem exceder 4096 chars. Parte em newlines
+    # para manter tags HTML inteiras (cada linha é um elemento completo).
+    chunks = _split_message(text, MAX_MESSAGE_LENGTH)
+    sent = 0
+    for index, chunk in enumerate(chunks, start=1):
+        payload = {
+            "chat_id": settings.telegram_chat_id,
+            "text": chunk,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+        }
+        try:
+            response = httpx.post(url, json=payload, timeout=15)
+            response.raise_for_status()
+            sent += 1
+        except Exception as e:
+            log.exception(
+                "telegram.failed",
+                chunk=index,
+                total_chunks=len(chunks),
+                error=str(e),
+            )
+            # Digest é best-effort: se um chunk falha, não vale a pena martelar
+            # os restantes — o utilizador fica com o que já chegou.
+            return
+
+    log.info(
+        "telegram.sent",
+        tracks=len(new_tracks),
+        albums=len(new_albums),
+        chunks=sent,
+    )
+
+
+def _split_message(text: str, max_len: int) -> list[str]:
+    """Parte o texto em chunks ≤ max_len cortando em newlines.
+
+    Cada linha do digest é um elemento HTML completo (ex.: '• <a …>label</a>'),
+    pelo que partir em fronteiras de linha preserva a validade do parse_mode
+    HTML. Linhas individuais maiores que max_len (caso patológico) são
+    hard-wrapped, mesmo que possam partir uma tag — prefere-se entregar texto a
+    falhar calado por tamanho.
+    """
+    if len(text) <= max_len:
+        return [text]
+
+    lines = text.split("\n")
+    chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+    for line in lines:
+        while len(line) > max_len:
+            if current:
+                chunks.append("\n".join(current))
+                current = []
+                current_len = 0
+            chunks.append(line[:max_len])
+            line = line[max_len:]
+        sep = 1 if current else 0  # \n que precede a linha no join
+        if current_len + sep + len(line) > max_len:
+            chunks.append("\n".join(current))
+            current = []
+            current_len = 0
+            sep = 0
+        current.append(line)
+        current_len += sep + len(line)
+    if current:
+        chunks.append("\n".join(current))
+    return chunks
 
 
 def _format_message(

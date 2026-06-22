@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from peel.telegram import _format_message, send_digest
+from peel.telegram import MAX_MESSAGE_LENGTH, _format_message, _split_message, send_digest
 
 
 class TestFormatMessage:
@@ -305,3 +305,73 @@ class TestSendDigest:
             # Verifica que log.info foi chamado com "telegram.sent"
             calls = [call[0][0] for call in mock_log.info.call_args_list]
             assert "telegram.sent" in calls
+
+
+class TestMessageChunking:
+    """Garante que mensagens grandes são partidas para respeitar o limite 4096."""
+
+    def test_split_message_short_returns_single_chunk(self) -> None:
+        assert _split_message("curta", MAX_MESSAGE_LENGTH) == ["curta"]
+
+    def test_split_message_long_splits_at_line_boundaries(self) -> None:
+        # 3 linhas de 2000 chars cada → 2 chunks (2000 + 2000+1 separador excede 4096).
+        line = "x" * 2000
+        text = f"{line}\n{line}\n{line}"
+        chunks = _split_message(text, MAX_MESSAGE_LENGTH)
+        assert len(chunks) == 2
+        # Cada chunk respeita o limite.
+        assert all(len(c) <= MAX_MESSAGE_LENGTH for c in chunks)
+        # Nada perdido: a concatenação com \n repõe o texto.
+        assert "\n".join(chunks) == text
+
+    def test_split_message_hard_wraps_pathological_line(self) -> None:
+        line = "y" * 9_000
+        chunks = _split_message(line, MAX_MESSAGE_LENGTH)
+        assert all(len(c) <= MAX_MESSAGE_LENGTH for c in chunks)
+        assert "".join(chunks) == line
+
+    def test_send_digest_chunks_long_message_into_multiple_posts(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Uma digest > 4096 deve resultar em vários httpx.post, cada um ≤ 4096."""
+        from peel import config as config_module
+
+        monkeypatch.setattr(config_module.settings, "telegram_bot_token", "token")
+        monkeypatch.setattr(config_module.settings, "telegram_chat_id", "chat")
+
+        # Força uma mensagem longa sem depender dos caps de display do formatter.
+        long_line = "x" * 3000
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+
+        with (
+            patch("peel.telegram._format_message", return_value=f"{long_line}\n{long_line}"),
+            patch("peel.telegram.httpx.post", return_value=mock_response) as mock_post,
+        ):
+            send_digest([("source-a", "A", "T", None)], [], "playlist_id")
+
+            assert mock_post.call_count >= 2
+            for call in mock_post.call_args_list:
+                payload = call[1]["json"]
+                assert len(payload["text"]) <= MAX_MESSAGE_LENGTH
+
+    def test_send_digest_abort_remaining_chunks_on_failure(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Se um chunk falha a meio, os restantes não são tentados (best-effort)."""
+        from peel import config as config_module
+
+        monkeypatch.setattr(config_module.settings, "telegram_bot_token", "token")
+        monkeypatch.setattr(config_module.settings, "telegram_chat_id", "chat")
+
+        long_line = "x" * 3000
+        ok = MagicMock()
+        ok.raise_for_status = MagicMock()
+        with (
+            patch("peel.telegram._format_message", return_value=f"{long_line}\n{long_line}"),
+            patch("peel.telegram.httpx.post", side_effect=[ok, Exception("boom")]) as mock_post,
+        ):
+            # Não deve levantar; só o 1º chunk é tentado (depois falha e aborta).
+            send_digest([("source-a", "A", "T", None)], [], "playlist_id")
+
+        assert mock_post.call_count == 2
