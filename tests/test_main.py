@@ -456,6 +456,85 @@ class TestPlaylistSafetyCaps:
         assert set(called_uris) == {"spotify:track:1", "spotify:track:2"}
         db.close()
 
+    def test_run_cap_does_not_burn_on_unmatched_late_sources_contribute(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Região de regressão: faixas unmatched não devem "queimar" o cap global.
+
+        Antes do fix, o cap contava tentativas (inclusive unmatched), o que
+        starvationava fontes tardias quando uma fonte cedo tinha muitos itens sem
+        match no Spotify. Agora o cap conta só NOVIDADES registadas — logo uma
+        fonte com unmatched não bloqueia fontes tardias (ex.: NPR) de contribuir.
+        """
+        db_path = tmp_path / "test.db"
+        monkeypatch.setenv("PEEL_PLAYLIST_ID", "spotify:playlist:test")
+        monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test_id")
+        monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "test_secret")
+        monkeypatch.setenv("SPOTIFY_REFRESH_TOKEN", "test_token")
+
+        from peel import config as config_module
+
+        monkeypatch.setattr(config_module.settings, "db_path", str(db_path))
+        monkeypatch.setattr(config_module.settings, "peel_max_tracks_per_source", 10)
+        monkeypatch.setattr(config_module.settings, "peel_max_tracks_per_run", 2)
+
+        def track(source_id: str, idx: int) -> Track:
+            return Track(source_id=source_id, artist=f"Artist {idx}", title=f"Track {idx}")
+
+        mock_sp = MagicMock()
+        mock_sp.replace_playlist_items = MagicMock()
+        # Ordem de searches: pitchfork(t1 unmatched, t2 unmatched, t3 match),
+        # stereogum(t4 match), gorillavsbear(t5 match mas cap → skip).
+        mock_sp.search_track.side_effect = [
+            [],  # t1 → no match
+            [],  # t2 → no match
+            [{"uri": "spotify:track:3", "name": "Track 3", "artists": ["Artist 3"]}],
+            [{"uri": "spotify:track:4", "name": "Track 4", "artists": ["Artist 4"]}],
+            [{"uri": "spotify:track:5", "name": "Track 5", "artists": ["Artist 5"]}],
+        ]
+
+        with (
+            patch.object(
+                PitchforkBNT,
+                "fetch",
+                return_value=[
+                    track("pitchfork_bnt", 1),
+                    track("pitchfork_bnt", 2),
+                    track("pitchfork_bnt", 3),
+                ],
+            ),
+            patch.object(
+                StereogumNewMusic, "fetch", return_value=[track("stereogum_new_music", 4)]
+            ),
+            patch.object(GorillaVsBear, "fetch", return_value=[track("gorillavsbear", 5)]),
+            patch.object(TheQuietus, "fetch", return_value=[]),
+            patch.object(TheQuietusTracksOfMonth, "fetch", return_value=[]),
+            patch.object(GuardianMusicAlbums, "fetch", return_value=[]),
+            patch.object(NprNewMusicFridayStarting5, "fetch", return_value=[]),
+            patch("peel.main.SpotifyClient", return_value=mock_sp),
+            patch("peel.main.send_digest"),
+        ):
+            run()
+
+        from peel.db import DB
+
+        db = DB(str(db_path))
+        db.init_schema()
+        # Só as 2 novidades registadas (t3 pitchfork + t4 stereogum);
+        # unmatched não foram registadas em `tracks`; t5 capped não registada.
+        count = db.conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
+        assert count == 2
+        recorded_uris = {
+            row[0] for row in db.conn.execute("SELECT DISTINCT spotify_uri FROM tracks").fetchall()
+        }
+        assert recorded_uris == {"spotify:track:3", "spotify:track:4"}
+        # Unmatched ficaram na tabela `unmatched` para retry futuro.
+        unmatched_count = db.conn.execute("SELECT COUNT(*) FROM unmatched").fetchone()[0]
+        assert unmatched_count == 2
+        called_uris = mock_sp.replace_playlist_items.call_args.args[1]
+        assert set(called_uris) == {"spotify:track:3", "spotify:track:4"}
+        db.close()
+
     def test_run_skips_non_track_non_album_sources(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

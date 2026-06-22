@@ -232,18 +232,11 @@ def run(dry_run: bool = False) -> None:
                                 )
                                 continue
 
-                            if _track_cap_reached(playlist_slots_used):
-                                source_stats.skipped_cap_count += 1
-                                log.info(
-                                    "track.skipped_global_cap",
-                                    source_id=source.id,
-                                    artist=track.artist,
-                                    title=track.title,
-                                    max_tracks_per_run=settings.peel_max_tracks_per_run,
-                                )
-                                continue
-                            playlist_slots_used += 1
-
+                            # Searching e atribuição de consenso procedem sempre (são
+                            # baratas e enriquecem a qualificação da faixa). O cap global
+                            # limita só as tracks NOVAS que sobem ao digest/playlist — assim
+                            # faixas unmatched não "queimam" slots e fontes tardias (ex.: NPR)
+                            # não são starvationadas por unmatched de fontes cedo.
                             source_stats.processed_count += 1
 
                             # Busca candidatos no Spotify
@@ -292,25 +285,16 @@ def run(dry_run: bool = False) -> None:
                             source_stats.matched_count += 1
                             already = db.already_added(uri)
 
-                            # TRADE-OFF de design: registamos a track no DB ANTES de a
-                            # adicionar à playlist. Se add_to_playlist falhar depois,
-                            # essa track fica "órfã" — marcada como added no DB mas nunca
-                            # entregue ao Spotify. Aceitamos este trade-off porque:
-                            # (1) Falhas do Spotify são raras e transientes
-                            # (2) A próxima run do cron trará novas faixas (evolução normal)
-                            # (3) Implementar two-phase commit (commit do DB apenas após
-                            #     add_to_playlist bem-sucedido) duplicaria complexidade sem
-                            #     ganho proporcional. Eventos de falha podem ser auditados
-                            #     via logs estruturados.
-                            inserted = db.record_track(
-                                uri,
-                                source.id,
-                                track.artist,
-                                track.title,
-                                track.source_url,
-                            )
-
                             if already:
+                                # Consenso: atribui uma fonte nova a um URI já conhecido.
+                                # Sempre registado — não conta para o cap de novidades.
+                                inserted = db.record_track(
+                                    uri,
+                                    source.id,
+                                    track.artist,
+                                    track.title,
+                                    track.source_url,
+                                )
                                 log.debug(
                                     "track.attributed_existing",
                                     source_id=source.id,
@@ -318,6 +302,41 @@ def run(dry_run: bool = False) -> None:
                                     inserted=inserted,
                                 )
                                 continue
+
+                            # Brand-new URI — sujeito ao cap de NOVIDADES da semana.
+                            # Verificamos o cap ANTES de registar: o digest e a playlist
+                            # de triagem ficam alinhados (só tracks registadas entram na
+                            # janela de rotação), faixas capped não poluem o histórico,
+                            # e unmatched não queimam slots (o search já aconteceu acima).
+                            # Serão redescobertas numa run futura se ainda forem frescas.
+                            if _track_cap_reached(playlist_slots_used):
+                                source_stats.skipped_cap_count += 1
+                                log.info(
+                                    "track.skipped_global_cap",
+                                    source_id=source.id,
+                                    artist=track.artist,
+                                    title=track.title,
+                                    uri=uri,
+                                    max_tracks_per_run=settings.peel_max_tracks_per_run,
+                                )
+                                continue
+                            playlist_slots_used += 1
+
+                            # TRADE-OFF de design: registamos a track no DB ANTES de a
+                            # adicionar à playlist. Se replace_playlist_items falhar
+                            # depois, essa track fica "órfã" — marcada como added no DB
+                            # mas nunca entregue ao Spotify. Aceitamos este trade-off
+                            # porque: (1) Falhas do Spotify são raras e transientes;
+                            # (2) A próxima run trará novas faixas (evolução normal);
+                            # (3) Two-phase commit duplicaria complexidade sem ganho
+                            #     proporcional. Eventos de falha são auditáveis via logs.
+                            inserted = db.record_track(
+                                uri,
+                                source.id,
+                                track.artist,
+                                track.title,
+                                track.source_url,
+                            )
 
                             tracks_added += 1
                             source_stats.new_unique_count += 1
