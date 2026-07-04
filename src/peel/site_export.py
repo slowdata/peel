@@ -12,7 +12,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
+from urllib.parse import quote
 
 import structlog
 
@@ -26,6 +27,7 @@ log = structlog.get_logger()
 
 # Resolve (artist, album) -> URL Spotify do álbum, ou None se não houver match.
 AlbumResolver = Callable[[str, str], str | None]
+AlbumSpotifyMatch = Literal["direct", "resolved", "search"]
 
 
 def make_album_resolver(sp: Any, threshold: int = 85) -> AlbumResolver:
@@ -246,11 +248,31 @@ def _album_to_json(
     source_quality: dict[str, SourceQuality],
     album_resolver: AlbumResolver | None = None,
 ) -> dict[str, Any]:
-    spotify_url = spotify_album_url(item.spotify_album_uri) if item.spotify_album_uri else None
+    spotify_url: str | None = None
+    spotify_match: AlbumSpotifyMatch | None = None
+    if item.spotify_album_uri:
+        spotify_url = spotify_album_url(item.spotify_album_uri)
+        spotify_match = "direct"
+
     # Se a source não trouxe URI Spotify (ex. Guardian/Quietus), tenta resolver
-    # pelo nome no Spotify. Sem match → fica None e o cartão usa o link editorial.
+    # pelo nome no Spotify. Sem match exacto → usa uma pesquisa Spotify como
+    # fallback, para o cartão continuar a abrir num sítio onde se pode ouvir.
     if spotify_url is None and album_resolver is not None:
-        spotify_url = album_resolver(item.artist, item.album)
+        try:
+            spotify_url = album_resolver(item.artist, item.album)
+        except Exception as exc:  # noqa: BLE001 - export não deve falhar por resolver externo
+            log.warning(
+                "site_export.album_resolver_failed",
+                artist=item.artist,
+                album=item.album,
+                error=str(exc),
+            )
+        if spotify_url is not None:
+            spotify_match = "resolved"
+    if spotify_url is None:
+        spotify_url = spotify_album_search_url(item.artist, item.album)
+        if spotify_url is not None:
+            spotify_match = "search"
     editorial_link = _first_source_url(item)
     return {
         "rank": rank,
@@ -260,6 +282,7 @@ def _album_to_json(
         "source_count": item.source_count,
         "link": editorial_link or spotify_url,
         "spotify_url": spotify_url,
+        "spotify_match": spotify_match,
     }
 
 
@@ -394,6 +417,18 @@ def spotify_track_url(spotify_uri: str) -> str | None:
     if spotify_uri.startswith("https://open.spotify.com/track/"):
         return spotify_uri
     return None
+
+
+def spotify_album_search_url(artist: str, album: str) -> str | None:
+    """URL de pesquisa Spotify para álbuns sem match exacto.
+
+    Não é tão bom como um link directo para álbum, mas evita cartões mortos ou
+    cartões que só abrem uma review quando a intenção principal é ouvir.
+    """
+    query = " ".join(part.strip() for part in (artist, album) if part.strip())
+    if not query:
+        return None
+    return f"https://open.spotify.com/search/{quote(query, safe='')}"
 
 
 def _json_dumps(payload: dict[str, Any]) -> str:

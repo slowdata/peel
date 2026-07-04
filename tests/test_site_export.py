@@ -10,6 +10,7 @@ from peel.site_export import (
     export_site,
     make_album_resolver,
     playlist_url_from_id,
+    spotify_album_search_url,
     week_date_range,
     week_label,
     weeks_to_export,
@@ -88,6 +89,68 @@ def test_album_resolver_fills_spotify_url_in_payload(tmp_path: Path) -> None:
     db.close()
     match = next(a for a in payload["albums"] if a["title"] == "Cry Baby")
     assert match["spotify_url"] == "https://open.spotify.com/album/ABC"
+    assert match["spotify_match"] == "resolved"
+
+
+def test_album_resolver_error_falls_back_to_spotify_search(tmp_path: Path) -> None:
+    db = DB(str(tmp_path / "peel.db"))
+    db.init_schema()
+    _insert_album_mention(
+        db,
+        artist="Vince Staples",
+        album="Cry Baby",
+        source_id="thequietus",
+        source_url="https://thequietus.com/x",
+        spotify_album_uri=None,
+        seen_at="2026-06-10T00:00:00+00:00",
+        week="2026-W24",
+    )
+
+    def broken_resolver(_artist: str, _album: str) -> str | None:
+        raise RuntimeError("spotify unavailable")
+
+    payload = build_site_week_payload(db, "2026-W24", None, album_resolver=broken_resolver)
+    db.close()
+
+    match = next(a for a in payload["albums"] if a["title"] == "Cry Baby")
+    assert match["spotify_url"] == "https://open.spotify.com/search/Vince%20Staples%20Cry%20Baby"
+    assert match["spotify_match"] == "search"
+
+
+def test_album_without_exact_match_falls_back_to_spotify_search(tmp_path: Path) -> None:
+    db = DB(str(tmp_path / "peel.db"))
+    db.init_schema()
+    _insert_album_mention(
+        db,
+        artist="Khun Narin Electric Phin Band",
+        album="III",
+        source_id="thequietus",
+        source_url="https://thequietus.com/x",
+        spotify_album_uri=None,
+        seen_at="2026-06-10T00:00:00+00:00",
+        week="2026-W24",
+    )
+
+    payload = build_site_week_payload(db, "2026-W24", None, album_resolver=lambda _a, _b: None)
+    db.close()
+
+    match = next(a for a in payload["albums"] if a["title"] == "III")
+    assert match["link"] == "https://thequietus.com/x"
+    assert match["spotify_url"] == (
+        "https://open.spotify.com/search/Khun%20Narin%20Electric%20Phin%20Band%20III"
+    )
+    assert match["spotify_match"] == "search"
+
+
+def test_spotify_album_search_url_encodes_special_chars() -> None:
+    assert spotify_album_search_url("Lee “Scratch” Perry", "Spatial, No Problem.") == (
+        "https://open.spotify.com/search/Lee%20%E2%80%9CScratch%E2%80%9D%20Perry%20"
+        "Spatial%2C%20No%20Problem."
+    )
+
+
+def test_spotify_album_search_url_ignores_empty_query() -> None:
+    assert spotify_album_search_url(" ", "") is None
 
 
 def test_export_site_skips_empty_current_week(tmp_path: Path) -> None:
@@ -274,6 +337,7 @@ def test_build_site_week_payload_exports_album_recommendations(tmp_path: Path) -
         "source_count": 2,
         "link": "https://pitchfork.example/review",
         "spotify_url": "https://open.spotify.com/album/abc123",
+        "spotify_match": "direct",
     }
     assert payload["sources"] == [
         {"name": "Pitchfork", "url": "https://pitchfork.com"},
