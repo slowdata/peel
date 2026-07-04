@@ -37,6 +37,17 @@ from peel.site_export import export_site, make_album_resolver
 from peel.spotify_client import SpotifyClient
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _configure_stdin_decode_errors() -> None:
+    """Evita crashes em prompts quando o terminal envia bytes UTF-8 inválidos."""
+    reconfigure = getattr(sys.stdin, "reconfigure", None)
+    if callable(reconfigure):
+        reconfigure(errors="replace")
+
+
+_configure_stdin_decode_errors()
+
 console = Console(width=160)
 app = typer.Typer(add_completion=False, help="Peel — música curada, sincronizada e visível.")
 sync_app = typer.Typer(add_completion=False, help="Sincronização local/GitHub.")
@@ -882,7 +893,12 @@ def _print_feedback_prompt(
 def _prompt_rating(default: str) -> str:
     allowed = ", ".join(sorted(FEEDBACK_RATINGS))
     while True:
-        value = typer.prompt(f"Rating [{allowed} / q]", default=default).strip().lower()
+        try:
+            value = typer.prompt(f"Rating [{allowed} / q]", default=default).strip().lower()
+        except UnicodeDecodeError:
+            _configure_stdin_decode_errors()
+            console.print("Input inválido recebido. Tenta outra vez.")
+            continue
         if value in {"q", "quit", "exit"}:
             return value
         if value in FEEDBACK_RATINGS:
@@ -891,8 +907,14 @@ def _prompt_rating(default: str) -> str:
 
 
 def _prompt_comment(default: str) -> str | None:
-    value = typer.prompt("Comment optional", default=default, show_default=False).strip()
-    return value or None
+    while True:
+        try:
+            value = typer.prompt("Comment optional", default=default, show_default=False)
+        except UnicodeDecodeError:
+            _configure_stdin_decode_errors()
+            console.print("Comentário tinha bytes inválidos. Tenta outra vez ou carrega Enter.")
+            continue
+        return value.strip() or None
 
 
 def _save_feedback(

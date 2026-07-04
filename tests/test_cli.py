@@ -184,6 +184,21 @@ class TestCliFeedback:
         assert db2.feedback_for_track("spotify:track:1") == (1, "like", "bom groove")
         db2.close()
 
+    def test_prompt_comment_retries_after_unicode_decode_error(self, monkeypatch) -> None:
+        calls = 0
+
+        def fake_prompt(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise UnicodeDecodeError("utf-8", b"\xc2x", 0, 1, "invalid continuation byte")
+            return "comentário recuperado"
+
+        monkeypatch.setattr(cli.typer, "prompt", fake_prompt)
+
+        assert cli._prompt_comment(default="") == "comentário recuperado"
+        assert calls == 2
+
 
 class TestCliReport:
     def test_report_command_writes_markdown(self, tmp_path: Path, monkeypatch) -> None:
