@@ -6,7 +6,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from peel.main import _filter_fresh_source_items, _retry_unmatched, run, slots_for_source
+from peel.albums import AlbumRecommendation
+from peel.main import (
+    _album_digest_items,
+    _filter_fresh_source_items,
+    _retry_unmatched,
+    run,
+    slots_for_source,
+)
 from peel.models import Track
 from peel.scoring import SourceScore
 from peel.sources.bandcamp import BandcampLabel
@@ -29,6 +36,41 @@ def _disable_network_album_sources(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(PitchforkBestAlbums, "fetch", lambda self: [])
     monkeypatch.setattr(AquariumDrunkard, "fetch", lambda self: [])
     monkeypatch.setattr(BandcampLabel, "fetch", lambda self: [])
+
+
+def test_album_digest_items_use_listen_url_and_source_url() -> None:
+    """Telegram: título abre onde se ouve; source fica como link secundário."""
+    recommendations = [
+        AlbumRecommendation(
+            artist="Direct Artist",
+            album="Direct Album",
+            source_count=1,
+            sources=("guardian_music_albums",),
+            source_urls=(("guardian_music_albums", "https://guardian/review"),),
+            spotify_album_uri="spotify:album:abc123",
+            latest_seen_at="2026-06-10T00:00:00+00:00",
+            best_avg_rating=0.0,
+            best_score=0.0,
+        ),
+        AlbumRecommendation(
+            artist="Bandcamp Artist",
+            album="Bandcamp Album",
+            source_count=1,
+            sources=("bandcamp_ghostly",),
+            source_urls=(("bandcamp_ghostly", "https://artist.bandcamp.com/album/x"),),
+            spotify_album_uri=None,
+            latest_seen_at="2026-06-10T00:00:00+00:00",
+            best_avg_rating=0.0,
+            best_score=0.0,
+        ),
+    ]
+
+    items = _album_digest_items(recommendations, album_resolver=lambda _artist, _album: None)
+
+    assert items[0][4] == "https://open.spotify.com/album/abc123"
+    assert items[0][5] == "https://guardian/review"
+    assert items[1][4] == "https://artist.bandcamp.com/album/x"
+    assert items[1][5] == "https://artist.bandcamp.com/album/x"
 
 
 class TestMainIntegration:

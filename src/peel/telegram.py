@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from html import escape
+from urllib.parse import urlparse
 
 import httpx
 import structlog
@@ -20,8 +21,12 @@ MAX_MESSAGE_LENGTH = 4096
 DigestItem = (
     tuple[str, str, str, str | None] | tuple[str, str, str, str | None, int]
 )  # (source_id, artist, title/album, url[, source_count])
-AlbumPickItem = tuple[str, str, int, tuple[str, ...], str | None]
-# (artist, album, source_count, sources, preferred_url)
+AlbumPickItem = (
+    tuple[str, str, int, tuple[str, ...], str | None]
+    | tuple[str, str, int, tuple[str, ...], str | None, str | None]
+)
+AlbumPickParts = tuple[str, str, int, tuple[str, ...], str | None, str | None]
+# (artist, album, source_count, sources, listen_url[, source_url])
 
 
 def send_digest(
@@ -191,7 +196,7 @@ def _format_message(
 
 
 def _format_album_pick(item: AlbumPickItem) -> str:
-    artist, album, source_count, sources, url_ = item
+    artist, album, source_count, sources, url_, source_url = _unpack_album_pick(item)
     label = f"{escape(artist)} — {escape(album)}"
     consensus = source_count > 1
     prefix = "• ⭐ " if consensus else "• "
@@ -199,9 +204,37 @@ def _format_album_pick(item: AlbumPickItem) -> str:
     if consensus:
         source_label = f"{source_count} fontes: {source_label}"
     source = f" <i>({source_label})</i>" if source_label else ""
+    source_link = _format_source_link(source_url, url_)
     if url_:
-        return f'{prefix}<a href="{escape(url_)}">{label}</a>{source}'
-    return f"{prefix}{label}{source}"
+        return f'{prefix}<a href="{escape(url_)}">{label}</a>{source}{source_link}'
+    return f"{prefix}{label}{source}{source_link}"
+
+
+def _unpack_album_pick(item: AlbumPickItem) -> AlbumPickParts:
+    if len(item) == 6:
+        artist, album, source_count, sources, url_, source_url = item
+        return artist, album, source_count, sources, url_, source_url
+    artist, album, source_count, sources, url_ = item
+    return artist, album, source_count, sources, url_, None
+
+
+def _format_source_link(source_url: str | None, primary_url: str | None) -> str:
+    if not source_url or source_url == primary_url:
+        return ""
+    return f' · <a href="{escape(source_url)}">{escape(_source_link_label(source_url))}</a>'
+
+
+def _source_link_label(url_: str) -> str:
+    try:
+        host = urlparse(url_).hostname or ""
+    except ValueError:
+        return "Fonte"
+    host = host.removeprefix("www.").lower()
+    if host.endswith("bandcamp.com"):
+        return "Bandcamp"
+    if host.endswith("open.spotify.com"):
+        return "Spotify"
+    return "Review"
 
 
 def _format_digest_item(item: DigestItem) -> str:

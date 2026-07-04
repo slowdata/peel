@@ -18,20 +18,22 @@ import contextlib
 import os
 import shutil
 import tempfile
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 import structlog
 
-from peel.albums import AlbumRecommendation, top_album_recommendations
+from peel.albums import AlbumRecommendation, spotify_album_url, top_album_recommendations
 from peel.config import settings
 from peel.db import DB, iso_week
 from peel.matcher import best_match, normalize
 from peel.models import Track
 from peel.scoring import SourceScore, build_source_scores
+from peel.site_export import make_album_resolver, spotify_album_search_url
 from peel.sources.registry import active_sources
 from peel.spotify_client import SpotifyClient
-from peel.telegram import DigestItem, send_digest
+from peel.telegram import AlbumPickItem, DigestItem, send_digest
 
 # Setup de logging estruturado (JSON para GitHub Actions)
 structlog.configure(
@@ -101,6 +103,7 @@ def run(dry_run: bool = False) -> None:
     # Inicializar DB e SpotifyClient
     db = DB(db_path)
     sp = SpotifyClient()
+    album_resolver = make_album_resolver(sp)
 
     # Contadores
     sources_processed = 0
@@ -189,7 +192,18 @@ def run(dry_run: bool = False) -> None:
                                 albums_added += 1
                                 source_stats.album_count += 1
                                 new_album_entries.append(
-                                    (source.id, track.artist, track.title, track.source_url)
+                                    (
+                                        source.id,
+                                        track.artist,
+                                        track.title,
+                                        _album_listen_url(
+                                            track.artist,
+                                            track.title,
+                                            track.spotify_album_uri,
+                                            [track.source_url],
+                                            album_resolver,
+                                        ),
+                                    )
                                 )
                                 log.info(
                                     "album.recorded",
@@ -460,7 +474,7 @@ def run(dry_run: bool = False) -> None:
                 # cai na playlist principal se não houver triagem definida.
                 settings.peel_review_playlist_id or settings.peel_playlist_id,
                 external_entries=external_entries,
-                album_recommendations=_album_digest_items(album_recommendations),
+                album_recommendations=_album_digest_items(album_recommendations, album_resolver),
             )
         except Exception:
             log.exception("digest.crashed")
@@ -578,18 +592,71 @@ def _source_quality_map(scores: list[SourceScore]) -> dict[str, tuple[float, flo
 
 def _album_digest_items(
     recommendations: list[AlbumRecommendation],
-) -> list[tuple[str, str, int, tuple[str, ...], str | None]]:
-    """Converte recomendações de álbuns para o formato compacto do Telegram."""
+    album_resolver: Callable[[str, str], str | None] | None = None,
+) -> list[AlbumPickItem]:
+    """Converte recomendações de álbuns para o formato compacto do Telegram.
+
+    O link primário deve servir para ouvir: Spotify directo/resolvido, Bandcamp
+    se for a fonte disponível, ou pesquisa Spotify como último recurso. O link
+    editorial/source segue separado para o Telegram poder mostrar "Review" ou
+    "Bandcamp" sem esconder a razão curatorial da escolha.
+    """
     return [
         (
             item.artist,
             item.album,
             item.source_count,
             item.sources,
-            item.link_url,
+            _album_listen_url(
+                item.artist,
+                item.album,
+                item.spotify_album_uri,
+                (source_url for _, source_url in item.source_urls),
+                album_resolver,
+            ),
+            _first_album_source_url(source_url for _, source_url in item.source_urls),
         )
         for item in recommendations
     ]
+
+
+def _album_listen_url(
+    artist: str,
+    album: str,
+    spotify_album_uri: str | None,
+    source_urls: Iterable[str | None],
+    album_resolver: Callable[[str, str], str | None] | None = None,
+) -> str | None:
+    """URL primário para ouvir um álbum no Telegram."""
+    urls = tuple(source_urls)
+    if spotify_album_uri:
+        return spotify_album_url(spotify_album_uri)
+    if album_resolver is not None:
+        try:
+            resolved = album_resolver(artist, album)
+        except Exception as exc:  # noqa: BLE001 - digest não deve falhar por resolver externo
+            log.warning("digest.album_resolver_failed", artist=artist, album=album, error=str(exc))
+        else:
+            if resolved:
+                return resolved
+    bandcamp_url = _first_bandcamp_url(urls)
+    if bandcamp_url:
+        return bandcamp_url
+    return spotify_album_search_url(artist, album) or _first_album_source_url(urls)
+
+
+def _first_album_source_url(source_urls: Iterable[str | None]) -> str | None:
+    for source_url in source_urls:
+        if source_url:
+            return source_url
+    return None
+
+
+def _first_bandcamp_url(source_urls: Iterable[str | None]) -> str | None:
+    for source_url in source_urls:
+        if source_url and "bandcamp.com" in source_url:
+            return source_url
+    return None
 
 
 def _with_source_counts(db: DB, entries: list[DigestItem]) -> list[DigestItem]:

@@ -200,6 +200,43 @@ class TestFormatMessage:
         assert '<a href="https://open.spotify.com/album/abc123">Wax Machine' in msg
         assert '<a href="https://guardian/fallback">No Spotify' in msg
 
+    def test_format_message_renders_album_source_link(self) -> None:
+        """Álbuns podem ter link primário para ouvir e link secundário para fonte."""
+        msg = _format_message(
+            [],
+            [],
+            "test_id",
+            album_recommendations=[
+                (
+                    "Goya Gumbani",
+                    "Warlord of the Weejuns",
+                    1,
+                    ("bandcamp_ghostly",),
+                    "https://open.spotify.com/album/abc123",
+                    "https://goyagumbani.bandcamp.com/album/warlord-of-the-weejuns",
+                ),
+                (
+                    "Khun Narin Electric Phin Band",
+                    "III",
+                    1,
+                    ("thequietus",),
+                    "https://open.spotify.com/search/Khun%20Narin%20Electric%20Phin%20Band%20III",
+                    "https://thequietus.com/review",
+                ),
+            ],
+        )
+
+        assert '<a href="https://open.spotify.com/album/abc123">Goya Gumbani' in msg
+        assert (
+            '<a href="https://goyagumbani.bandcamp.com/album/warlord-of-the-weejuns">'
+            "Bandcamp</a>"
+        ) in msg
+        assert (
+            '<a href="https://open.spotify.com/search/'
+            'Khun%20Narin%20Electric%20Phin%20Band%20III">Khun Narin'
+        ) in msg
+        assert '<a href="https://thequietus.com/review">Review</a>' in msg
+
 
 class TestSendDigest:
     """Testa a função send_digest."""
