@@ -108,6 +108,45 @@ class TestWeeklyReport:
         assert "| source-c | 1 | 1 | 0 | 0 | — |" in report
         db.close()
 
+    def test_build_weekly_report_dedupes_album_context_by_normalized_identity(
+        self, tmp_path: Path
+    ) -> None:
+        db = DB(str(tmp_path / "peel.db"))
+        db.init_schema()
+        week = "2026-W27"
+        db.conn.executemany(
+            """
+            INSERT INTO albums
+            (artist, album, source_id, source_url, seen_at, added_at_week)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    "Sml",
+                    "Spontaneous Music Live",
+                    "pitchfork_best_albums",
+                    "https://pitchfork.example/sml",
+                    "2026-07-04T10:00:00+00:00",
+                    week,
+                ),
+                (
+                    "SML",
+                    "Spontaneous Music Live",
+                    "aquarium_drunkard",
+                    "https://aquarium.example/sml",
+                    "2026-07-04T11:00:00+00:00",
+                    week,
+                ),
+            ],
+        )
+        db.conn.commit()
+
+        report = build_weekly_report(db, week)
+
+        assert report.count("Spontaneous Music Live") == 1
+        assert "Sml — Spontaneous Music Live" in report
+        db.close()
+
     def test_build_weekly_report_renders_album_recommendations(self, tmp_path: Path) -> None:
         db = DB(str(tmp_path / "peel.db"))
         db.init_schema()

@@ -529,6 +529,28 @@ class TestRecordAlbum:
 
         assert count == 2
 
+    def test_record_album_duplicate_normalized_case_returns_false(
+        self, tmp_path: Path
+    ) -> None:
+        db = DB(str(tmp_path / "test.db"))
+        db.init_schema()
+
+        assert db.record_album("Sml", "Spontaneous Music Live", "source-a", "https://a") is True
+        assert db.record_album("SML", "Spontaneous Music Live", "source-b", "https://b") is False
+
+        albums_count = db.conn.execute("SELECT COUNT(*) FROM albums").fetchone()[0]
+        mentions_count = db.conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM album_mentions
+            WHERE artist_key = ? AND album_key = ?
+            """,
+            ("sml", "spontaneous music live"),
+        ).fetchone()[0]
+
+        assert albums_count == 1
+        assert mentions_count == 2
+
 
 class TestFeedback:
     """Testa feedback explícito do utilizador."""

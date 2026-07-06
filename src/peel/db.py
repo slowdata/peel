@@ -763,15 +763,29 @@ class DB:
         now = datetime.now(UTC)
         now_iso = now.isoformat()
         week = iso_week(now)
-        cursor.execute(
+        artist_key = normalize(artist)
+        album_key = normalize(album)
+        already_seen = cursor.execute(
             """
-            INSERT OR IGNORE INTO albums
-            (artist, album, source_id, source_url, seen_at, added_at_week)
-            VALUES (?, ?, ?, ?, ?, ?)
+            SELECT 1
+            FROM album_mentions
+            WHERE artist_key = ? AND album_key = ?
+            LIMIT 1
             """,
-            (artist, album, source_id, source_url, now_iso, week),
-        )
-        inserted = cursor.rowcount > 0
+            (artist_key, album_key),
+        ).fetchone()
+        if already_seen:
+            inserted = False
+        else:
+            cursor.execute(
+                """
+                INSERT OR IGNORE INTO albums
+                (artist, album, source_id, source_url, seen_at, added_at_week)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (artist, album, source_id, source_url, now_iso, week),
+            )
+            inserted = cursor.rowcount > 0
         self._record_album_mention(
             artist=artist,
             album=album,

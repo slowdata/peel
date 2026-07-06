@@ -14,6 +14,7 @@ import structlog
 
 from peel.albums import AlbumRecommendation, top_album_recommendations
 from peel.db import DB, iso_week
+from peel.matcher import normalize
 from peel.scoring import build_source_scores
 
 log = structlog.get_logger()
@@ -190,15 +191,24 @@ def _load_weekly_albums(db: DB, week: str) -> list[WeeklyAlbum]:
         """,
         (week,),
     ).fetchall()
-    return [
-        WeeklyAlbum(
-            artist=str(row[0]),
-            album=str(row[1]),
-            source_id=str(row[2]),
-            source_url=row[3],
+    albums: list[WeeklyAlbum] = []
+    seen: set[tuple[str, str]] = set()
+    for row in rows:
+        artist = str(row[0])
+        album = str(row[1])
+        key = (normalize(artist), normalize(album))
+        if key in seen:
+            continue
+        seen.add(key)
+        albums.append(
+            WeeklyAlbum(
+                artist=artist,
+                album=album,
+                source_id=str(row[2]),
+                source_url=row[3],
+            )
         )
-        for row in rows
-    ]
+    return albums
 
 
 def _load_recommended_albums(db: DB, week: str) -> list[AlbumRecommendation]:
