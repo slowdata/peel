@@ -17,9 +17,11 @@ from peel.sources.rss import (
     AquariumDrunkard,
     GorillaVsBear,
     GuardianMusicAlbums,
+    LineOfBestFitNews,
     NprNewMusicFridayStarting5,
     PitchforkBestAlbums,
     PitchforkBNT,
+    PitchforkNews,
     StereogumNewMusic,
     TheQuietus,
     TheQuietusTracksOfMonth,
@@ -76,6 +78,8 @@ def _bandcamp_label(
 SOURCE_LABEL_OVERRIDES: dict[str, str] = {
     "pitchfork_bnt": "Pitchfork",
     "pitchfork_best_albums": "Pitchfork",
+    "pitchfork_news": "Pitchfork News",
+    "lineofbestfit_news": "The Line of Best Fit",
     "stereogum_new_music": "Stereogum",
     "thequietus": "The Quietus",
     "thequietus_tracks_of_month": "The Quietus",
@@ -89,6 +93,8 @@ SOURCE_LABEL_OVERRIDES: dict[str, str] = {
 ACTIVE_SOURCES: list[SourceSpec] = [
     SourceSpec(PitchforkBNT),
     SourceSpec(StereogumNewMusic),
+    SourceSpec(PitchforkNews),
+    SourceSpec(LineOfBestFitNews),
     SourceSpec(TheQuietus),
     SourceSpec(TheQuietusTracksOfMonth),
     SourceSpec(GorillaVsBear),
@@ -138,6 +144,8 @@ def source_label(source_id: str) -> str:
 # Credita os curadores e dá ao visitante um caminho para a fonte.
 SOURCE_HOMEPAGE: dict[str, str] = {
     "Pitchfork": "https://pitchfork.com",
+    "Pitchfork News": "https://pitchfork.com/news",
+    "The Line of Best Fit": "https://www.thelineofbestfit.com/news",
     "Stereogum": "https://www.stereogum.com",
     "The Quietus": "https://thequietus.com",
     "Gorilla vs Bear": "https://www.gorillavsbear.net",

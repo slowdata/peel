@@ -8,9 +8,11 @@ from peel.sources.rss import (
     AquariumDrunkard,
     GorillaVsBear,
     GuardianMusicAlbums,
+    LineOfBestFitNews,
     NprNewMusicFridayStarting5,
     PitchforkBestAlbums,
     PitchforkBNT,
+    PitchforkNews,
     StereogumNewMusic,
     TheQuietus,
     TheQuietusTracksOfMonth,
@@ -26,6 +28,14 @@ class TestSourceKind:
     def test_pitchfork_bnt_kind_is_track(self) -> None:
         """PitchforkBNT.kind == 'track'."""
         source = PitchforkBNT()
+        assert source.kind == "track"
+
+    def test_pitchfork_news_kind_is_track(self) -> None:
+        source = PitchforkNews()
+        assert source.kind == "track"
+
+    def test_lineofbestfit_news_kind_is_track(self) -> None:
+        source = LineOfBestFitNews()
         assert source.kind == "track"
 
     def test_stereogum_new_music_kind_is_track(self) -> None:
@@ -505,6 +515,48 @@ class TestStereogumExtractArtistTitle:
         result = source._extract_artist_title(entry)
         assert result == ("Artist", "Title")
 
+    def test_narrative_new_single_in_music_url(self) -> None:
+        source = StereogumNewMusic()
+        entry = {
+            "title": "The Strokes Share New Single “Falling Out Of Love”: Listen",
+            "link": "https://stereogum.com/2498847/the-strokes-falling-out-of-love/music/",
+            "tags": [{"term": "New Music"}],
+        }
+        result = source._extract_artist_title(entry)
+        assert result == ("The Strokes", "Falling Out Of Love")
+
+    def test_narrative_new_album_share_track(self) -> None:
+        source = StereogumNewMusic()
+        entry = {
+            "title": "Rico Nasty Announces New Album RX: Hear “Cupcake”",
+            "link": "https://stereogum.com/example/music/",
+            "tags": [{"term": "New Music"}],
+        }
+        result = source._extract_artist_title(entry)
+        assert result == ("Rico Nasty", "Cupcake")
+
+    def test_narrative_news_url_no_match(self) -> None:
+        """Narrativas em /news/ continuam fora da track source."""
+        source = StereogumNewMusic()
+        entry = {
+            "title": "The Strokes Share New Single “Falling Out Of Love”: Listen",
+            "link": "https://stereogum.com/2498847/the-strokes-falling-out-of-love/news/",
+            "tags": [{"term": "New Music"}],
+        }
+        result = source._extract_artist_title(entry)
+        assert result is None
+
+    def test_narrative_cover_no_match(self) -> None:
+        """Covers não entram como release original."""
+        source = StereogumNewMusic()
+        entry = {
+            "title": "S.G. Goodman Shares Studio Version Of Her Butthole Surfers Cover “Pepper”",
+            "link": "https://stereogum.com/example/music/",
+            "tags": [{"term": "New Music"}],
+        }
+        result = source._extract_artist_title(entry)
+        assert result is None
+
     def test_narrative_no_match(self) -> None:
         """Narrativas sem padrão retornam None."""
         source = StereogumNewMusic()
@@ -635,6 +687,130 @@ class TestStereogumFetchFixture:
                 assert narrative.lower() not in track.raw_title.lower(), (
                     f"Narrative leaked into tracks: {track.raw_title}"
                 )
+
+
+class TestPitchforkNewsExtractArtistTitle:
+    def test_listen_to_new_song(self) -> None:
+        source = PitchforkNews()
+        result = source._extract_artist_title(
+            {"title": "Listen to The Strokes’ New Song “Falling Out of Love”"}
+        )
+        assert result == ("The Strokes", "Falling Out of Love")
+
+    def test_announces_album_shares_track(self) -> None:
+        source = PitchforkNews()
+        result = source._extract_artist_title(
+            {"title": "Rico Nasty Announces New Album RX: Hear “Cupcake”"}
+        )
+        assert result == ("Rico Nasty", "Cupcake")
+
+    def test_introduces_album_with_track(self) -> None:
+        source = PitchforkNews()
+        result = source._extract_artist_title(
+            {"title": "Rico Nasty Introduces New Album RX With “Cupcake”"}
+        )
+        assert result == ("Rico Nasty", "Cupcake")
+
+    def test_surprise_releases_new_song(self) -> None:
+        source = PitchforkNews()
+        result = source._extract_artist_title(
+            {"title": "Beyoncé Surprise-Releases New Song “Morning Dew (Donk)”"}
+        )
+        assert result == ("Beyoncé", "Morning Dew (Donk)")
+
+    def test_listen_to_duet(self) -> None:
+        source = PitchforkNews()
+        result = source._extract_artist_title(
+            {"title": "Listen to Steve Lacy and SZA’s Duet “Is It Cool?”"}
+        )
+        assert result == ("Steve Lacy and SZA", "Is It Cool?")
+
+    def test_new_song_video(self) -> None:
+        source = PitchforkNews()
+        result = source._extract_artist_title(
+            {"title": "Watch Charli XCX Let Loose in Video for New Song “Wink Wink”"}
+        )
+        assert result == ("Charli XCX", "Wink Wink")
+
+    def test_listen_to_the_new_artist_song(self) -> None:
+        source = PitchforkNews()
+        result = source._extract_artist_title(
+            {"title": "Listen to the New Aphex Twin Song “Two Remixes by AFX”"}
+        )
+        assert result == ("Aphex Twin", "Two Remixes by AFX")
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "Questlove Announces New Book “Hip-Hop Is History”",
+            "Mitski Announces New Album “The Land Is Inhospitable”",
+            "Big Thief Shares Video for “Vampire Empire”",
+            "Kraftwerk Release New Version Of “Tour de France”",
+        ],
+    )
+    def test_release_news_false_positives_are_ignored(self, title: str) -> None:
+        source = PitchforkNews()
+        result = source._extract_artist_title({"title": title})
+        assert result is None
+
+    def test_quoted_live_in_title_is_not_excluded(self) -> None:
+        source = PitchforkNews()
+        result = source._extract_artist_title(
+            {"title": "Oasis Release New Song “Live Forever Again”"}
+        )
+        assert result == ("Oasis", "Live Forever Again")
+
+    def test_tour_news_is_ignored(self) -> None:
+        source = PitchforkNews()
+        result = source._extract_artist_title({"title": "The Strokes Announce Tour Dates"})
+        assert result is None
+
+
+class TestLineOfBestFitNewsExtractArtistTitle:
+    def test_returns_with_new_single(self) -> None:
+        source = LineOfBestFitNews()
+        result = source._extract_artist_title(
+            {"title": "Cigarettes After Sex return with new single, “Twizzler”"}
+        )
+        assert result == ("Cigarettes After Sex", "Twizzler")
+
+    def test_announces_lp_shares_lead_single(self) -> None:
+        source = LineOfBestFitNews()
+        result = source._extract_artist_title(
+            {
+                "title": (
+                    "Carmen Villain announces new LP Memoria, shares lead single "
+                    "“Entre Nosotros”"
+                )
+            }
+        )
+        assert result == ("Carmen Villain", "Entre Nosotros")
+
+    def test_newcomers_are_back_with_single(self) -> None:
+        source = LineOfBestFitNews()
+        result = source._extract_artist_title(
+            {
+                "title": (
+                    "'Slushy psychedelia' newcomers Captain Crocodile are back with "
+                    'a new single, "Fragmented Tool"'
+                )
+            }
+        )
+        assert result == ("Captain Crocodile", "Fragmented Tool")
+
+    def test_announces_album_title_is_ignored(self) -> None:
+        source = LineOfBestFitNews()
+        result = source._extract_artist_title(
+            {"title": "Carmen Villain announces new LP, “Memoria”"}
+        )
+        assert result is None
+
+    def test_album_review_is_ignored(self) -> None:
+        source = LineOfBestFitNews()
+        result = source._extract_artist_title(
+            {"title": "Baby Rose wears her heart on her sleeve on YEARNALISM"}
+        )
+        assert result is None
 
 
 class TestHelpers:

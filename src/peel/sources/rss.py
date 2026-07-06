@@ -417,6 +417,174 @@ class GuardianMusicAlbums(RSSSource):
         return artist, album
 
 
+_RELEASE_NEWS_EXCLUDED_KEYWORDS = (
+    " cover",
+    " remix",
+    " live",
+    " tour",
+    " festival",
+    " performance",
+    " anniversary",
+    " reissue",
+    " remaster",
+    " deluxe",
+    " instrumental",
+    " sped up",
+    " slowed",
+)
+
+
+def _clean_news_title(title: str) -> str:
+    """Normaliza títulos RSS de notícias para parsing conservador."""
+    text = _strip_html_tags(unescape(title))
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _title_without_quoted_segments(title: str) -> str:
+    """Remove títulos entre aspas para filtros de ruído contextuais."""
+    return re.sub(r"[\"\u201c][^\"\u201d]*[\"\u201d]", " ", title)
+
+
+def _clean_news_artist(artist: str) -> str:
+    """Remove qualificadores editoriais antes do nome do artista."""
+    artist = re.sub(
+        r"^[\"'\u2018\u201c][^\"'\u2019\u201d]+[\"'\u2019\u201d]\s+",
+        "",
+        artist,
+    ).strip()
+    artist = re.sub(r"^watch\s+", "", artist, flags=re.IGNORECASE).strip()
+    artist = re.sub(r"^newcomers\s+", "", artist, flags=re.IGNORECASE).strip()
+    if re.search(r"\s+newcomers\s+", artist, flags=re.IGNORECASE):
+        artist = re.split(r"\s+newcomers\s+", artist, flags=re.IGNORECASE, maxsplit=1)[1]
+    return artist.strip(" ,-:;\u2013\u2014")
+
+
+def _clean_news_track(track: str) -> str:
+    """Remove ruído comum após o nome da faixa."""
+    track = track.strip().strip("\"'\u2018\u2019\u201c\u201d")
+    track = re.sub(r"\s+(?:following|via|after|from|off)\b.*$", "", track, flags=re.IGNORECASE)
+    track = re.sub(r"\s*:\s*listen\b.*$", "", track, flags=re.IGNORECASE)
+    return track.strip(" ,-:;\u2013\u2014")
+
+
+def _has_release_news_signal(title: str) -> bool:
+    lower = f" {title.lower()} "
+    unquoted_lower = f" {_title_without_quoted_segments(title).lower()} "
+    if any(keyword in unquoted_lower for keyword in _RELEASE_NEWS_EXCLUDED_KEYWORDS):
+        return False
+    return any(
+        signal in lower
+        for signal in (
+            " new song",
+            " new single",
+            " new track",
+            " shares ",
+            " share ",
+            " releases ",
+            " release ",
+            " returns with",
+            " return with",
+            " are back with",
+            " is back with",
+            " announces ",
+            " announce ",
+            " introduces ",
+            " introduce ",
+            " reveals ",
+            " reveal ",
+            " hear ",
+            " listen ",
+        )
+    )
+
+
+def _extract_release_news_artist_title(title: str) -> tuple[str, str] | None:
+    """Extrai artist/track de títulos narrativos de release news.
+
+    Mantém-se conservador: exige sinais claros de música nova e, salvo padrão
+    específico de "return with new single", uma faixa entre aspas.
+    """
+    title = _clean_news_title(title)
+    if not title or not _has_release_news_signal(title):
+        return None
+
+    unquoted_lower = _title_without_quoted_segments(title).lower()
+    has_explicit_new_track = re.search(r"\bnew\s+(?:song|single|track)\b", unquoted_lower)
+    if re.search(r"\bvideo\s+for\b", unquoted_lower) and not has_explicit_new_track:
+        return None
+    if re.search(r"\b(?:new\s+)?version\s+of\b", unquoted_lower) and not has_explicit_new_track:
+        return None
+
+    quoted_patterns = [
+        # Listen/Hear to the New Aphex Twin Song “Example”
+        (
+            r"^(?:Listen|Hear)\s+to\s+the\s+New\s+(?P<artist>.+?)\s+"
+            r"(?:Song|Single|Track)\s+[\"\u201c](?P<track>[^\"\u201d]+)[\"\u201d]"
+        ),
+        # Listen/Hear to The Strokes’ New Song “Falling Out of Love”
+        (
+            r"^(?:Listen|Hear)\s+to\s+(?P<artist>.+?)(?:[\u2019']s?)?\s+"
+            r"(?:(?:New\s+)?(?:Song|Single|Track)|Duet)\s+"
+            r"[\"\u201c](?P<track>[^\"\u201d]+)[\"\u201d]"
+        ),
+        # Rico Nasty Announces New Album RX: Hear “Cupcake”
+        (
+            r"^(?P<artist>.+?)\s+(?:Announce|Announces|Announced|"
+            r"Introduce|Introduces|Introduced|Reveal|Reveals|Revealed|"
+            r"Unveil|Unveils|Unveiled|Detail|Details|Detailed)\b.*?"
+            r"\b(?:Song|Single|Track|Hear|Listen|With)\b.*?"
+            r"[\"\u201c](?P<track>[^\"\u201d]+)[\"\u201d]"
+        ),
+        # The Strokes Share New Single “Falling Out Of Love”: Listen
+        (
+            r"^(?P<artist>.+?)\s+(?:Share|Shares|Shared|Release|Releases|Released|"
+            r"Drop|Drops|Dropped|Return|Returns|Returned|"
+            r"Surprise-Release|Surprise-Releases|Surprise-Released)\b.*?"
+            r"[\"\u201c](?P<track>[^\"\u201d]+)[\"\u201d]"
+        ),
+        # Captain Crocodile are back with a new single, “Fragmented Tool”
+        (
+            r"^(?P<artist>.+?)\s+(?:is|are)\s+back\s+with\b.*?"
+            r"[\"\u201c](?P<track>[^\"\u201d]+)[\"\u201d]"
+        ),
+        # Carly Rae ... on New Song “On Wires”
+        (
+            r"^(?P<artist>.+?)\s+Wants\b.*?New\s+Song\b.*?"
+            r"[\"\u201c](?P<track>[^\"\u201d]+)[\"\u201d]"
+        ),
+        # Watch Charli XCX ... New Song “Wink Wink”
+        (
+            r"^Watch\s+(?P<artist>.+?)\s+(?:Let|Perform|Share|Release|Debut|Play)\b"
+            r".*?New\s+Song\b.*?"
+            r"[\"\u201c](?P<track>[^\"\u201d]+)[\"\u201d]"
+        ),
+    ]
+    for pattern in quoted_patterns:
+        match = re.match(pattern, title, flags=re.IGNORECASE)
+        if not match:
+            continue
+        artist = _clean_news_artist(match.group("artist"))
+        track = _clean_news_track(match.group("track"))
+        if artist and track:
+            return artist, track
+
+    # Cigarettes After Sex return with new single, Twizzler
+    match = re.match(
+        r"^(?P<artist>.+?)\s+(?:return|returns|returned)\s+with\s+"
+        r"(?:a\s+)?(?:(?:\w+)\s+){0,2}single,?\s+(?P<track>[^,:;\u2013\u2014]+)$",
+        title,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        artist = _clean_news_artist(match.group("artist"))
+        track = _clean_news_track(match.group("track"))
+        if artist and track:
+            return artist, track
+
+    return None
+
+
 class StereogumNewMusic(RSSSource):
     """Stereogum — New Music.
 
@@ -475,21 +643,65 @@ class StereogumNewMusic(RSSSource):
         pattern = r'^(?P<artist>.+?)\s+[–—-]\s+["\u201c"](?P<track>[^"\u201c\u201d]+?)["\u201d"]'
         match = re.match(pattern, title)
 
-        if not match:
-            # Narrativa, não é track review
-            log.warning(
-                "stereogum.title_no_match",
-                title=title,
-            )
-            return None
+        if match:
+            artist = match.group("artist").strip()
+            track_title = match.group("track").strip()
+            if artist and track_title:
+                return artist, track_title
 
-        artist = match.group("artist").strip()
-        track_title = match.group("track").strip()
+        # Fallback conservador para posts narrativos em /music/:
+        # "The Strokes Share New Single “Falling Out Of Love”: Listen".
+        # Evita /news/ para não apanhar covers live, tours, performances, etc.
+        link = entry.get("link", "")
+        if "/music/" in link:
+            narrative = _extract_release_news_artist_title(title)
+            if narrative is not None:
+                return narrative
 
-        if not artist or not track_title:
-            return None
+        # Narrativa, não é track review
+        log.warning(
+            "stereogum.title_no_match",
+            title=title,
+        )
+        return None
 
-        return artist, track_title
+
+class PitchforkNews(RSSSource):
+    """Pitchfork News — release news filtradas.
+
+    Feed amplo, por isso só aceitamos títulos com sinais fortes de faixa nova
+    (new song/single, share/release/listen/hear) e extraction conservadora.
+    """
+
+    id = "pitchfork_news"
+    name = "Pitchfork News"
+    url = "https://www.pitchfork.com/feed/feed-news/rss"
+
+    def _extract_artist_title(self, entry: dict) -> tuple[str, str] | None:
+        title = entry.get("title", "").strip()
+        result = _extract_release_news_artist_title(title)
+        if result is None:
+            log.warning("pitchfork_news.title_no_match", title=title)
+        return result
+
+
+class LineOfBestFitNews(RSSSource):
+    """The Line of Best Fit — news de novos singles.
+
+    Fonte boa para indie/alt-pop; fica como track source com filtro agressivo
+    para evitar anúncios sem faixa.
+    """
+
+    id = "lineofbestfit_news"
+    name = "The Line of Best Fit — News"
+    url = "https://feeds.feedburner.com/thelineofbestfit"
+
+    def _extract_artist_title(self, entry: dict) -> tuple[str, str] | None:
+        title = entry.get("title", "").strip()
+        result = _extract_release_news_artist_title(title)
+        if result is None:
+            log.warning("lineofbestfit.title_no_match", title=title)
+        return result
 
 
 # User-Agent de browser usado por feeds que bloqueiam defaults (ex: Quietus/Cloudflare)

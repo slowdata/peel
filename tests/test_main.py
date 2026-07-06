@@ -21,9 +21,11 @@ from peel.sources.rss import (
     AquariumDrunkard,
     GorillaVsBear,
     GuardianMusicAlbums,
+    LineOfBestFitNews,
     NprNewMusicFridayStarting5,
     PitchforkBestAlbums,
     PitchforkBNT,
+    PitchforkNews,
     StereogumNewMusic,
     TheQuietus,
     TheQuietusTracksOfMonth,
@@ -34,6 +36,8 @@ from peel.sources.rss import (
 def _disable_network_album_sources(monkeypatch: pytest.MonkeyPatch) -> None:
     """Evita rede nos testes de main; o registry valida que as sources estão activas."""
     monkeypatch.setattr(PitchforkBestAlbums, "fetch", lambda self: [])
+    monkeypatch.setattr(PitchforkNews, "fetch", lambda self: [])
+    monkeypatch.setattr(LineOfBestFitNews, "fetch", lambda self: [])
     monkeypatch.setattr(AquariumDrunkard, "fetch", lambda self: [])
     monkeypatch.setattr(BandcampLabel, "fetch", lambda self: [])
 
