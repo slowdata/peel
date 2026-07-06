@@ -19,8 +19,10 @@ API_BASE = "https://api.telegram.org"
 # pode exceder e falhar com HTTP 400, calado pelo except do send_digest.
 MAX_MESSAGE_LENGTH = 4096
 DigestItem = (
-    tuple[str, str, str, str | None] | tuple[str, str, str, str | None, int]
-)  # (source_id, artist, title/album, url[, source_count])
+    tuple[str, str, str, str | None]
+    | tuple[str, str, str, str | None, int]
+    | tuple[str, str, str, str | None, int, float]
+)  # (source_id, artist, title/album, url[, source_count[, affinity_score]])
 AlbumPickItem = (
     tuple[str, str, int, tuple[str, ...], str | None]
     | tuple[str, str, int, tuple[str, ...], str | None, str | None]
@@ -238,16 +240,19 @@ def _source_link_label(url_: str) -> str:
 
 
 def _format_digest_item(item: DigestItem) -> str:
-    source_id, artist, title, url_, source_count = _unpack_item(item)
-    return _format_item(source_id, artist, title, url_, source_count)
+    source_id, artist, title, url_, source_count, affinity = _unpack_item(item)
+    return _format_item(source_id, artist, title, url_, source_count, affinity)
 
 
-def _unpack_item(item: DigestItem) -> tuple[str, str, str, str | None, int]:
+def _unpack_item(item: DigestItem) -> tuple[str, str, str, str | None, int, float | None]:
+    if len(item) == 6:
+        source_id, artist, title, url_, source_count, affinity = item
+        return source_id, artist, title, url_, source_count, affinity
     if len(item) == 5:
         source_id, artist, title, url_, source_count = item
-        return source_id, artist, title, url_, source_count
+        return source_id, artist, title, url_, source_count, None
     source_id, artist, title, url_ = item
-    return source_id, artist, title, url_, 1
+    return source_id, artist, title, url_, 1, None
 
 
 def _format_item(
@@ -256,10 +261,16 @@ def _format_item(
     title: str,
     url_: str | None,
     source_count: int = 1,
+    affinity: float | None = None,
 ) -> str:
     label = f"{escape(artist)} — {escape(title)}"
     consensus = source_count > 1
-    prefix = "• ⭐ " if consensus else "• "
+    badges = []
+    if consensus:
+        badges.append("⭐")
+    if affinity is not None and affinity >= settings.affinity_badge_threshold:
+        badges.append("🎯")
+    prefix = "• " + (" ".join(badges) + " " if badges else "")
     source_label = escape(_friendly(source_id))
     if consensus:
         source_label = f"{source_label}, {source_count} fontes"

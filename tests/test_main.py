@@ -6,11 +6,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from peel.affinity import build_affinity_profile
 from peel.albums import AlbumRecommendation
+from peel.db import DB
 from peel.main import (
     _album_digest_items,
     _filter_fresh_source_items,
     _retry_unmatched,
+    _sort_track_digest_entries,
     run,
     slots_for_source,
 )
@@ -40,6 +43,30 @@ def _disable_network_album_sources(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(LineOfBestFitNews, "fetch", lambda self: [])
     monkeypatch.setattr(AquariumDrunkard, "fetch", lambda self: [])
     monkeypatch.setattr(BandcampLabel, "fetch", lambda self: [])
+
+
+def test_sort_track_digest_entries_uses_affinity_after_quality(tmp_path: Path) -> None:
+    db = DB(str(tmp_path / "test.db"))
+    try:
+        db.init_schema()
+        # Só para source_count_for_track_identity encontrar as identidades.
+        db.record_track("spotify:track:unknown", "good", "Unknown", "Track", None)
+        db.record_track("spotify:track:idles", "good", "IDLES", "Track", None)
+        entries = [
+            ("good", "Unknown", "Track", None),
+            ("good", "IDLES", "Track", None),
+        ]
+
+        sorted_entries = _sort_track_digest_entries(
+            db,
+            entries,
+            {"good": (1.0, 10.0)},
+            build_affinity_profile(),
+        )
+
+        assert sorted_entries[0][1] == "IDLES"
+    finally:
+        db.close()
 
 
 def test_album_digest_items_use_listen_url_and_source_url() -> None:

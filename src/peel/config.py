@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     # o track chega ao Spotify dias/semanas depois. 30 dias cobre ambos sem
     # inflacionar a tabela indefinidamente.
     unmatched_retry_days: int = Field(default=30, alias="PEEL_UNMATCHED_RETRY_DAYS")
+    # Badge visual no digest quando a afinidade calculada localmente passa o limiar.
+    affinity_badge_threshold: float = Field(
+        default=0.75,
+        alias="PEEL_AFFINITY_BADGE_THRESHOLD",
+    )
 
     # Telegram opcional
     telegram_bot_token: str | None = Field(default=None, alias="TELEGRAM_BOT_TOKEN")

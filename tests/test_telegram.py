@@ -31,6 +31,15 @@ class TestFormatMessage:
         assert "spotify:playlist:test123" in msg
         assert '<a href="http://example.com/album">' in msg
 
+    def test_format_message_affinity_badge(self, monkeypatch) -> None:
+        """Mostra 🎯 quando a afinidade passa o threshold."""
+        monkeypatch.setattr("peel.telegram.settings.affinity_badge_threshold", 0.75)
+        tracks = [("source", "Artist", "Track", None, 1, 0.9)]
+
+        msg = _format_message(tracks, [], "test_id")
+
+        assert "• 🎯 Artist — Track" in msg
+
     def test_format_message_empty_tracks(self) -> None:
         """Formata mensagem sem tracks."""
         tracks = []
@@ -228,8 +237,7 @@ class TestFormatMessage:
 
         assert '<a href="https://open.spotify.com/album/abc123">Goya Gumbani' in msg
         assert (
-            '<a href="https://goyagumbani.bandcamp.com/album/warlord-of-the-weejuns">'
-            "Bandcamp</a>"
+            '<a href="https://goyagumbani.bandcamp.com/album/warlord-of-the-weejuns">Bandcamp</a>'
         ) in msg
         assert (
             '<a href="https://open.spotify.com/search/'

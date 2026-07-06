@@ -24,6 +24,7 @@ from datetime import UTC, datetime, timedelta
 
 import structlog
 
+from peel.affinity import AffinityProfile, build_affinity_profile
 from peel.albums import AlbumRecommendation, spotify_album_url, top_album_recommendations
 from peel.config import settings
 from peel.db import DB, iso_week
@@ -121,6 +122,11 @@ def run(dry_run: bool = False) -> None:
     retried_total = 0
     retried_matched = 0
 
+    # Defaults para o finally: se a run rebentar antes do scoring, o digest
+    # continua best-effort sem affinity/source quality.
+    source_quality: dict[str, tuple[float, float]] = {}
+    affinity_profile = build_affinity_profile()
+
     try:
         db.init_schema()
 
@@ -133,6 +139,7 @@ def run(dry_run: bool = False) -> None:
             source_scores, settings.peel_max_tracks_per_source
         )
         source_quality = _source_quality_map(source_scores)
+        affinity_profile = _load_affinity_profile(db)
 
         # 0. Retry de tracks unmatched recentes — muitos blogs publicam picks
         # antes do release global de sexta, ou os tracks chegam ao Spotify com
@@ -420,7 +427,12 @@ def run(dry_run: bool = False) -> None:
             else settings.peel_playlist_window_weeks
         )
         try:
-            window_uris = db.ranked_tracks_in_window(current_week, rotation_weeks, source_quality)
+            window_uris = db.ranked_tracks_in_window(
+                current_week,
+                rotation_weeks,
+                source_quality,
+                affinity_profile.score,
+            )
         except Exception as e:
             log.exception("playlist.ranking_failed", error=str(e))
             window_uris = db.tracks_in_window(current_week, rotation_weeks)
@@ -468,7 +480,16 @@ def run(dry_run: bool = False) -> None:
         #    send_digest tem a sua própria protecção contra HTTP errors.
         try:
             send_digest(
-                _with_source_counts(db, new_track_entries),
+                _with_digest_metadata(
+                    db,
+                    _sort_track_digest_entries(
+                        db,
+                        new_track_entries,
+                        source_quality,
+                        affinity_profile,
+                    ),
+                    affinity_profile,
+                ),
                 new_album_entries,
                 # Link para a TRIAGEM (o que há para ouvir/avaliar esta semana);
                 # cai na playlist principal se não houver triagem definida.
@@ -588,6 +609,72 @@ def _build_source_slot_caps(scores: list[SourceScore], default: int) -> dict[str
 def _source_quality_map(scores: list[SourceScore]) -> dict[str, tuple[float, float]]:
     """Mapa usado para ranking da playlist: source -> (avg_rating, score)."""
     return {score.source_id: (score.avg_rating or 0.0, score.score) for score in scores}
+
+
+def _load_affinity_profile(db: DB) -> AffinityProfile:
+    """Carrega affinity local; falha não deve afectar descoberta."""
+    try:
+        return build_affinity_profile(db)
+    except Exception as e:
+        log.exception("affinity_profile.failed", error=str(e))
+        return build_affinity_profile()
+
+
+def _sort_track_digest_entries(
+    db: DB,
+    entries: list[DigestItem],
+    source_quality: dict[str, tuple[float, float]],
+    affinity_profile: AffinityProfile,
+) -> list[DigestItem]:
+    """Ordena digest por qualidade primária e affinity como desempate.
+
+    Não filtra nem corta: só altera a ordem de apresentação.
+    """
+    indexed = list(enumerate(entries))
+
+    def sort_key(item: tuple[int, DigestItem]) -> tuple[int, float, float, float, int]:
+        index, entry = item
+        source_id, artist, title, _ = entry[:4]
+        source_count = _safe_source_count(db, artist, title)
+        avg_rating, score = source_quality.get(source_id, (0.0, 0.0))
+        affinity = affinity_profile.score(artist)
+        return (-source_count, -avg_rating, -score, -affinity, index)
+
+    return [entry for _, entry in sorted(indexed, key=sort_key)]
+
+
+def _with_digest_metadata(
+    db: DB,
+    entries: list[DigestItem],
+    affinity_profile: AffinityProfile,
+) -> list[DigestItem]:
+    """Enriquece digest com contagem de fontes e affinity para badges."""
+    enriched: list[DigestItem] = []
+    for source_id, artist, title, url in (entry[:4] for entry in entries):
+        enriched.append(
+            (
+                source_id,
+                artist,
+                title,
+                url,
+                _safe_source_count(db, artist, title),
+                affinity_profile.score(artist),
+            )
+        )
+    return enriched
+
+
+def _safe_source_count(db: DB, artist: str, title: str) -> int:
+    try:
+        return db.source_count_for_track_identity(artist, title)
+    except Exception as e:
+        log.exception(
+            "digest.source_count_failed",
+            artist=artist,
+            title=title,
+            error=str(e),
+        )
+        return 1
 
 
 def _album_digest_items(

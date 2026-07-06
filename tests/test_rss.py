@@ -779,8 +779,7 @@ class TestLineOfBestFitNewsExtractArtistTitle:
         result = source._extract_artist_title(
             {
                 "title": (
-                    "Carmen Villain announces new LP Memoria, shares lead single "
-                    "“Entre Nosotros”"
+                    "Carmen Villain announces new LP Memoria, shares lead single “Entre Nosotros”"
                 )
             }
         )

@@ -19,8 +19,9 @@ Dates: ISO 8601 UTC via datetime.now(UTC).isoformat().
 
 from __future__ import annotations
 
+import json
 import sqlite3
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -45,6 +46,7 @@ log = structlog.get_logger()
 def rank_window_uris(
     rows: Iterable[WindowTrackRow],
     source_quality: Mapping[str, SourceQuality] | None = None,
+    affinity_scorer: Callable[[str], float] | None = None,
 ) -> list[str]:
     """Ordena URIs de uma janela por qualidade, deduplicando por faixa.
 
@@ -70,6 +72,7 @@ def rank_window_uris(
             key,
             {
                 "key": key,
+                "artist": str(artist),
                 "uris": set(),
                 "uri_sources": {},  # uri -> set[source_id]
                 "uri_latest_ts": {},  # uri -> float
@@ -112,13 +115,15 @@ def rank_window_uris(
             key=lambda u: (-len(uri_sources[u]), -uri_latest[u], u),
         )
 
-    def sort_key(bucket: dict[str, object]) -> tuple[int, float, float, float, str]:
+    def sort_key(bucket: dict[str, object]) -> tuple[int, float, float, float, float, str]:
         sources = bucket["sources"]
         assert isinstance(sources, set)
+        affinity = affinity_scorer(str(bucket["artist"])) if affinity_scorer else 0.0
         return (
             -len(sources),
             -float(bucket["best_avg"] or 0.0),
             -float(bucket["best_score"] or 0.0),
+            -float(affinity),
             -float(bucket["latest_ts"]),
             str(bucket["uri"]),
         )
@@ -365,6 +370,19 @@ class DB:
             """
             CREATE INDEX IF NOT EXISTS idx_source_runs_source_run_at
             ON source_runs (source_id, run_at)
+            """
+        )
+
+        # Cache local de géneros por artista. Vazia por defeito; preenchida só
+        # por comando explícito (`peel affinity backfill-genres`) para manter a
+        # pipeline semanal sem chamadas extra à Spotify API.
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS artist_genres (
+                artist     TEXT PRIMARY KEY,
+                genres     TEXT NOT NULL,
+                fetched_at TEXT NOT NULL
+            )
             """
         )
 
@@ -927,6 +945,90 @@ class DB:
         self.conn.commit()
         log.debug("db.source_run_recorded", source_id=source_id, status=status)
 
+    def upsert_artist_genres(
+        self,
+        artist: str,
+        genres: list[str] | tuple[str, ...],
+        fetched_at: str | None = None,
+    ) -> None:
+        """Guarda a cache local de géneros para um artista.
+
+        `artist` fica no formato legível recebido; lookups normalizados são
+        feitos em Python porque a tabela é pequena.
+        """
+        now = fetched_at or datetime.now(UTC).isoformat()
+        clean_genres = [str(genre).strip() for genre in genres if str(genre).strip()]
+        self.conn.execute(
+            """
+            INSERT INTO artist_genres (artist, genres, fetched_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(artist) DO UPDATE SET
+                genres = excluded.genres,
+                fetched_at = excluded.fetched_at
+            """,
+            (artist, json.dumps(clean_genres, ensure_ascii=False), now),
+        )
+        self.conn.commit()
+
+    def genres_for_artist(self, artist: str) -> list[str] | None:
+        """Lê géneros em cache para um artista, se existirem."""
+        target = normalize(artist)
+        rows = self.conn.execute("SELECT artist, genres FROM artist_genres").fetchall()
+        for row_artist, raw_genres in rows:
+            if normalize(str(row_artist)) != target:
+                continue
+            try:
+                parsed = json.loads(str(raw_genres))
+            except json.JSONDecodeError:
+                return None
+            if not isinstance(parsed, list):
+                return None
+            return [str(item) for item in parsed]
+        return None
+
+    def artists_missing_genre_cache(
+        self,
+        refresh_days: int = 180,
+        limit: int | None = None,
+    ) -> list[str]:
+        """Artistas de tracks sem cache fresca de géneros.
+
+        Ordena artistas com feedback primeiro, para um backfill parcial maximizar
+        impacto no perfil de afinidade.
+        """
+        cutoff = (datetime.now(UTC) - timedelta(days=refresh_days)).isoformat()
+        fresh_rows = self.conn.execute(
+            "SELECT artist, fetched_at FROM artist_genres WHERE fetched_at >= ?",
+            (cutoff,),
+        ).fetchall()
+        fresh_keys = {normalize(str(artist)) for artist, _ in fresh_rows}
+
+        rows = self.conn.execute(
+            """
+            SELECT
+                t.artist,
+                COUNT(DISTINCT t.spotify_uri) AS track_count,
+                SUM(CASE WHEN f.spotify_uri IS NULL THEN 0 ELSE 1 END) AS rating_count
+            FROM tracks t
+            LEFT JOIN feedback f ON f.spotify_uri = t.spotify_uri
+            GROUP BY t.artist
+            ORDER BY rating_count DESC, track_count DESC, t.artist COLLATE NOCASE
+            """
+        ).fetchall()
+
+        result: list[str] = []
+        seen: set[str] = set()
+        for artist, _, _ in rows:
+            artist_name = str(artist)
+            key = normalize(artist_name)
+            if not key or key in seen or key in fresh_keys:
+                continue
+            seen.add(key)
+            result.append(artist_name)
+            if limit is not None and len(result) >= limit:
+                break
+        return result
+
     def update_source_state(
         self,
         source_id: str,
@@ -979,6 +1081,7 @@ class DB:
         current_week: str,
         window: int,
         source_quality: Mapping[str, SourceQuality] | None = None,
+        affinity_scorer: Callable[[str], float] | None = None,
     ) -> list[str]:
         """URIs da janela ordenados por qualidade, mantendo filtro de bans.
 
@@ -987,13 +1090,14 @@ class DB:
         de recência.
         """
         rows = self._filtered_window_track_rows(current_week, window)
-        return rank_window_uris(rows, source_quality)
+        return rank_window_uris(rows, source_quality, affinity_scorer)
 
     def week_keeper_uris(
         self,
         week: str,
         source_quality: Mapping[str, SourceQuality] | None = None,
         limit: int = 7,
+        affinity_scorer: Callable[[str], float] | None = None,
     ) -> list[str]:
         """Top N da semana pelo ranking, sem o que o utilizador rejeitou.
 
@@ -1003,7 +1107,7 @@ class DB:
         """
         keep = FEEDBACK_RATINGS["like"]
         keepers: list[str] = []
-        for uri in self.ranked_tracks_in_window(week, 1, source_quality):
+        for uri in self.ranked_tracks_in_window(week, 1, source_quality, affinity_scorer):
             feedback = self.feedback_for_track(uri)
             if feedback is None or feedback[0] >= keep:
                 keepers.append(uri)

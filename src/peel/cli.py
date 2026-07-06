@@ -14,6 +14,7 @@ import json
 import sqlite3
 import subprocess
 import sys
+import time
 import tomllib
 import webbrowser
 from contextlib import redirect_stdout
@@ -31,6 +32,7 @@ from peel.config import settings
 from peel.db import DB, FEEDBACK_RATINGS, iso_week
 from peel.doctor_sources import inspect_registered_sources
 from peel.main import run as run_pipeline
+from peel.matcher import normalize
 from peel.report import generate_weekly_report
 from peel.scoring import SourceScore, build_source_scores
 from peel.site_export import export_site, make_album_resolver
@@ -54,10 +56,12 @@ sync_app = typer.Typer(add_completion=False, help="Sincronização local/GitHub.
 doctor_app = typer.Typer(add_completion=False, help="Diagnósticos do Peel.")
 playlist_app = typer.Typer(add_completion=False, help="Ferramentas de playlists Spotify.")
 site_app = typer.Typer(add_completion=False, help="Exportação para o site peel-sept.")
+affinity_app = typer.Typer(add_completion=False, help="Perfil local de afinidade.")
 app.add_typer(sync_app, name="sync")
 app.add_typer(doctor_app, name="doctor")
 app.add_typer(playlist_app, name="playlist")
 app.add_typer(site_app, name="site")
+app.add_typer(affinity_app, name="affinity")
 
 
 @dataclass(slots=True)
@@ -459,6 +463,71 @@ def site_export(
 
     for item in exported:
         console.print(f"Exported {item.week}: {item.path}")
+
+
+@affinity_app.command("backfill-genres")
+def affinity_backfill_genres(
+    limit: Annotated[int, typer.Option("--limit", min=1, help="Máximo de artistas")] = 50,
+    refresh_days: Annotated[
+        int,
+        typer.Option("--refresh-days", min=1, help="Só refaz cache mais antiga que N dias"),
+    ] = 180,
+    sleep_seconds: Annotated[
+        float,
+        typer.Option("--sleep", min=0.0, help="Pausa entre chamadas Spotify"),
+    ] = 1.0,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Não chama Spotify")] = False,
+) -> None:
+    """Preenche a cache local artist_genres com throttle.
+
+    Implementado para correr quando a rate limit acalmar; não é usado pela run
+    semanal e nunca é chamado implicitamente.
+    """
+    db = DB(str(_resolve_path(settings.db_path)))
+    try:
+        db.init_schema()
+        artists = db.artists_missing_genre_cache(refresh_days=refresh_days, limit=limit)
+        if not artists:
+            console.print("artist_genres já está fresco para os artistas conhecidos.")
+            return
+
+        console.print(f"Artistas pendentes: {len(artists)}")
+        if dry_run:
+            for artist in artists:
+                console.print(f"- {artist}")
+            return
+
+        client = SpotifyClient()
+        updated = 0
+        failed = 0
+        for index, artist in enumerate(artists, start=1):
+            try:
+                result = client.sp.search(q=f'artist:"{artist}"', type="artist", limit=5)
+                item = _select_artist_search_result(artist, result)
+                genres = (item.get("genres") or []) if item else []
+                db.upsert_artist_genres(artist, [str(genre) for genre in genres])
+                updated += 1
+                console.print(f"[{index}/{len(artists)}] {artist}: {', '.join(genres) or '—'}")
+            except Exception as exc:  # noqa: BLE001 - backfill best-effort
+                failed += 1
+                console.print(f"[red][{index}/{len(artists)}] {artist}: {exc}[/red]")
+            if sleep_seconds > 0 and index < len(artists):
+                time.sleep(sleep_seconds)
+        console.print(f"artist_genres updated={updated} failed={failed}")
+    finally:
+        db.close()
+
+
+def _select_artist_search_result(artist: str, result: dict) -> dict | None:
+    """Escolhe o melhor artist result sem fuzzy externo."""
+    items = ((result.get("artists") or {}).get("items") or []) if result else []
+    if not items:
+        return None
+    target = normalize(artist)
+    for item in items:
+        if normalize(str(item.get("name", ""))) == target:
+            return item
+    return items[0]
 
 
 @sync_app.command("status")

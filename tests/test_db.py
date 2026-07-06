@@ -529,9 +529,7 @@ class TestRecordAlbum:
 
         assert count == 2
 
-    def test_record_album_duplicate_normalized_case_returns_false(
-        self, tmp_path: Path
-    ) -> None:
+    def test_record_album_duplicate_normalized_case_returns_false(self, tmp_path: Path) -> None:
         db = DB(str(tmp_path / "test.db"))
         db.init_schema()
 
@@ -627,6 +625,30 @@ class TestFeedback:
         db.upsert_feedback("spotify:track:ok", "love", None)
 
         assert db.banned_track_keys() == {(normalize("Beyoncé"), normalize("Halo"))}
+
+
+class TestArtistGenresCache:
+    def test_upsert_and_lookup_artist_genres(self, tmp_path: Path) -> None:
+        db = DB(str(tmp_path / "test.db"))
+        try:
+            db.init_schema()
+            db.upsert_artist_genres("IDLES", ["post-punk", "uk indie"])
+
+            assert db.genres_for_artist("idles") == ["post-punk", "uk indie"]
+        finally:
+            db.close()
+
+    def test_artists_missing_genre_cache_skips_fresh_cache(self, tmp_path: Path) -> None:
+        db = DB(str(tmp_path / "test.db"))
+        try:
+            db.init_schema()
+            db.record_track("spotify:track:a", "s", "IDLES", "A", None)
+            db.record_track("spotify:track:b", "s", "Unknown", "B", None)
+            db.upsert_artist_genres("IDLES", ["post-punk"])
+
+            assert db.artists_missing_genre_cache(refresh_days=180) == ["Unknown"]
+        finally:
+            db.close()
 
 
 class TestRankWindowUris:
