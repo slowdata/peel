@@ -31,6 +31,9 @@ def test_parse_musicbrainz_uses_tags_with_threshold() -> None:
                 "name": "IDLES",
                 "tags": [
                     {"name": "seen live", "count": 100},
+                    {"name": "female", "count": 20},
+                    {"name": "2010s", "count": 20},
+                    {"name": "uk", "count": 20},
                     {"name": "rock", "count": 1},
                     {"name": "post-punk", "count": 4},
                     {"name": "art punk", "count": 3},

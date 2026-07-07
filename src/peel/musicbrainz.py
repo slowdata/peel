@@ -27,6 +27,14 @@ NOISY_TAGS = {
     "last.fm",
     "albums i own",
     "all",
+    "female",
+    "male",
+    "uk",
+    "european",
+    "swedish",
+    "indian",
+    "2010s",
+    "2020s",
 }
 
 
