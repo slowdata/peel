@@ -123,6 +123,17 @@ uv run peel sources --weeks 4
 uv run peel sources --json
 ```
 
+### Spotify Release Radar snapshots
+
+Release Radar é sinal pessoal/algorítmico, não source editorial. Fica fora da
+weekly automática; usa-se para auditoria de cobertura e afinidade futura:
+
+```bash
+uv run peel radar snapshot --week 2026-W28
+uv run peel radar snapshot --week 2026-W28 --no-write
+uv run peel radar compare --week 2026-W28
+```
+
 ### Affinity genre cache
 
 Affinity v1 uses local feedback first. Optional genre tags are cached locally and

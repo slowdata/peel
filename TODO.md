@@ -71,6 +71,7 @@ https://peel.sept.pt/ig/2026-W24.png
 - [x] Export JSON com Spotify album links resolvidos para On Rotation.
 - [x] Export JSON com `sources` como `{name, url}` para creditar curadores.
 - [x] Playlist pública canónica consolidada e usada pela fonte de verdade.
+- [x] Snapshot/compare do Spotify Release Radar como sinal pessoal fora da weekly.
 
 ## Estado do site `peel-sept`
 

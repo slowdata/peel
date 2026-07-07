@@ -1,0 +1,324 @@
+{
+  "week": "2026-W28",
+  "source_id": "spotify_release_radar",
+  "url": "https://open.spotify.com/playlist/37i9dQZEVXbdMFQMlaz9jo?si=53d60675596e47b4",
+  "fetched_at": "2026-07-07T16:17:24.057387+00:00",
+  "track_count": 30,
+  "tracks": [
+    {
+      "position": 1,
+      "spotify_uri": "spotify:track:6GjXR9FaxCuDNbqBrP9aYO",
+      "title": "Wink Wink",
+      "artists": [
+        "Charli xcx"
+      ],
+      "artist": "Charli xcx",
+      "spotify_url": "https://open.spotify.com/track/6GjXR9FaxCuDNbqBrP9aYO"
+    },
+    {
+      "position": 2,
+      "spotify_uri": "spotify:track:4flGYl0U5izyutdDcHP6fN",
+      "title": "Elitest G.O.A.T. - Extnnddntwrk Broken Prayer Remix",
+      "artists": [
+        "Sleaford Mods",
+        "Extnddntwrk",
+        "Aldous Harding"
+      ],
+      "artist": "Sleaford Mods, Extnddntwrk, Aldous Harding",
+      "spotify_url": "https://open.spotify.com/track/4flGYl0U5izyutdDcHP6fN"
+    },
+    {
+      "position": 3,
+      "spotify_uri": "spotify:track:5d6yuUAyIVnk0psBEzFdlj",
+      "title": "When I'm Gone - Ghost Dubs Remix",
+      "artists": [
+        "Kevin Richard Martin",
+        "Ghost Dubs"
+      ],
+      "artist": "Kevin Richard Martin, Ghost Dubs",
+      "spotify_url": "https://open.spotify.com/track/5d6yuUAyIVnk0psBEzFdlj"
+    },
+    {
+      "position": 4,
+      "spotify_uri": "spotify:track:2culJWP4w5akql6oxFitD9",
+      "title": "Crown Jewel",
+      "artists": [
+        "Eartheater"
+      ],
+      "artist": "Eartheater",
+      "spotify_url": "https://open.spotify.com/track/2culJWP4w5akql6oxFitD9"
+    },
+    {
+      "position": 5,
+      "spotify_uri": "spotify:track:0SCeDWOdoMryrHo1XesIOM",
+      "title": "Lucky Again (The Magician Remix)",
+      "artists": [
+        "Lykke Li",
+        "The Magician"
+      ],
+      "artist": "Lykke Li, The Magician",
+      "spotify_url": "https://open.spotify.com/track/0SCeDWOdoMryrHo1XesIOM"
+    },
+    {
+      "position": 6,
+      "spotify_uri": "spotify:track:6BayAPUVlQETPE0dfbiExD",
+      "title": "Friends At The Pigshed (with Underworld)",
+      "artists": [
+        "Brutalismus 3000",
+        "Underworld"
+      ],
+      "artist": "Brutalismus 3000, Underworld",
+      "spotify_url": "https://open.spotify.com/track/6BayAPUVlQETPE0dfbiExD"
+    },
+    {
+      "position": 7,
+      "spotify_uri": "spotify:track:0kUCdcn9yrGjJsNQEJqzpP",
+      "title": "Reaper",
+      "artists": [
+        "Kelsey Lu"
+      ],
+      "artist": "Kelsey Lu",
+      "spotify_url": "https://open.spotify.com/track/0kUCdcn9yrGjJsNQEJqzpP"
+    },
+    {
+      "position": 8,
+      "spotify_uri": "spotify:track:54qjFrJ9cTjPzaGjCanyWS",
+      "title": "Mouse",
+      "artists": [
+        "mary in the junkyard"
+      ],
+      "artist": "mary in the junkyard",
+      "spotify_url": "https://open.spotify.com/track/54qjFrJ9cTjPzaGjCanyWS"
+    },
+    {
+      "position": 9,
+      "spotify_uri": "spotify:track:2CrCSUqCi4m4iDexkklvmN",
+      "title": "Punching the Flowers",
+      "artists": [
+        "Death Cab for Cutie"
+      ],
+      "artist": "Death Cab for Cutie",
+      "spotify_url": "https://open.spotify.com/track/2CrCSUqCi4m4iDexkklvmN"
+    },
+    {
+      "position": 10,
+      "spotify_uri": "spotify:track:6zFVzqWNjYlPrigzjEIU2H",
+      "title": "Carp",
+      "artists": [
+        "Oxis"
+      ],
+      "artist": "Oxis",
+      "spotify_url": "https://open.spotify.com/track/6zFVzqWNjYlPrigzjEIU2H"
+    },
+    {
+      "position": 11,
+      "spotify_uri": "spotify:track:2lWk9Ik4LSAYKNGwBn86yJ",
+      "title": "Ride Lonesome (feat. Sierra Ferrell)",
+      "artists": [
+        "Beck",
+        "Sierra Ferrell"
+      ],
+      "artist": "Beck, Sierra Ferrell",
+      "spotify_url": "https://open.spotify.com/track/2lWk9Ik4LSAYKNGwBn86yJ"
+    },
+    {
+      "position": 12,
+      "spotify_uri": "spotify:track:4llSkj7K4ekT5wzcLKd4C5",
+      "title": "Billy Came Back",
+      "artists": [
+        "This Is Lorelei"
+      ],
+      "artist": "This Is Lorelei",
+      "spotify_url": "https://open.spotify.com/track/4llSkj7K4ekT5wzcLKd4C5"
+    },
+    {
+      "position": 13,
+      "spotify_uri": "spotify:track:4SUkHVhTrd6NK6xoCjpsNS",
+      "title": "Don't You Weep",
+      "artists": [
+        "POLIÇA"
+      ],
+      "artist": "POLIÇA",
+      "spotify_url": "https://open.spotify.com/track/4SUkHVhTrd6NK6xoCjpsNS"
+    },
+    {
+      "position": 14,
+      "spotify_uri": "spotify:track:5WnxvPtkEJ31yXF8ZPwQr2",
+      "title": "eat the pavement",
+      "artists": [
+        "Dev Lemons"
+      ],
+      "artist": "Dev Lemons",
+      "spotify_url": "https://open.spotify.com/track/5WnxvPtkEJ31yXF8ZPwQr2"
+    },
+    {
+      "position": 15,
+      "spotify_uri": "spotify:track:5UNo2nitxVTkBA9QYmnHJx",
+      "title": "OK (feat. Don Toliver)",
+      "artists": [
+        "Kanye West",
+        "Ye",
+        "Don Toliver"
+      ],
+      "artist": "Kanye West, Ye, Don Toliver",
+      "spotify_url": "https://open.spotify.com/track/5UNo2nitxVTkBA9QYmnHJx"
+    },
+    {
+      "position": 16,
+      "spotify_uri": "spotify:track:6jfiwkcwt8iYCdkbLukxeI",
+      "title": "maggots for brains",
+      "artists": [
+        "Olivia Rodrigo"
+      ],
+      "artist": "Olivia Rodrigo",
+      "spotify_url": "https://open.spotify.com/track/6jfiwkcwt8iYCdkbLukxeI"
+    },
+    {
+      "position": 17,
+      "spotify_uri": "spotify:track:7EA7YdWUyPjLLFfhmW3feD",
+      "title": "No Fun",
+      "artists": [
+        "After Louise"
+      ],
+      "artist": "After Louise",
+      "spotify_url": "https://open.spotify.com/track/7EA7YdWUyPjLLFfhmW3feD"
+    },
+    {
+      "position": 18,
+      "spotify_uri": "spotify:track:1mT6vrv7IUwCZNErH8x2aI",
+      "title": "WEDGIE",
+      "artists": [
+        "Jared Mattson",
+        "Ruban Nielson",
+        "Unknown Mortal Orchestra"
+      ],
+      "artist": "Jared Mattson, Ruban Nielson, Unknown Mortal Orchestra",
+      "spotify_url": "https://open.spotify.com/track/1mT6vrv7IUwCZNErH8x2aI"
+    },
+    {
+      "position": 19,
+      "spotify_uri": "spotify:track:49g3szYE0qIgP76FqQz2Oh",
+      "title": "This Mirror Weighs a Ton",
+      "artists": [
+        "Interpol"
+      ],
+      "artist": "Interpol",
+      "spotify_url": "https://open.spotify.com/track/49g3szYE0qIgP76FqQz2Oh"
+    },
+    {
+      "position": 20,
+      "spotify_uri": "spotify:track:2CFQhsE794KbbyROs5Iocx",
+      "title": "Monroe",
+      "artists": [
+        "Mount Kimbie"
+      ],
+      "artist": "Mount Kimbie",
+      "spotify_url": "https://open.spotify.com/track/2CFQhsE794KbbyROs5Iocx"
+    },
+    {
+      "position": 21,
+      "spotify_uri": "spotify:track:6cOD4NsMsC3xykBHA3j5b6",
+      "title": "soulless cycle",
+      "artists": [
+        "L'Rain"
+      ],
+      "artist": "L'Rain",
+      "spotify_url": "https://open.spotify.com/track/6cOD4NsMsC3xykBHA3j5b6"
+    },
+    {
+      "position": 22,
+      "spotify_uri": "spotify:track:6ImNhLq3RabOnEHfoRdvd4",
+      "title": "I CAN’T WAIT (feat. Ms. Lauryn Hill)",
+      "artists": [
+        "Kanye West",
+        "Ye",
+        "Ms. Lauryn Hill"
+      ],
+      "artist": "Kanye West, Ye, Ms. Lauryn Hill",
+      "spotify_url": "https://open.spotify.com/track/6ImNhLq3RabOnEHfoRdvd4"
+    },
+    {
+      "position": 23,
+      "spotify_uri": "spotify:track:4iJfToaAEtdhjn029TzDDg",
+      "title": "Endlessly (feat. BEA1991) - Radio Edit",
+      "artists": [
+        "Jump Source",
+        "Patrick Holland",
+        "Priori",
+        "BEA1991"
+      ],
+      "artist": "Jump Source, Patrick Holland, Priori, BEA1991",
+      "spotify_url": "https://open.spotify.com/track/4iJfToaAEtdhjn029TzDDg"
+    },
+    {
+      "position": 24,
+      "spotify_uri": "spotify:track:5XupJq5fBAe68ZTNP6056a",
+      "title": "In Yr Right Hand Reveal Heaven",
+      "artists": [
+        "The Healing Power of Horses"
+      ],
+      "artist": "The Healing Power of Horses",
+      "spotify_url": "https://open.spotify.com/track/5XupJq5fBAe68ZTNP6056a"
+    },
+    {
+      "position": 25,
+      "spotify_uri": "spotify:track:1u2tyMNIqJQ9jbQxmGI9lo",
+      "title": "Get Away From Me (I Think I'll Love You Soon)",
+      "artists": [
+        "Julia Jacklin"
+      ],
+      "artist": "Julia Jacklin",
+      "spotify_url": "https://open.spotify.com/track/1u2tyMNIqJQ9jbQxmGI9lo"
+    },
+    {
+      "position": 26,
+      "spotify_uri": "spotify:track:7aKPErDLvieg4nJTWqCrNc",
+      "title": "Life's a Dream",
+      "artists": [
+        "Modest Mouse"
+      ],
+      "artist": "Modest Mouse",
+      "spotify_url": "https://open.spotify.com/track/7aKPErDLvieg4nJTWqCrNc"
+    },
+    {
+      "position": 27,
+      "spotify_uri": "spotify:track:5uto52hdPZMy4xA2yZmyzH",
+      "title": "Drums Only",
+      "artists": [
+        "Chanel Beads"
+      ],
+      "artist": "Chanel Beads",
+      "spotify_url": "https://open.spotify.com/track/5uto52hdPZMy4xA2yZmyzH"
+    },
+    {
+      "position": 28,
+      "spotify_uri": "spotify:track:3RQUhlzfxDWjhN2KfaYJlJ",
+      "title": "I Know - RE:CREATED VERSION",
+      "artists": [
+        "Placebo"
+      ],
+      "artist": "Placebo",
+      "spotify_url": "https://open.spotify.com/track/3RQUhlzfxDWjhN2KfaYJlJ"
+    },
+    {
+      "position": 29,
+      "spotify_uri": "spotify:track:6hFI5o7oCBPFCQH1CHiIOv",
+      "title": "Dona do teu nariz",
+      "artists": [
+        "Elvira"
+      ],
+      "artist": "Elvira",
+      "spotify_url": "https://open.spotify.com/track/6hFI5o7oCBPFCQH1CHiIOv"
+    },
+    {
+      "position": 30,
+      "spotify_uri": "spotify:track:7jYp2DFtDKYFDMbhJHUy1S",
+      "title": "Dripping Soul",
+      "artists": [
+        "Graham Coxon"
+      ],
+      "artist": "Graham Coxon",
+      "spotify_url": "https://open.spotify.com/track/7jYp2DFtDKYFDMbhJHUy1S"
+    }
+  ]
+}

@@ -34,6 +34,13 @@ from peel.doctor_sources import inspect_registered_sources
 from peel.main import run as run_pipeline
 from peel.matcher import normalize
 from peel.musicbrainz import fetch_musicbrainz_artist_genres
+from peel.release_radar import (
+    DEFAULT_RELEASE_RADAR_URL,
+    ReleaseRadarTrack,
+    fetch_release_radar,
+    release_radar_snapshot_payload,
+    tracks_from_snapshot,
+)
 from peel.report import generate_weekly_report
 from peel.scoring import SourceScore, build_source_scores
 from peel.site_export import export_site, make_album_resolver
@@ -56,11 +63,13 @@ app = typer.Typer(add_completion=False, help="Peel — música curada, sincroniz
 sync_app = typer.Typer(add_completion=False, help="Sincronização local/GitHub.")
 doctor_app = typer.Typer(add_completion=False, help="Diagnósticos do Peel.")
 playlist_app = typer.Typer(add_completion=False, help="Ferramentas de playlists Spotify.")
+radar_app = typer.Typer(add_completion=False, help="Snapshots do Spotify Release Radar.")
 site_app = typer.Typer(add_completion=False, help="Exportação para o site peel-sept.")
 affinity_app = typer.Typer(add_completion=False, help="Perfil local de afinidade.")
 app.add_typer(sync_app, name="sync")
 app.add_typer(doctor_app, name="doctor")
 app.add_typer(playlist_app, name="playlist")
+app.add_typer(radar_app, name="radar")
 app.add_typer(site_app, name="site")
 app.add_typer(affinity_app, name="affinity")
 
@@ -428,6 +437,102 @@ def playlist_fill_week(
         _abort_spotify_reauth(exc)
     client.replace_playlist_items(playlist_id, [row[0] for row in rows])
     console.print(f"Playlist filled: {playlist_id} ({len(rows)} tracks).")
+
+
+@radar_app.command("snapshot")
+def radar_snapshot(
+    url: Annotated[
+        str,
+        typer.Option("--url", help="URL da playlist Release Radar no Spotify Web"),
+    ] = DEFAULT_RELEASE_RADAR_URL,
+    week: Annotated[str | None, typer.Option("--week", help="Semana ISO")] = None,
+    output_dir: Annotated[
+        Path,
+        typer.Option("--output-dir", help="Directório para snapshots JSON"),
+    ] = Path("data/radar"),
+    no_write: Annotated[
+        bool,
+        typer.Option("--no-write", help="Só mostra; não grava JSON"),
+    ] = False,
+) -> None:
+    """Extrai a Release Radar via Spotify Web e grava snapshot local."""
+    target_week = _normalize_week_option(week) if week else iso_week(datetime.now(UTC))
+    tracks = fetch_release_radar(url)
+    if not tracks:
+        console.print("[red]Não consegui extrair tracks da página Spotify.[/red]")
+        raise typer.Exit(code=1)
+
+    _print_release_radar_tracks(tracks, title=f"Release Radar {target_week}")
+
+    if no_write:
+        console.print(f"Snapshot não gravado: {len(tracks)} tracks.")
+        return
+
+    target_dir = _resolve_path(str(output_dir))
+    target_dir.mkdir(parents=True, exist_ok=True)
+    path = target_dir / f"{target_week}.json"
+    payload = release_radar_snapshot_payload(tracks, week=target_week, url=url)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    console.print(f"Snapshot written: {path} ({len(tracks)} tracks).")
+
+
+@radar_app.command("compare")
+def radar_compare(
+    week: Annotated[str | None, typer.Option("--week", help="Semana ISO")] = None,
+    snapshot: Annotated[
+        Path | None,
+        typer.Option("--snapshot", help="Snapshot JSON; default data/radar/<week>.json"),
+    ] = None,
+) -> None:
+    """Compara uma snapshot Release Radar com tracks conhecidas no Peel."""
+    target_week = _normalize_week_option(week) if week else iso_week(datetime.now(UTC))
+    path = (
+        _resolve_path(str(snapshot))
+        if snapshot
+        else PROJECT_ROOT / "data" / "radar" / f"{target_week}.json"
+    )
+    if not path.exists():
+        console.print(f"[red]Snapshot não existe:[/red] {path}")
+        raise typer.Exit(code=1)
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    tracks = tracks_from_snapshot(payload)
+    if not tracks:
+        console.print(f"[red]Snapshot sem tracks válidas:[/red] {path}")
+        raise typer.Exit(code=1)
+
+    db = DB(str(_resolve_path(settings.db_path)))
+    try:
+        db.init_schema()
+        matches = _compare_release_radar_tracks(db, tracks)
+    finally:
+        db.close()
+
+    uri_matches = sum(1 for item in matches if item[0] == "uri")
+    text_matches = sum(1 for item in matches if item[0] == "text")
+    misses = sum(1 for item in matches if item[0] == "miss")
+
+    table = Table(title=f"Release Radar overlap {target_week}")
+    table.add_column("#", justify="right")
+    table.add_column("Match")
+    table.add_column("Artist", style="bold")
+    table.add_column("Title")
+    table.add_column("Peel sources")
+    for status, track, sources in matches:
+        label = {"uri": "URI", "text": "text", "miss": "—"}[status]
+        style = "green" if status == "uri" else "yellow" if status == "text" else "dim"
+        table.add_row(
+            str(track.position),
+            f"[{style}]{label}[/{style}]",
+            track.artist,
+            track.title,
+            sources or "",
+        )
+    console.print(table)
+    console.print(
+        f"Overlap: {uri_matches + text_matches}/{len(tracks)} "
+        f"(uri={uri_matches}, text={text_matches}, miss={misses})"
+    )
 
 
 @site_app.command("export")
@@ -1071,6 +1176,52 @@ def _save_feedback(
     comment: str | None,
 ) -> None:
     db.upsert_feedback(spotify_uri, rating, comment)
+
+
+def _print_release_radar_tracks(tracks: list[ReleaseRadarTrack], *, title: str) -> None:
+    table = Table(title=title)
+    table.add_column("#", justify="right")
+    table.add_column("Artist", style="bold")
+    table.add_column("Title")
+    table.add_column("URI")
+    for track in tracks:
+        table.add_row(str(track.position), track.artist, track.title, track.spotify_uri)
+    console.print(table)
+
+
+def _compare_release_radar_tracks(
+    db: DB,
+    tracks: list[ReleaseRadarTrack],
+) -> list[tuple[str, ReleaseRadarTrack, str | None]]:
+    rows = db.conn.execute(
+        """
+        SELECT spotify_uri,
+               MIN(artist) AS artist,
+               MIN(title) AS title,
+               GROUP_CONCAT(DISTINCT source_id) AS sources
+        FROM tracks
+        GROUP BY spotify_uri
+        """
+    ).fetchall()
+    by_uri: dict[str, str | None] = {}
+    by_text: dict[tuple[str, str], str | None] = {}
+    for spotify_uri, artist, title, sources in rows:
+        by_uri[str(spotify_uri)] = str(sources) if sources is not None else None
+        key = (normalize(str(artist)), normalize(str(title)))
+        by_text.setdefault(key, str(sources) if sources is not None else None)
+
+    matches: list[tuple[str, ReleaseRadarTrack, str | None]] = []
+    for track in tracks:
+        uri_sources = by_uri.get(track.spotify_uri)
+        if uri_sources is not None:
+            matches.append(("uri", track, uri_sources))
+            continue
+        text_sources = by_text.get((normalize(track.artist), normalize(track.title)))
+        if text_sources is not None:
+            matches.append(("text", track, text_sources))
+            continue
+        matches.append(("miss", track, None))
+    return matches
 
 
 def _masked(value: str) -> str:
