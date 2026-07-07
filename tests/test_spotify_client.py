@@ -3,8 +3,15 @@
 from unittest.mock import MagicMock, call, patch
 
 import pytest
+from spotipy.oauth2 import SpotifyOauthError
 
-from peel.spotify_client import SpotifyClient, _and_the_variant, _clean_for_query
+from peel.spotify_client import (
+    SCOPES,
+    SpotifyClient,
+    SpotifyReauthRequired,
+    _and_the_variant,
+    _clean_for_query,
+)
 
 
 class TestCleanForQuery:
@@ -44,6 +51,42 @@ class TestAndTheVariant:
     def test_no_variant_when_absent(self) -> None:
         assert _and_the_variant("Massive Attack") is None
         assert _and_the_variant("Ryan Davis Roadhouse") is None
+
+
+class TestScopes:
+    def test_personal_history_scopes_are_requested(self) -> None:
+        assert "user-top-read" in SCOPES
+        assert "user-read-recently-played" in SCOPES
+        assert "user-library-read" in SCOPES
+
+
+class TestSpotifyAuth:
+    def test_invalid_grant_requires_reauth(self) -> None:
+        with patch("peel.spotify_client.SpotifyOAuth") as mock_auth:
+            mock_auth_instance = MagicMock()
+            mock_auth_instance.refresh_access_token.side_effect = SpotifyOauthError(
+                "error: invalid_grant",
+                error="invalid_grant",
+            )
+            mock_auth.return_value = mock_auth_instance
+
+            with patch("peel.spotify_client.spotipy.Spotify") as mock_sp:
+                with pytest.raises(SpotifyReauthRequired, match="bootstrap_refresh_token"):
+                    SpotifyClient()
+
+                mock_sp.assert_not_called()
+
+    def test_other_oauth_errors_are_not_hidden(self) -> None:
+        with patch("peel.spotify_client.SpotifyOAuth") as mock_auth:
+            mock_auth_instance = MagicMock()
+            mock_auth_instance.refresh_access_token.side_effect = SpotifyOauthError(
+                "error: temporarily_unavailable",
+                error="temporarily_unavailable",
+            )
+            mock_auth.return_value = mock_auth_instance
+
+            with pytest.raises(SpotifyOauthError, match="temporarily_unavailable"):
+                SpotifyClient()
 
 
 class TestSearchTrackFallback:

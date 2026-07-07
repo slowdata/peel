@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Bootstrap script para gerar o refresh token do Spotify.
 
-USAR UMA ÚNICA VEZ, localmente, para autorizar a app e obter o refresh_token.
+Usar localmente para autorizar/reautorizar a app e obter um refresh_token.
 
 Fluxo:
 1. Script abre o browser em http://127.0.0.1:8888/callback
 2. Tu autorizas a app (clicas "Accept")
 3. O Spotify redireciona para a callback URL com um authorization code
 4. Script troca o code por refresh_token e imprime-o
-5. Tu colas o refresh_token no .env
+5. Tu colas o refresh_token no .env e/ou no GitHub Secrets
 
 Requisitos:
 - Ter SPOTIFY_CLIENT_ID e SPOTIFY_CLIENT_SECRET válidos (criar em
@@ -32,7 +32,8 @@ from dotenv import load_dotenv
 REDIRECT_URI = "http://127.0.0.1:8888/callback"
 SCOPES = (
     "playlist-modify-private playlist-modify-public "
-    "playlist-read-private playlist-read-collaborative user-read-private"
+    "playlist-read-private playlist-read-collaborative user-read-private "
+    "user-top-read user-read-recently-played user-library-read"
 )
 AUTH_URL = "https://accounts.spotify.com/authorize"
 TOKEN_URL = "https://accounts.spotify.com/api/token"
@@ -96,7 +97,7 @@ def main() -> None:
         client_secret = input("Spotify Client Secret: ").strip()
 
     print("\n" + "=" * 70)
-    print("Spotify Refresh Token Bootstrap")
+    print("Spotify Refresh Token Bootstrap / Reauthorization")
     print("=" * 70)
 
     # 1. Constrói a URL de autorização
@@ -156,8 +157,10 @@ def main() -> None:
     print("\nNext steps:")
     print("1. Copy the SPOTIFY_REFRESH_TOKEN above")
     print("2. Paste it into your .env file")
-    print("3. Make sure SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET are also in .env")
-    print("4. Delete this script or save it safely — não o commites com tokens reais!\n")
+    print("3. Update GitHub Actions secret: gh secret set SPOTIFY_REFRESH_TOKEN")
+    print("4. Make sure SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET are also in .env")
+    print("5. Refresh tokens expire after 6 months; renew before then")
+    print("6. Delete this script or save it safely — não o commites com tokens reais!\n")
 
 
 if __name__ == "__main__":

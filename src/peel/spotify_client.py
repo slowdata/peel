@@ -16,7 +16,7 @@ import re
 import spotipy
 import structlog
 from spotipy.cache_handler import MemoryCacheHandler
-from spotipy.oauth2 import SpotifyOAuth
+from spotipy.oauth2 import SpotifyOAuth, SpotifyOauthError
 
 from peel.config import settings
 
@@ -58,14 +58,38 @@ def _and_the_variant(artist: str) -> str | None:
     return None
 
 
-# Scopes necessários para gerir a playlist principal e playlists temporárias.
+# Scopes necessários para gerir playlists e ler sinais pessoais opcionais.
+# user-top-read/user-read-recently-played/user-library-read permitem afinidade
+# futura; só ficam activos depois de reautorizar o refresh token.
 SCOPES = (
     "playlist-modify-private playlist-modify-public "
-    "playlist-read-private playlist-read-collaborative user-read-private"
+    "playlist-read-private playlist-read-collaborative user-read-private "
+    "user-top-read user-read-recently-played user-library-read"
 )
 
 # Redirect URI: tem de ser http://127.0.0.1:8888/callback (HTTP, 127.0.0.1, não localhost).
 REDIRECT_URI = "http://127.0.0.1:8888/callback"
+
+
+def _is_invalid_grant(exc: SpotifyOauthError) -> bool:
+    """True se Spotify recusou o refresh token como expirado/revogado."""
+    error = getattr(exc, "error", None)
+    if error == "invalid_grant":
+        return True
+    return "invalid_grant" in str(exc)
+
+
+def _reauth_message() -> str:
+    return (
+        "Spotify refresh token expirou ou foi revogado (invalid_grant). "
+        "Gera um novo token com `uv run python scripts/bootstrap_refresh_token.py`, "
+        "actualiza SPOTIFY_REFRESH_TOKEN no .env e no GitHub Secrets "
+        "(`gh secret set SPOTIFY_REFRESH_TOKEN`)."
+    )
+
+
+class SpotifyReauthRequired(RuntimeError):
+    """Refresh token expirou/revogado; é preciso authorization code flow."""
 
 
 class SpotifyClient:
@@ -91,8 +115,16 @@ class SpotifyClient:
             cache_handler=MemoryCacheHandler(),
         )
 
-        # Usa o refresh_token guardado em settings para obter um novo access_token
-        token_info = auth_manager.refresh_access_token(settings.spotify_refresh_token)
+        # Usa o refresh_token guardado em settings para obter um novo access_token.
+        # A Spotify anunciou expiração de refresh tokens após 6 meses; quando
+        # isso acontece o token endpoint devolve invalid_grant. Não fazemos
+        # retry: o utilizador tem de reautorizar e substituir o secret.
+        try:
+            token_info = auth_manager.refresh_access_token(settings.spotify_refresh_token)
+        except SpotifyOauthError as exc:
+            if _is_invalid_grant(exc):
+                raise SpotifyReauthRequired(_reauth_message()) from exc
+            raise
         access_token = token_info["access_token"]
 
         # Cria o cliente Spotify com o access_token

@@ -36,7 +36,7 @@ from peel.matcher import normalize
 from peel.report import generate_weekly_report
 from peel.scoring import SourceScore, build_source_scores
 from peel.site_export import export_site, make_album_resolver
-from peel.spotify_client import SpotifyClient
+from peel.spotify_client import SpotifyClient, SpotifyReauthRequired
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -108,7 +108,10 @@ def run_command(
     ] = False,
 ) -> None:
     """Executa a pipeline semanal do Peel (use --dry-run para pré-visualizar sem impacto)."""
-    run_pipeline(dry_run=dry_run)
+    try:
+        run_pipeline(dry_run=dry_run)
+    except SpotifyReauthRequired as exc:
+        _abort_spotify_reauth(exc)
 
 
 @app.command("finalize")
@@ -129,7 +132,10 @@ def finalize(
     try:
         db.init_schema()
         keepers = db.week_keeper_uris(target_week)
-        sp = SpotifyClient()
+        try:
+            sp = SpotifyClient()
+        except SpotifyReauthRequired as exc:
+            _abort_spotify_reauth(exc)
         sp.replace_playlist_items(settings.peel_playlist_id, keepers)
         console.print(
             f"Finalized {target_week}: {len(keepers)} keepers → {settings.peel_playlist_id}"
@@ -415,7 +421,10 @@ def playlist_fill_week(
         console.print(f"Dry run: {len(rows)} tracks; playlist not changed.")
         return
 
-    client = SpotifyClient()
+    try:
+        client = SpotifyClient()
+    except SpotifyReauthRequired as exc:
+        _abort_spotify_reauth(exc)
     client.replace_playlist_items(playlist_id, [row[0] for row in rows])
     console.print(f"Playlist filled: {playlist_id} ({len(rows)} tracks).")
 
@@ -444,6 +453,8 @@ def site_export(
     if resolve_albums:
         try:
             album_resolver = make_album_resolver(SpotifyClient())
+        except SpotifyReauthRequired as exc:
+            _abort_spotify_reauth(exc)
         except Exception as exc:  # noqa: BLE001 - sem Spotify, álbuns ficam com link editorial
             console.print(f"[yellow]Spotify indisponível; álbuns sem link Spotify: {exc}[/yellow]")
 
@@ -497,7 +508,10 @@ def affinity_backfill_genres(
                 console.print(f"- {artist}")
             return
 
-        client = SpotifyClient()
+        try:
+            client = SpotifyClient()
+        except SpotifyReauthRequired as exc:
+            _abort_spotify_reauth(exc)
         updated = 0
         failed = 0
         for index, artist in enumerate(artists, start=1):
@@ -829,6 +843,12 @@ def _resolve_path(value: str) -> Path:
     if path.is_absolute():
         return path
     return PROJECT_ROOT / path
+
+
+def _abort_spotify_reauth(exc: SpotifyReauthRequired) -> None:
+    console.print("[red]Spotify reauthorization required.[/red]")
+    console.print(str(exc))
+    raise typer.Exit(code=1)
 
 
 def _scalar(conn: sqlite3.Connection, query: str, params: tuple[object, ...] = ()) -> int:

@@ -40,6 +40,14 @@ Sem algoritmos, sem bolhas — apenas bom gosto humano, entregue.
    # Copia-o para o .env como SPOTIFY_REFRESH_TOKEN
    ```
 
+   Os refresh tokens Spotify expiram após 6 meses. Quando renovares:
+   ```bash
+   uv run python scripts/bootstrap_refresh_token.py
+   gh secret set SPOTIFY_REFRESH_TOKEN
+   ```
+   Se uma run falhar com `invalid_grant`, substitui o token em `.env` e no
+   GitHub Secrets; não faças retry com o token antigo.
+
 4. **Cria a playlist alvo:**
    - No Spotify, cria uma playlist privada chamada "Peel"
    - Copia o ID da playlist (vê na URL: `spotify.com/playlist/{ID}`) para .env como PEEL_PLAYLIST_ID
