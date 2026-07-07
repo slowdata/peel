@@ -50,6 +50,20 @@ def _insert_week_track(
     db.conn.commit()
 
 
+class TestSelectArtistSearchResult:
+    def test_exact_normalized_match(self) -> None:
+        result = {"artists": {"items": [{"name": "Cécile McLorin Salvant", "genres": []}]}}
+
+        item = cli._select_artist_search_result("Cecile McLorin Salvant", result)
+
+        assert item == {"name": "Cécile McLorin Salvant", "genres": []}
+
+    def test_no_exact_match_returns_none(self) -> None:
+        result = {"artists": {"items": [{"name": "Drake", "genres": ["rap"]}]}}
+
+        assert cli._select_artist_search_result("Drake Sexyy Red", result) is None
+
+
 class TestCliRun:
     def test_run_command_calls_pipeline(self, monkeypatch) -> None:
         mock_run = MagicMock()

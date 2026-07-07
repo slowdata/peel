@@ -518,10 +518,20 @@ def affinity_backfill_genres(
             try:
                 result = client.sp.search(q=f'artist:"{artist}"', type="artist", limit=5)
                 item = _select_artist_search_result(artist, result)
-                genres = (item.get("genres") or []) if item else []
+                if item is None:
+                    failed += 1
+                    console.print(
+                        f"[yellow][{index}/{len(artists)}] {artist}: no exact match[/yellow]"
+                    )
+                    continue
+                genres = item.get("genres") or []
+                if not genres:
+                    failed += 1
+                    console.print(f"[yellow][{index}/{len(artists)}] {artist}: no genres[/yellow]")
+                    continue
                 db.upsert_artist_genres(artist, [str(genre) for genre in genres])
                 updated += 1
-                console.print(f"[{index}/{len(artists)}] {artist}: {', '.join(genres) or '—'}")
+                console.print(f"[{index}/{len(artists)}] {artist}: {', '.join(genres)}")
             except Exception as exc:  # noqa: BLE001 - backfill best-effort
                 failed += 1
                 console.print(f"[red][{index}/{len(artists)}] {artist}: {exc}[/red]")
@@ -533,7 +543,12 @@ def affinity_backfill_genres(
 
 
 def _select_artist_search_result(artist: str, result: dict) -> dict | None:
-    """Escolhe o melhor artist result sem fuzzy externo."""
+    """Escolhe resultado só quando há match exacto normalizado.
+
+    Backfill de géneros deve ser conservador: se a query por artista composto
+    (`Drake Sexyy Red`, `Cobrah & Grimes`) devolver um artista individual como
+    primeiro resultado, guardar esses géneros polui a cache.
+    """
     items = ((result.get("artists") or {}).get("items") or []) if result else []
     if not items:
         return None
@@ -541,7 +556,7 @@ def _select_artist_search_result(artist: str, result: dict) -> dict | None:
     for item in items:
         if normalize(str(item.get("name", ""))) == target:
             return item
-    return items[0]
+    return None
 
 
 @sync_app.command("status")
