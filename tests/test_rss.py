@@ -8,6 +8,7 @@ from peel.sources.rss import (
     AquariumDrunkard,
     GorillaVsBear,
     GuardianMusicAlbums,
+    KexpInOurHeadphones,
     LineOfBestFitNews,
     NprNewMusicFridayStarting5,
     PitchforkBestAlbums,
@@ -36,6 +37,10 @@ class TestSourceKind:
 
     def test_lineofbestfit_news_kind_is_track(self) -> None:
         source = LineOfBestFitNews()
+        assert source.kind == "track"
+
+    def test_kexp_in_our_headphones_kind_is_track(self) -> None:
+        source = KexpInOurHeadphones()
         assert source.kind == "track"
 
     def test_stereogum_new_music_kind_is_track(self) -> None:
@@ -808,6 +813,106 @@ class TestLineOfBestFitNewsExtractArtistTitle:
         source = LineOfBestFitNews()
         result = source._extract_artist_title(
             {"title": "Baby Rose wears her heart on her sleeve on YEARNALISM"}
+        )
+        assert result is None
+
+
+class TestKexpInOurHeadphonesExtractArtistTitle:
+    def test_direct_episode_title_with_quoted_track(self) -> None:
+        source = KexpInOurHeadphones()
+        result = source._extract_artist_title(
+            {
+                "title": "Faerie Born on Magical Sprites and Deadbeat Beat’s “Peach Sprite”",
+                "summary": "The song comes from the band’s recent album.",
+            }
+        )
+        assert result == ("Deadbeat Beat", "Peach Sprite")
+
+    def test_episode_title_artist_and_description_track(self) -> None:
+        source = KexpInOurHeadphones()
+        result = source._extract_artist_title(
+            {
+                "title": "DJ Kevin Sur on the Powerful Unpredictability of UK Band Modern Woman",
+                "summary": (
+                    "Kevin brings in a new song from the UK Band Modern Woman. "
+                    "“Dashboard Mary” comes from Modern Woman’s latest album."
+                ),
+            }
+        )
+        assert result == ("Modern Woman", "Dashboard Mary")
+
+    def test_episode_title_of_artist(self) -> None:
+        source = KexpInOurHeadphones()
+        result = source._extract_artist_title(
+            {
+                "title": "Ripley Johnson on the Jazz Magic of The MerKaBa Brotherhood",
+                "summary": (
+                    "He brings some new music from his hometown of Portland with the "
+                    "psychedelic jazz of The MerKaBa Brotherhood. “Obelisks (Sun Clocks)” "
+                    "comes from The MerKaBa Brotherhood’s latest album."
+                ),
+            }
+        )
+        assert result == ("The MerKaBa Brotherhood", "Obelisks (Sun Clocks)")
+
+    def test_legacy_song_of_the_day_format(self) -> None:
+        source = KexpInOurHeadphones()
+        result = source._extract_artist_title(
+            {
+                "title": "Song of the Day",
+                "summary": (
+                    "Today's Song of the Day, as chosen by DJ Morgan, is “Asking” "
+                    "by Chalk, from the 2023 Conditions EP."
+                ),
+            }
+        )
+        assert result == ("Chalk", "Asking")
+
+    def test_legacy_hyphen_title_format(self) -> None:
+        source = KexpInOurHeadphones()
+        result = source._extract_artist_title(
+            {"title": "Carter Tanton - Steep Angles On The Back Wheels", "summary": ""}
+        )
+        assert result == ("Carter Tanton", "Steep Angles On The Back Wheels")
+
+    def test_possessive_recommendation_artist_beats_host_band(self) -> None:
+        source = KexpInOurHeadphones()
+        result = source._extract_artist_title(
+            {
+                "title": "Seattle Band Black Whales on Deary’s Dreaminess",
+                "summary": "Black Whales share the song “Seabird” from Deary’s latest album.",
+            }
+        )
+        assert result == ("Deary", "Seabird")
+
+    def test_end_descriptor_artist_is_cleaned(self) -> None:
+        source = KexpInOurHeadphones()
+        result = source._extract_artist_title(
+            {
+                "title": (
+                    "KEXP DJ Sharlese on World Goth Day and Oakland Post-Punks Sympathy Flowers"
+                ),
+                "summary": "Sharlese shares the song “Sworn to Silence” from the band’s EP.",
+            }
+        )
+        assert result == ("Sympathy Flowers", "Sworn to Silence")
+
+    def test_late_descriptor_beats_host_descriptor(self) -> None:
+        source = KexpInOurHeadphones()
+        result = source._extract_artist_title(
+            {
+                "title": (
+                    "Songwriter Liz Cooper on Getting Inspiration from New York Rapper Salimata"
+                ),
+                "summary": "Liz shares the song “Cake Up” from Salimata’s mixtape.",
+            }
+        )
+        assert result == ("Salimata", "Cake Up")
+
+    def test_no_track_title_is_ignored(self) -> None:
+        source = KexpInOurHeadphones()
+        result = source._extract_artist_title(
+            {"title": "DJ Kevin Sur on Youth Rock Band War Pigs", "summary": "No quote here."}
         )
         assert result is None
 

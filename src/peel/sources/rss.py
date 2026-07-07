@@ -37,6 +37,9 @@ class RSSSource(Source):
     request_headers: dict[str, str] | None = None
     """Headers HTTP opcionais (ex: User-Agent) para feeds que bloqueiam defaults."""
 
+    max_entries: int | None = None
+    """Limite opcional de entries a considerar em feeds grandes."""
+
     def __init__(self) -> None:
         """Inicializa a fonte (subclasses definem id, name, url)."""
         if not hasattr(self, "id") or not hasattr(self, "name"):
@@ -72,8 +75,12 @@ class RSSSource(Source):
                 error=str(feed.bozo_exception),
             )
 
+        entries = feed.entries
+        if self.max_entries is not None:
+            entries = entries[: self.max_entries]
+
         tracks = []
-        for entry in feed.entries:
+        for entry in entries:
             try:
                 track = self._parse_entry(entry)
                 if track:
@@ -91,6 +98,7 @@ class RSSSource(Source):
             "rss.fetched",
             source_id=self.id,
             total_entries=len(feed.entries),
+            considered_entries=len(entries),
             valid_tracks=len(tracks),
         )
 
@@ -704,6 +712,135 @@ class LineOfBestFitNews(RSSSource):
         return result
 
 
+class KexpInOurHeadphones(RSSSource):
+    """KEXP — In Our Headphones.
+
+    O antigo Song of the Day migrou para um podcast de descoberta no mesmo feed.
+    Cada episódio é curado por DJs/músicos e costuma destacar uma faixa concreta
+    dentro da descrição. A extraction é conservadora: exige um título de faixa
+    entre aspas e um artista recuperável do título do episódio ou da descrição.
+    """
+
+    id = "kexp_in_our_headphones"
+    name = "KEXP — In Our Headphones"
+    url = (
+        "https://www.omnycontent.com/d/playlist/"
+        "bad5d079-8dcb-4630-8770-aa090049131d/"
+        "32b2ac38-5a48-4300-9fa6-aa40002038b5/"
+        "4ac1c451-4315-4096-ab9b-aa40002038c4/podcast.rss"
+    )
+    max_entries = 50
+
+    def _extract_artist_title(self, entry: dict) -> tuple[str, str] | None:
+        episode_title = _clean_kexp_text(entry.get("title", ""))
+        body = _clean_kexp_text(entry.get("summary") or entry.get("description") or "")
+
+        direct = self._extract_direct_episode_title(episode_title)
+        if direct is not None:
+            return direct
+
+        legacy = self._extract_legacy_song_of_the_day(body)
+        if legacy is not None:
+            return legacy
+
+        hyphen = self._extract_hyphen_episode_title(episode_title)
+        if hyphen is not None:
+            return hyphen
+
+        track_title = self._extract_track_title(body)
+        artist = self._extract_artist_from_episode_title(episode_title) or self._extract_artist(
+            body
+        )
+        if artist and track_title:
+            return artist, track_title
+
+        return None
+
+    def _extract_direct_episode_title(self, title: str) -> tuple[str, str] | None:
+        match = re.search(r"(?P<artist>.+?)[\u2019']s\s+[\"\u201c](?P<track>[^\"\u201d]+)", title)
+        if match is None:
+            return None
+        artist_phrase = match.group("artist")
+        if " on " in artist_phrase and " and " in artist_phrase:
+            artist_phrase = artist_phrase.rsplit(" and ", maxsplit=1)[1]
+        artist = _clean_kexp_entity(artist_phrase)
+        track = _clean_kexp_entity(match.group("track"))
+        if artist and track:
+            return artist, track
+        return None
+
+    def _extract_hyphen_episode_title(self, title: str) -> tuple[str, str] | None:
+        match = re.match(r"(?P<artist>.+?)\s+-\s+(?P<track>.+)$", title)
+        if match is None:
+            return None
+        artist = _clean_kexp_entity(match.group("artist"))
+        track = _clean_kexp_entity(match.group("track"))
+        if artist and track:
+            return artist, track
+        return None
+
+    def _extract_legacy_song_of_the_day(self, body: str) -> tuple[str, str] | None:
+        match = re.search(
+            r"\bis\s+[\"\u201c](?P<track>[^\"\u201d]+)[\"\u201d]\s+by\s+"
+            r"(?P<artist>.+?)(?:,|\s+from\b|\.)",
+            body,
+            flags=re.IGNORECASE,
+        )
+        if match is None:
+            return None
+        artist = _clean_kexp_entity(match.group("artist"))
+        track = _clean_kexp_entity(match.group("track"))
+        if artist and track:
+            return artist, track
+        return None
+
+    def _extract_track_title(self, body: str) -> str | None:
+        patterns = [
+            r"(?:song|track)\s+[\"\u201c](?P<track>[^\"\u201d]+)[\"\u201d]",
+            r"[\"\u201c](?P<track>[^\"\u201d]+)[\"\u201d]\s+(?:comes|is)\s+from\b",
+            r"the\s+stunning\s+[\"\u201c](?P<track>[^\"\u201d]+)[\"\u201d]",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, body, flags=re.IGNORECASE)
+            if match is None:
+                continue
+            track = _clean_kexp_entity(match.group("track"))
+            if track and track.lower() not in {"in our headphones", "what's in our headphones"}:
+                return track
+        return None
+
+    def _extract_artist_from_episode_title(self, title: str) -> str | None:
+        descriptor = (
+            r"(?:Post[- ]Punks?|Darkwave Band|Punks?|Band|Group|Rapper|Artist|"
+            r"Musician|Singer|Songwriter)"
+        )
+        patterns = [
+            r"\bof\s+(?P<artist>.+)$",
+            r"\band\s+(?P<artist>[A-Z][A-Za-z0-9& .'-]+?)[\u2019']s\b",
+            r"\bon\s+(?P<artist>[A-Z][A-Za-z0-9& .'-]+?)[\u2019']s\b",
+            rf"\b{descriptor}\s+(?P<artist>(?:(?!\bon\b).)+)$",
+            r"\bBand\s+(?P<artist>.+?)\s+and\b",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, title)
+            if match is None:
+                continue
+            artist = _clean_kexp_episode_artist(match.group("artist"))
+            if artist:
+                return artist
+        return None
+
+    def _extract_artist(self, body: str) -> str | None:
+        match = re.search(
+            r"\b(?:new\s+)?(?:track|song|music)\s+from\s+(.+?)(?:\.|,|\s+and\b)",
+            body,
+            flags=re.IGNORECASE,
+        )
+        if match is None:
+            return None
+        return _clean_kexp_artist_phrase(match.group(1))
+
+
 # User-Agent de browser usado por feeds que bloqueiam defaults (ex: Quietus/Cloudflare)
 _BROWSER_UA = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -714,6 +851,42 @@ _BROWSER_UA = (
 def _strip_html_tags(s: str) -> str:
     """Remove tags HTML simples (ex: <i>, <b>, <em>) de um título."""
     return re.sub(r"<[^>]+>", "", s)
+
+
+def _clean_kexp_text(value: str) -> str:
+    text = _strip_html_tags(unescape(value))
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _clean_kexp_entity(value: str) -> str:
+    return value.strip().strip("\"'\u2018\u2019\u201c\u201d .,:;-").strip()
+
+
+def _clean_kexp_artist_phrase(value: str) -> str | None:
+    text = _clean_kexp_entity(value)
+    text = re.sub(r"^the\s+", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^\([^)]*\)\s+", "", text).strip()
+    return _clean_kexp_episode_artist(text)
+
+
+def _clean_kexp_episode_artist(value: str) -> str | None:
+    text = _clean_kexp_entity(value)
+    prefixes = [
+        r"(?:Bay Area|Oakland|Dutch|New York|Seattle|Los Angeles|LA|L\.A\.|UK|"
+        r"British|Australian|Australia[\u2019']s|Chicago|Detroit)",
+        r"(?:post[- ]punks?|post[- ]punk|darkwave|punks?|punk|rapper|band|"
+        r"group|duo|artist|musician|singer|songwriter)",
+    ]
+    changed = True
+    while changed:
+        changed = False
+        for prefix in prefixes:
+            new_text = re.sub(rf"^{prefix}\s+", "", text, flags=re.IGNORECASE).strip()
+            if new_text != text:
+                text = new_text
+                changed = True
+    return _clean_kexp_entity(text) or None
 
 
 def _clean_quietus_chart_text(value: str) -> str:

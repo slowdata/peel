@@ -143,7 +143,7 @@ PEEL_MAX_SOURCE_ITEM_AGE_DAYS=30
 
 Só sources `kind = "track"` podem entrar na playlist. Sources `album`, `context`, `podcast`, `scrape` ou `manual_spotify` ficam fora da playlist automática. Items publicados há mais de `PEEL_MAX_SOURCE_ITEM_AGE_DAYS` dias são ignorados quando a source expõe data.
 
-Fontes `album` activas incluem Guardian album reviews e The Quietus album reviews. Entram em `Albums / Context`, relatório e Telegram, mas não vão para Spotify matching/playlist. NPR New Music Friday — The Starting 5 é fonte `track`: entra no matching/playlist como cinco novidades semanais.
+Fontes `album` activas incluem Guardian album reviews e The Quietus album reviews. Entram em `Albums / Context`, relatório e Telegram, mas não vão para Spotify matching/playlist. NPR New Music Friday — The Starting 5 e KEXP — In Our Headphones são fontes `track`: entram no matching/playlist como novidades curadas.
 
 `tracks_found` é calculado a partir dos dados persistidos: matches + unmatched. O comando também mostra telemetria real de `source_runs` (`Runs`, `Fetched/Fresh`, `Proc`, `Stale/Cap/Err`) para distinguir qualidade de fonte, backlog, caps e falhas.
 
@@ -169,7 +169,7 @@ uv run peel sync push
 
 ### Roadmap (v2+)
 
-- [ ] Mais fontes: BBC 6 Music Recommends, KEXP, NTS Radio scraping
+- [ ] Mais fontes: BBC 6 Music Recommends, NTS Radio scraping
 - [ ] Configuração de fontes dinâmica (via `config.yml`, não hardcoded)
 - [ ] Web UI para gérir playlists / fontes
 - [ ] Notificações (email / Discord) com resumo semanal
