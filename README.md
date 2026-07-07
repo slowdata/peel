@@ -131,6 +131,7 @@ weekly automática; usa-se para auditoria de cobertura e afinidade futura:
 ```bash
 uv run peel radar snapshot --week 2026-W28
 uv run peel radar snapshot --week 2026-W28 --no-write
+uv run peel radar liked --week 2026-W28
 uv run peel radar compare --week 2026-W28
 ```
 

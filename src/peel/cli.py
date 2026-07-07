@@ -476,6 +476,50 @@ def radar_snapshot(
     console.print(f"Snapshot written: {path} ({len(tracks)} tracks).")
 
 
+@radar_app.command("liked")
+def radar_liked(
+    week: Annotated[str | None, typer.Option("--week", help="Semana ISO")] = None,
+    snapshot: Annotated[
+        Path | None,
+        typer.Option("--snapshot", help="Snapshot JSON; default data/radar/<week>.json"),
+    ] = None,
+    show_all: Annotated[
+        bool,
+        typer.Option("--all", help="Mostra também tracks ainda não guardadas nos Liked Songs"),
+    ] = False,
+) -> None:
+    """Mostra tracks da Release Radar guardadas nos Spotify Liked Songs."""
+    target_week = _normalize_week_option(week) if week else iso_week(datetime.now(UTC))
+    tracks = _load_release_radar_snapshot(target_week, snapshot)
+
+    try:
+        client = SpotifyClient()
+    except SpotifyReauthRequired as exc:
+        _abort_spotify_reauth(exc)
+
+    saved = _spotify_saved_status(client, tracks)
+    liked_count = sum(saved)
+
+    table = Table(title=f"Release Radar liked {target_week}")
+    table.add_column("#", justify="right")
+    table.add_column("Liked")
+    table.add_column("Artist", style="bold")
+    table.add_column("Title")
+    table.add_column("URI")
+    for track, is_saved in zip(tracks, saved, strict=True):
+        if not show_all and not is_saved:
+            continue
+        table.add_row(
+            str(track.position),
+            "yes" if is_saved else "",
+            track.artist,
+            track.title,
+            track.spotify_uri,
+        )
+    console.print(table)
+    console.print(f"Liked in Spotify: {liked_count}/{len(tracks)}")
+
+
 @radar_app.command("compare")
 def radar_compare(
     week: Annotated[str | None, typer.Option("--week", help="Semana ISO")] = None,
@@ -486,20 +530,7 @@ def radar_compare(
 ) -> None:
     """Compara uma snapshot Release Radar com tracks conhecidas no Peel."""
     target_week = _normalize_week_option(week) if week else iso_week(datetime.now(UTC))
-    path = (
-        _resolve_path(str(snapshot))
-        if snapshot
-        else PROJECT_ROOT / "data" / "radar" / f"{target_week}.json"
-    )
-    if not path.exists():
-        console.print(f"[red]Snapshot não existe:[/red] {path}")
-        raise typer.Exit(code=1)
-
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    tracks = tracks_from_snapshot(payload)
-    if not tracks:
-        console.print(f"[red]Snapshot sem tracks válidas:[/red] {path}")
-        raise typer.Exit(code=1)
+    tracks = _load_release_radar_snapshot(target_week, snapshot)
 
     db = DB(str(_resolve_path(settings.db_path)))
     try:
@@ -1176,6 +1207,38 @@ def _save_feedback(
     comment: str | None,
 ) -> None:
     db.upsert_feedback(spotify_uri, rating, comment)
+
+
+def _load_release_radar_snapshot(
+    week: str,
+    snapshot: Path | None = None,
+) -> list[ReleaseRadarTrack]:
+    path = (
+        _resolve_path(str(snapshot))
+        if snapshot
+        else PROJECT_ROOT / "data" / "radar" / f"{week}.json"
+    )
+    if not path.exists():
+        console.print(f"[red]Snapshot não existe:[/red] {path}")
+        raise typer.Exit(code=1)
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    tracks = tracks_from_snapshot(payload)
+    if not tracks:
+        console.print(f"[red]Snapshot sem tracks válidas:[/red] {path}")
+        raise typer.Exit(code=1)
+    return tracks
+
+
+def _spotify_saved_status(
+    client: SpotifyClient,
+    tracks: list[ReleaseRadarTrack],
+) -> list[bool]:
+    uris = [track.spotify_uri for track in tracks]
+    saved: list[bool] = []
+    for index in range(0, len(uris), 50):
+        saved.extend(client.sp.current_user_saved_tracks_contains(uris[index : index + 50]))
+    return saved
 
 
 def _print_release_radar_tracks(tracks: list[ReleaseRadarTrack], *, title: str) -> None:
