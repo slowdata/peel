@@ -123,6 +123,16 @@ uv run peel sources --weeks 4
 uv run peel sources --json
 ```
 
+### Affinity genre cache
+
+Affinity v1 uses local feedback first. Optional genre tags are cached locally and
+never fetched during the weekly run. Backfill explicitly, with dry-run first:
+
+```bash
+uv run peel affinity backfill-genres --dry-run --limit 50
+uv run peel affinity backfill-genres --source musicbrainz --limit 20 --sleep 1.5 --min-tag-count 2
+```
+
 ### Playlist safety caps
 
 ```bash

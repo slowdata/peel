@@ -33,6 +33,7 @@ from peel.db import DB, FEEDBACK_RATINGS, iso_week
 from peel.doctor_sources import inspect_registered_sources
 from peel.main import run as run_pipeline
 from peel.matcher import normalize
+from peel.musicbrainz import fetch_musicbrainz_artist_genres
 from peel.report import generate_weekly_report
 from peel.scoring import SourceScore, build_source_scores
 from peel.site_export import export_site, make_album_resolver
@@ -485,15 +486,27 @@ def affinity_backfill_genres(
     ] = 180,
     sleep_seconds: Annotated[
         float,
-        typer.Option("--sleep", min=0.0, help="Pausa entre chamadas Spotify"),
+        typer.Option("--sleep", min=0.0, help="Pausa entre chamadas externas"),
     ] = 1.0,
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Não chama Spotify")] = False,
+    source: Annotated[
+        str,
+        typer.Option("--source", help="Fonte externa: musicbrainz ou spotify"),
+    ] = "musicbrainz",
+    min_tag_count: Annotated[
+        int,
+        typer.Option("--min-tag-count", min=0, help="Count mínimo para tags MusicBrainz"),
+    ] = 1,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Não chama APIs externas")] = False,
 ) -> None:
     """Preenche a cache local artist_genres com throttle.
 
     Implementado para correr quando a rate limit acalmar; não é usado pela run
     semanal e nunca é chamado implicitamente.
     """
+    source_name = source.strip().lower()
+    if source_name not in {"musicbrainz", "spotify"}:
+        raise typer.BadParameter("--source must be 'musicbrainz' or 'spotify'")
+
     db = DB(str(_resolve_path(settings.db_path)))
     try:
         db.init_schema()
@@ -502,34 +515,39 @@ def affinity_backfill_genres(
             console.print("artist_genres já está fresco para os artistas conhecidos.")
             return
 
-        console.print(f"Artistas pendentes: {len(artists)}")
+        console.print(f"Artistas pendentes: {len(artists)} ({source_name})")
         if dry_run:
             for artist in artists:
                 console.print(f"- {artist}")
             return
 
-        try:
-            client = SpotifyClient()
-        except SpotifyReauthRequired as exc:
-            _abort_spotify_reauth(exc)
+        client: SpotifyClient | None = None
+        if source_name == "spotify":
+            try:
+                client = SpotifyClient()
+            except SpotifyReauthRequired as exc:
+                _abort_spotify_reauth(exc)
         updated = 0
         failed = 0
         for index, artist in enumerate(artists, start=1):
             try:
-                result = client.sp.search(q=f'artist:"{artist}"', type="artist", limit=5)
-                item = _select_artist_search_result(artist, result)
-                if item is None:
-                    failed += 1
-                    console.print(
-                        f"[yellow][{index}/{len(artists)}] {artist}: no exact match[/yellow]"
-                    )
-                    continue
-                genres = item.get("genres") or []
-                if not genres:
+                lookup = _lookup_artist_genres(
+                    artist,
+                    source_name=source_name,
+                    spotify_client=client,
+                    min_tag_count=min_tag_count,
+                )
+                if lookup is None:
                     failed += 1
                     console.print(f"[yellow][{index}/{len(artists)}] {artist}: no genres[/yellow]")
                     continue
-                db.upsert_artist_genres(artist, [str(genre) for genre in genres])
+                genres, external_id = lookup
+                db.upsert_artist_genres(
+                    artist,
+                    genres,
+                    source=source_name,
+                    external_id=external_id,
+                )
                 updated += 1
                 console.print(f"[{index}/{len(artists)}] {artist}: {', '.join(genres)}")
             except Exception as exc:  # noqa: BLE001 - backfill best-effort
@@ -540,6 +558,31 @@ def affinity_backfill_genres(
         console.print(f"artist_genres updated={updated} failed={failed}")
     finally:
         db.close()
+
+
+def _lookup_artist_genres(
+    artist: str,
+    *,
+    source_name: str,
+    spotify_client: SpotifyClient | None,
+    min_tag_count: int,
+) -> tuple[list[str], str | None] | None:
+    if source_name == "musicbrainz":
+        result = fetch_musicbrainz_artist_genres(artist, min_tag_count=min_tag_count)
+        if result is None:
+            return None
+        return list(result.genres), result.mbid
+
+    if spotify_client is None:
+        raise RuntimeError("spotify client required for spotify genre backfill")
+    result = spotify_client.sp.search(q=f'artist:"{artist}"', type="artist", limit=5)
+    item = _select_artist_search_result(artist, result)
+    if item is None:
+        return None
+    genres = [str(genre) for genre in (item.get("genres") or []) if str(genre).strip()]
+    if not genres:
+        return None
+    return genres, item.get("id")
 
 
 def _select_artist_search_result(artist: str, result: dict) -> dict | None:

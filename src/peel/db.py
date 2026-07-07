@@ -398,6 +398,8 @@ class DB:
 
         self._ensure_column("unmatched", "source_url", "TEXT")
         self._ensure_column("album_mentions", "spotify_album_uri", "TEXT")
+        self._ensure_column("artist_genres", "source", "TEXT")
+        self._ensure_column("artist_genres", "external_id", "TEXT")
         self._backfill_album_mentions()
 
     def _backfill_album_mentions(self) -> None:
@@ -950,6 +952,8 @@ class DB:
         artist: str,
         genres: list[str] | tuple[str, ...],
         fetched_at: str | None = None,
+        source: str | None = None,
+        external_id: str | None = None,
     ) -> None:
         """Guarda a cache local de géneros para um artista.
 
@@ -960,13 +964,21 @@ class DB:
         clean_genres = [str(genre).strip() for genre in genres if str(genre).strip()]
         self.conn.execute(
             """
-            INSERT INTO artist_genres (artist, genres, fetched_at)
-            VALUES (?, ?, ?)
+            INSERT INTO artist_genres (artist, genres, fetched_at, source, external_id)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(artist) DO UPDATE SET
                 genres = excluded.genres,
-                fetched_at = excluded.fetched_at
+                fetched_at = excluded.fetched_at,
+                source = excluded.source,
+                external_id = excluded.external_id
             """,
-            (artist, json.dumps(clean_genres, ensure_ascii=False), now),
+            (
+                artist,
+                json.dumps(clean_genres, ensure_ascii=False),
+                now,
+                source,
+                external_id,
+            ),
         )
         self.conn.commit()
 

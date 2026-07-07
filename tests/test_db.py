@@ -632,9 +632,19 @@ class TestArtistGenresCache:
         db = DB(str(tmp_path / "test.db"))
         try:
             db.init_schema()
-            db.upsert_artist_genres("IDLES", ["post-punk", "uk indie"])
+            db.upsert_artist_genres(
+                "IDLES",
+                ["post-punk", "uk indie"],
+                source="musicbrainz",
+                external_id="mbid-1",
+            )
 
             assert db.genres_for_artist("idles") == ["post-punk", "uk indie"]
+            row = db.conn.execute(
+                "SELECT source, external_id FROM artist_genres WHERE artist = ?",
+                ("IDLES",),
+            ).fetchone()
+            assert row == ("musicbrainz", "mbid-1")
         finally:
             db.close()
 

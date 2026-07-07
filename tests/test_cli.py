@@ -64,6 +64,43 @@ class TestSelectArtistSearchResult:
         assert cli._select_artist_search_result("Drake Sexyy Red", result) is None
 
 
+class TestLookupArtistGenres:
+    def test_musicbrainz_lookup(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            cli,
+            "fetch_musicbrainz_artist_genres",
+            lambda artist, **kwargs: SimpleNamespace(
+                genres=("post-punk", "art punk"),
+                mbid="mbid-1",
+            ),
+        )
+
+        result = cli._lookup_artist_genres(
+            "IDLES",
+            source_name="musicbrainz",
+            spotify_client=None,
+            min_tag_count=2,
+        )
+
+        assert result == (["post-punk", "art punk"], "mbid-1")
+
+    def test_spotify_lookup_reuses_exact_match_guard(self) -> None:
+        spotify = SimpleNamespace(
+            sp=SimpleNamespace(
+                search=lambda **_: {"artists": {"items": [{"name": "Drake", "genres": ["rap"]}]}}
+            )
+        )
+
+        result = cli._lookup_artist_genres(
+            "Drake Sexyy Red",
+            source_name="spotify",
+            spotify_client=spotify,
+            min_tag_count=1,
+        )
+
+        assert result is None
+
+
 class TestCliRun:
     def test_run_command_calls_pipeline(self, monkeypatch) -> None:
         mock_run = MagicMock()
