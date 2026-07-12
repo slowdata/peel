@@ -34,7 +34,7 @@ from peel.scoring import SourceScore, build_source_scores
 from peel.site_export import make_album_resolver, spotify_album_search_url
 from peel.sources.registry import active_sources
 from peel.spotify_client import SpotifyClient
-from peel.telegram import AlbumPickItem, DigestItem, send_digest
+from peel.telegram import AlbumPickItem, DigestItem, TriageItem, send_digest
 
 # Setup de logging estruturado (JSON para GitHub Actions)
 structlog.configure(
@@ -112,8 +112,10 @@ def run(dry_run: bool = False) -> None:
     tracks_unmatched = 0
     albums_added = 0
 
-    # Digest semanal: tracks, álbuns e escutas externas novas (para Telegram)
+    # Tracks novas da run servem para o cap/retry; Telegram usa a triagem efectiva.
     new_track_entries: list[DigestItem] = []  # (source_id, artist, title, url)
+    new_track_uris: list[str] = []
+    triage_entries: list[TriageItem] = []
     new_album_entries: list[DigestItem] = []  # (source_id, artist, album, url)
     external_entries: list[DigestItem] = []  # unmatched com URL para ouvir fora do Spotify
     album_recommendations: list[AlbumRecommendation] = []
@@ -150,6 +152,7 @@ def run(dry_run: bool = False) -> None:
             db,
             sp,
             new_track_entries,
+            new_track_uris=new_track_uris,
             max_new_tracks=settings.peel_max_tracks_per_run,
             banned_track_keys=banned_track_keys,
         )
@@ -361,6 +364,7 @@ def run(dry_run: bool = False) -> None:
 
                             tracks_added += 1
                             source_stats.new_unique_count += 1
+                            new_track_uris.append(uri)
                             new_track_entries.append(
                                 (source.id, track.artist, track.title, track.source_url)
                             )
@@ -412,10 +416,10 @@ def run(dry_run: bool = False) -> None:
         if pruned:
             log.info("unmatched.pruned", count=pruned, max_age_days=settings.unmatched_retry_days)
 
-        # 3. Rotação. Com playlist de TRIAGEM definida, escrevemos lá as candidatas
-        #    da SEMANA ATUAL (para ouvir e avaliar). A playlist final ("Weekly") é
-        #    construída depois, à mão, por `peel finalize` a partir dos keepers.
-        #    Sem triagem → comportamento antigo (janela na playlist principal).
+        # 3. Rotação. A triagem é a fila efectiva para ouvir: todas as tracks
+        #    novas desta run entram primeiro; pendentes sem feedback só ocupam
+        #    vagas livres. A playlist final ("Weekly") é construída depois por
+        #    `peel finalize` a partir dos keepers.
         current_week = iso_week(datetime.now(UTC))
         review_id = settings.peel_review_playlist_id
         target_playlist = review_id or settings.peel_playlist_id
@@ -437,7 +441,7 @@ def run(dry_run: bool = False) -> None:
             log.exception("playlist.ranking_failed", error=str(e))
             window_uris = db.tracks_in_window(current_week, rotation_weeks)
 
-        if review_id and settings.peel_review_exploration_slots:
+        if review_id:
             try:
                 current_week_uris = db.ranked_tracks_in_window(
                     current_week,
@@ -445,22 +449,27 @@ def run(dry_run: bool = False) -> None:
                     source_quality,
                     affinity_profile.score,
                 )
-                source_ids_by_uri = db.source_ids_for_uris(current_week_uris, week=current_week)
-                source_ids = {source_id for ids in source_ids_by_uri.values() for source_id in ids}
-                window_uris = reserve_exploration_slots(
+                window_uris = select_review_playlist_uris(
                     window_uris,
                     current_week_uris,
-                    source_ids_by_uri,
-                    source_scores,
-                    db.source_run_counts(source_ids),
+                    new_track_uris,
+                    db.feedback_for_track,
                     limit=settings.peel_max_tracks_per_run,
-                    slots=settings.peel_review_exploration_slots,
-                    min_ratings=settings.peel_review_exploration_min_ratings,
-                    max_runs=settings.peel_review_exploration_max_runs,
                 )
             except Exception as e:
-                log.exception("playlist.exploration_ranking_failed", error=str(e))
-        window_uris = window_uris[: settings.peel_max_tracks_per_run]
+                log.exception("playlist.triage_selection_failed", error=str(e))
+                window_uris = window_uris[: settings.peel_max_tracks_per_run]
+        else:
+            window_uris = window_uris[: settings.peel_max_tracks_per_run]
+
+        triage_entries = _triage_digest_items(
+            db,
+            window_uris,
+            set(new_track_uris),
+            current_week,
+            source_quality,
+            affinity_profile,
+        )
         try:
             album_recommendations = top_album_recommendations(
                 db,
@@ -504,16 +513,7 @@ def run(dry_run: bool = False) -> None:
         #    send_digest tem a sua própria protecção contra HTTP errors.
         try:
             send_digest(
-                _with_digest_metadata(
-                    db,
-                    _sort_track_digest_entries(
-                        db,
-                        new_track_entries,
-                        source_quality,
-                        affinity_profile,
-                    ),
-                    affinity_profile,
-                ),
+                triage_entries,
                 new_album_entries,
                 # Link para a TRIAGEM (o que há para ouvir/avaliar esta semana);
                 # cai na playlist principal se não houver triagem definida.
@@ -594,59 +594,41 @@ def _load_banned_track_keys(db: DB) -> set[tuple[str, str]]:
         return set()
 
 
-def reserve_exploration_slots(
+def select_review_playlist_uris(
     ranked_uris: list[str],
     current_week_uris: list[str],
-    source_ids_by_uri: dict[str, set[str]],
-    scores: list[SourceScore],
-    source_run_counts: dict[str, int],
+    new_track_uris: list[str],
+    feedback_for_track: Callable[[str], object | None],
     *,
     limit: int,
-    slots: int,
-    min_ratings: int,
-    max_runs: int,
 ) -> list[str]:
-    """Reserva lugares da triagem para fontes novas sem feedback suficiente.
+    """Constrói a fila de triagem: novas primeiro, pendentes só como fill.
 
-    A ranking principal mantém-se para a maioria da playlist. A reserva só usa
-    tracks da semana actual e assegura que fontes novas podem ser ouvidas antes
-    de uma source estabelecida, com muito histórico positivo, ocupar todos os
-    lugares. Não filtra tracks: aplica-se apenas à ordem/cap da triagem.
+    Todas as tracks novas desta run entram antes de qualquer faixa anterior.
+    Como a própria ingestão aplica ``PEEL_MAX_TRACKS_PER_RUN``, o limite da
+    triagem nunca deve cortar novidades. As vagas restantes são preenchidas com
+    tracks sem feedback das semanas anteriores, pela ranking normal.
     """
     if limit <= 0:
         return []
-    if slots <= 0:
-        return ranked_uris[:limit]
 
-    scores_by_source = {score.source_id: score for score in scores}
-    source_ids = {source_id for ids in source_ids_by_uri.values() for source_id in ids}
-    exploration_sources = {
-        source_id
-        for source_id in source_ids
-        if (
-            source_id not in scores_by_source
-            or (
-                scores_by_source[source_id].rating_count < min_ratings
-                and source_run_counts.get(source_id, 0) <= max_runs
-            )
-        )
-    }
-    exploration_uris = [
-        uri for uri in current_week_uris if source_ids_by_uri.get(uri, set()) & exploration_sources
+    new_uri_set = set(new_track_uris)
+    new_uris = list(dict.fromkeys(uri for uri in current_week_uris if uri in new_uri_set))
+    if len(new_uris) > limit:
+        log.warning("playlist.new_tracks_exceed_cap", new_tracks=len(new_uris), limit=limit)
+        return new_uris[:limit]
+
+    selected_set = set(new_uris)
+    pending_uris = [
+        uri for uri in ranked_uris if uri not in selected_set and feedback_for_track(uri) is None
     ]
-    selected = list(dict.fromkeys(exploration_uris))[: min(slots, limit)]
-    if not selected:
-        return ranked_uris[:limit]
-
-    selected_set = set(selected)
-    ranked_without_selected = [uri for uri in ranked_uris if uri not in selected_set]
-    result = ranked_without_selected[: limit - len(selected)] + selected
+    result = new_uris + pending_uris[: limit - len(new_uris)]
     log.info(
-        "playlist.exploration_slots_reserved",
-        slots_requested=slots,
-        slots_reserved=len(selected),
-        source_ids=sorted(exploration_sources),
-        uris=selected,
+        "playlist.triage_selected",
+        new_tracks=len(new_uris),
+        pending_tracks=len(result) - len(new_uris),
+        total=len(result),
+        uris=result,
     )
     return result
 
@@ -699,6 +681,54 @@ def _load_affinity_profile(db: DB) -> AffinityProfile:
     except Exception as e:
         log.exception("affinity_profile.failed", error=str(e))
         return build_affinity_profile()
+
+
+def _triage_digest_items(
+    db: DB,
+    uris: list[str],
+    new_track_uris: set[str],
+    current_week: str,
+    source_quality: dict[str, tuple[float, float]],
+    affinity_profile: AffinityProfile,
+) -> list[TriageItem]:
+    """Converte a playlist efectiva em linhas Telegram com estado explícito."""
+    items: list[TriageItem] = []
+    for uri in uris:
+        rows = db.conn.execute(
+            """
+            SELECT artist, title, source_id, source_url, added_at_week
+            FROM tracks
+            WHERE spotify_uri = ?
+            """,
+            (uri,),
+        ).fetchall()
+        if not rows:
+            continue
+        best_artist, best_title, best_source, best_source_url, _ = min(
+            rows,
+            key=lambda row: (
+                -source_quality.get(str(row[2]), (0.0, 0.0))[0],
+                -source_quality.get(str(row[2]), (0.0, 0.0))[1],
+                str(row[2]),
+            ),
+        )
+        source_url = best_source_url or next((row[3] for row in rows if row[3]), None)
+        added_at_week = min(str(row[4]) for row in rows)
+        items.append(
+            TriageItem(
+                source_id=str(best_source),
+                artist=str(best_artist),
+                title=str(best_title),
+                spotify_uri=uri,
+                source_url=source_url,
+                source_count=_safe_source_count(db, str(best_artist), str(best_title)),
+                affinity=affinity_profile.score(str(best_artist)),
+                is_new=uri in new_track_uris,
+                added_at_week=added_at_week,
+                current_week=current_week,
+            )
+        )
+    return items
 
 
 def _sort_track_digest_entries(
@@ -854,6 +884,7 @@ def _retry_unmatched(
     db: DB,
     sp: SpotifyClient,
     new_track_entries: list[DigestItem],
+    new_track_uris: list[str] | None = None,
     max_new_tracks: int | None = None,
     banned_track_keys: set[tuple[str, str]] | None = None,
 ) -> tuple[int, int]:
@@ -945,6 +976,8 @@ def _retry_unmatched(
                 continue
 
             new_track_entries.append((source_id, artist, title, source_url))
+            if new_track_uris is not None:
+                new_track_uris.append(uri)
             matched += 1
             log.info(
                 "unmatched.retry_matched",

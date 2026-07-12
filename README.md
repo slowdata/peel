@@ -151,14 +151,11 @@ uv run peel affinity backfill-genres --source musicbrainz --limit 20 --sleep 1.5
 PEEL_MAX_TRACKS_PER_SOURCE=8
 PEEL_MAX_TRACKS_PER_RUN=40
 PEEL_MAX_SOURCE_ITEM_AGE_DAYS=30
-PEEL_REVIEW_EXPLORATION_SLOTS=6
-PEEL_REVIEW_EXPLORATION_MIN_RATINGS=5
-PEEL_REVIEW_EXPLORATION_MAX_RUNS=2
 ```
 
 Só sources `kind = "track"` podem entrar na playlist. Sources `album`, `context`, `podcast`, `scrape` ou `manual_spotify` ficam fora da playlist automática. Items publicados há mais de `PEEL_MAX_SOURCE_ITEM_AGE_DAYS` dias são ignorados quando a source expõe data.
 
-Na playlist de triagem, `PEEL_REVIEW_EXPLORATION_SLOTS` reserva vagas para tracks da semana actual de sources com menos de `PEEL_REVIEW_EXPLORATION_MIN_RATINGS` avaliações e no máximo `PEEL_REVIEW_EXPLORATION_MAX_RUNS` runs. Assim fontes novas são ouvidas antes de o ranking histórico ter dados para as avaliar. Definir slots a `0` desliga a reserva.
+A playlist de triagem é a fila real para ouvir: todas as tracks novas da run entram primeiro. Só se faltarem lugares até ao cap entram tracks pendentes, sem feedback, das semanas anteriores. O Telegram espelha a triagem efectiva e identifica cada faixa como `🆕 nova` ou `↻ pendente`.
 
 Fontes `album` activas incluem Guardian album reviews e The Quietus album reviews. Entram em `Albums / Context`, relatório e Telegram, mas não vão para Spotify matching/playlist. NPR New Music Friday — The Starting 5 e KEXP — In Our Headphones são fontes `track`: entram no matching/playlist como novidades curadas.
 

@@ -4,7 +4,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from peel.telegram import MAX_MESSAGE_LENGTH, _format_message, _split_message, send_digest
+from peel.telegram import (
+    MAX_MESSAGE_LENGTH,
+    TriageItem,
+    _format_message,
+    _split_message,
+    send_digest,
+)
 
 
 class TestFormatMessage:
@@ -30,6 +36,67 @@ class TestFormatMessage:
         assert "(Source B)" in msg
         assert "spotify:playlist:test123" in msg
         assert '<a href="http://example.com/album">' in msg
+
+    def test_format_message_mirrors_triage_with_new_and_pending_states(self) -> None:
+        tracks = [
+            TriageItem(
+                source_id="kexp_in_our_headphones",
+                artist="New Artist",
+                title="New Track",
+                spotify_uri="spotify:track:new",
+                source_url="https://kexp.example/new",
+                source_count=1,
+                affinity=0.5,
+                is_new=True,
+                added_at_week="2026-W28",
+                current_week="2026-W28",
+            ),
+            TriageItem(
+                source_id="stereogum_new_music",
+                artist="Pending Artist",
+                title="Pending Track",
+                spotify_uri="spotify:track:pending",
+                source_url=None,
+                source_count=2,
+                affinity=0.9,
+                is_new=False,
+                added_at_week="2026-W27",
+                current_week="2026-W28",
+            ),
+        ]
+
+        msg = _format_message(tracks, [], "triage123")
+
+        assert "🎧 Triagem actual (2)" in msg
+        assert "🆕 1 novas · ↻ 1 pendentes" in msg
+        assert "🆕 nova 2026-W28" in msg
+        assert "↻ pendente 2026-W27 ⭐ 🎯" in msg
+        assert 'href="https://open.spotify.com/track/new"' in msg
+        assert 'href="https://kexp.example/new">Review</a>' in msg
+        assert "... e mais" not in msg
+
+    def test_format_message_lists_every_triage_track(self) -> None:
+        tracks = [
+            TriageItem(
+                source_id="source",
+                artist=f"Artist {index}",
+                title=f"Track {index}",
+                spotify_uri=f"spotify:track:{index}",
+                source_url=None,
+                source_count=1,
+                affinity=0.5,
+                is_new=True,
+                added_at_week="2026-W28",
+                current_week="2026-W28",
+            )
+            for index in range(25)
+        ]
+
+        msg = _format_message(tracks, [], "triage123")
+
+        assert "Triagem actual (25)" in msg
+        assert "Track 24" in msg
+        assert "... e mais" not in msg
 
     def test_format_message_affinity_badge(self, monkeypatch) -> None:
         """Mostra 🎯 quando a afinidade passa o threshold."""

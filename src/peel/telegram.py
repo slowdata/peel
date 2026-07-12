@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from html import escape
 from urllib.parse import urlparse
 
@@ -18,6 +19,24 @@ API_BASE = "https://api.telegram.org"
 # Sem chunking, uma semana cheia (14 tracks + 15 álbuns + 7 picks + external)
 # pode exceder e falhar com HTTP 400, calado pelo except do send_digest.
 MAX_MESSAGE_LENGTH = 4096
+
+
+@dataclass(frozen=True, slots=True)
+class TriageItem:
+    """Faixa que está efectivamente na playlist de triagem."""
+
+    source_id: str
+    artist: str
+    title: str
+    spotify_uri: str
+    source_url: str | None
+    source_count: int
+    affinity: float
+    is_new: bool
+    added_at_week: str
+    current_week: str
+
+
 DigestItem = (
     tuple[str, str, str, str | None]
     | tuple[str, str, str, str | None, int]
@@ -32,7 +51,7 @@ AlbumPickParts = tuple[str, str, int, tuple[str, ...], str | None, str | None]
 
 
 def send_digest(
-    new_tracks: list[DigestItem],
+    new_tracks: list[DigestItem | TriageItem],
     new_albums: list[DigestItem],
     playlist_id: str,
     external_entries: list[DigestItem] | None = None,
@@ -44,7 +63,7 @@ def send_digest(
     Se HTTP falhar, loga exception mas NÃO levanta (digest é nice-to-have).
 
     Args:
-        new_tracks: Lista de (source_id, artist, title, url) das tracks novas
+        new_tracks: tracks novas (legado) ou a lista efectiva da triagem
         new_albums: Lista de (source_id, artist, album, url) dos álbuns novos
         playlist_id: ID da playlist Spotify
         external_entries: Items com link externo que não entraram no Spotify
@@ -135,7 +154,7 @@ def _split_message(text: str, max_len: int) -> list[str]:
 
 
 def _format_message(
-    new_tracks: list[DigestItem],
+    new_tracks: list[DigestItem | TriageItem],
     new_albums: list[DigestItem],
     playlist_id: str,
     external_entries: list[DigestItem] | None = None,
@@ -155,9 +174,19 @@ def _format_message(
     """
     lines = ["<b>🎵 Peel — Weekly Digest</b>", ""]
 
-    if new_tracks:
+    triage_tracks = [item for item in new_tracks if isinstance(item, TriageItem)]
+    if triage_tracks:
+        new_count = sum(item.is_new for item in triage_tracks)
+        pending_count = len(triage_tracks) - new_count
+        lines.append(f"<b>🎧 Triagem actual ({len(triage_tracks)})</b>")
+        lines.append(f"<i>🆕 {new_count} novas · ↻ {pending_count} pendentes</i>")
+        for item in triage_tracks:
+            lines.append(_format_triage_item(item))
+        lines.append("")
+    elif new_tracks:
         lines.append(f"<b>Novas tracks ({len(new_tracks)})</b>")
         for item in new_tracks[:20]:
+            assert not isinstance(item, TriageItem)
             lines.append(_format_digest_item(item))
         if len(new_tracks) > 20:
             lines.append(f"<i>... e mais {len(new_tracks) - 20}</i>")
@@ -253,6 +282,29 @@ def _unpack_item(item: DigestItem) -> tuple[str, str, str, str | None, int, floa
         return source_id, artist, title, url_, source_count, None
     source_id, artist, title, url_ = item
     return source_id, artist, title, url_, 1, None
+
+
+def _format_triage_item(item: TriageItem) -> str:
+    label = f"{escape(item.artist)} — {escape(item.title)}"
+    status = (
+        f"🆕 nova {escape(item.current_week)}"
+        if item.is_new
+        else f"↻ pendente {escape(item.added_at_week)}"
+    )
+    badges = []
+    if item.source_count > 1:
+        badges.append("⭐")
+    if item.affinity >= settings.affinity_badge_threshold:
+        badges.append("🎯")
+    badge_text = " ".join(badges)
+    prefix = f"• {status}" + (f" {badge_text}" if badge_text else "")
+    source_label = escape(_friendly(item.source_id))
+    if item.source_count > 1:
+        source_label = f"{source_label}, {item.source_count} fontes"
+    source = f" <i>({source_label})</i>"
+    track_url = item.spotify_uri.replace("spotify:track:", "https://open.spotify.com/track/")
+    review = _format_source_link(item.source_url, track_url)
+    return f'{prefix} <a href="{escape(track_url)}">{label}</a>{source}{review}'
 
 
 def _format_item(

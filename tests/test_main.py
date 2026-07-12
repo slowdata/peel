@@ -14,8 +14,8 @@ from peel.main import (
     _filter_fresh_source_items,
     _retry_unmatched,
     _sort_track_digest_entries,
-    reserve_exploration_slots,
     run,
+    select_review_playlist_uris,
     slots_for_source,
 )
 from peel.models import Track
@@ -852,70 +852,39 @@ class TestPlaylistSafetyCaps:
         assert mock_sp.replace_playlist_items.call_args.args[1] == ["spotify:track:1"]
 
 
-class TestExplorationSlots:
-    def test_reserves_current_week_tracks_from_unproven_sources(self) -> None:
-        result = reserve_exploration_slots(
-            ["legacy-a", "legacy-b", "legacy-c", "kexp-a", "kexp-b"],
-            ["kexp-a", "kexp-b", "legacy-a"],
-            {
-                "kexp-a": {"kexp"},
-                "kexp-b": {"kexp"},
-                "legacy-a": {"stereogum"},
-            },
-            [SourceScore(source_id="stereogum", rating_count=12)],
-            {"kexp": 1, "stereogum": 20},
+class TestReviewPlaylistSelection:
+    def test_all_new_tracks_are_selected_before_pending_tracks(self) -> None:
+        result = select_review_playlist_uris(
+            ["old-a", "old-b", "new-a", "new-b"],
+            ["new-a", "new-b", "old-a"],
+            ["new-a", "new-b"],
+            lambda _uri: None,
             limit=4,
-            slots=2,
-            min_ratings=5,
-            max_runs=2,
         )
 
-        assert result == ["legacy-a", "legacy-b", "kexp-a", "kexp-b"]
+        assert result == ["new-a", "new-b", "old-a", "old-b"]
 
-    def test_does_not_reserve_slots_for_sources_with_enough_feedback(self) -> None:
-        result = reserve_exploration_slots(
-            ["proven-a", "proven-b"],
-            ["proven-a", "proven-b"],
-            {"proven-a": {"stereogum"}, "proven-b": {"stereogum"}},
-            [SourceScore(source_id="stereogum", rating_count=5)],
-            {"stereogum": 20},
-            limit=2,
-            slots=1,
-            min_ratings=5,
-            max_runs=2,
+    def test_pending_tracks_only_fill_free_slots_and_must_be_unrated(self) -> None:
+        result = select_review_playlist_uris(
+            ["rated-old", "pending-old", "new-a"],
+            ["new-a"],
+            ["new-a"],
+            lambda uri: (1, "like", None) if uri == "rated-old" else None,
+            limit=3,
         )
 
-        assert result == ["proven-a", "proven-b"]
+        assert result == ["new-a", "pending-old"]
 
-    def test_does_not_reserve_an_unrated_source_after_grace_runs(self) -> None:
-        result = reserve_exploration_slots(
-            ["legacy-a", "old-source-a"],
-            ["old-source-a"],
-            {"old-source-a": {"old-source"}},
-            [SourceScore(source_id="old-source", rating_count=0)],
-            {"old-source": 3},
-            limit=2,
-            slots=1,
-            min_ratings=5,
-            max_runs=2,
+    def test_new_tracks_fill_the_playlist_without_old_tracks(self) -> None:
+        result = select_review_playlist_uris(
+            ["old-a", "new-a", "new-b", "new-c"],
+            ["new-a", "new-b", "new-c"],
+            ["new-a", "new-b", "new-c"],
+            lambda _uri: None,
+            limit=3,
         )
 
-        assert result == ["legacy-a", "old-source-a"]
-
-    def test_can_disable_exploration_slots(self) -> None:
-        result = reserve_exploration_slots(
-            ["legacy-a", "kexp-a"],
-            ["kexp-a"],
-            {"kexp-a": {"kexp"}},
-            [],
-            {"kexp": 1},
-            limit=2,
-            slots=0,
-            min_ratings=5,
-            max_runs=2,
-        )
-
-        assert result == ["legacy-a", "kexp-a"]
+        assert result == ["new-a", "new-b", "new-c"]
 
 
 class TestSourceSlots:
@@ -999,7 +968,13 @@ class TestRetryUnmatched:
         )
 
         digest_entries: list = []
-        total, matched = _retry_unmatched(db, mock_sp, digest_entries)
+        new_track_uris: list[str] = []
+        total, matched = _retry_unmatched(
+            db,
+            mock_sp,
+            digest_entries,
+            new_track_uris=new_track_uris,
+        )
 
         assert total == 1
         assert matched == 1
@@ -1017,6 +992,7 @@ class TestRetryUnmatched:
         assert digest_entries == [
             ("pitchfork_bnt", "Claire Rousay", "Hey Eleanor", "https://source/hey-eleanor")
         ]
+        assert new_track_uris == ["spotify:track:abc"]
         db.close()
 
     def test_retry_keeps_source_attribution_for_existing_uri(self, tmp_path: Path) -> None:
