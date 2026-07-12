@@ -557,6 +557,50 @@ class DB:
             return None
         return int(row[0]), str(row[1]), row[2]
 
+    def has_feedback_for_track_identity(self, spotify_uri: str) -> bool:
+        """True se qualquer URI da mesma faixa normalizada já recebeu feedback."""
+        identity_rows = self.conn.execute(
+            "SELECT artist, title FROM tracks WHERE spotify_uri = ?",
+            (spotify_uri,),
+        ).fetchall()
+        identities = {
+            (normalize(str(artist)), normalize(str(title))) for artist, title in identity_rows
+        }
+        if not identities:
+            return self.feedback_for_track(spotify_uri) is not None
+
+        rows = self.conn.execute(
+            """
+            SELECT t.artist, t.title
+            FROM tracks t
+            JOIN feedback f ON f.spotify_uri = t.spotify_uri
+            """
+        ).fetchall()
+        return any(
+            (normalize(str(artist)), normalize(str(title))) in identities for artist, title in rows
+        )
+
+    def canonical_uri_for_track_identity(self, artist: str, title: str) -> str | None:
+        """URI representativa já persistida para a mesma identidade normalizada."""
+        target = (normalize(artist), normalize(title))
+        rows = self.conn.execute(
+            "SELECT spotify_uri, artist, title, source_id, added_at FROM tracks"
+        ).fetchall()
+        by_uri: dict[str, tuple[set[str], float]] = {}
+        for spotify_uri, row_artist, row_title, source_id, added_at in rows:
+            if (normalize(str(row_artist)), normalize(str(row_title))) != target:
+                continue
+            uri = str(spotify_uri)
+            sources, latest = by_uri.setdefault(uri, (set(), 0.0))
+            sources.add(str(source_id))
+            by_uri[uri] = (sources, max(latest, _timestamp_sort_value(str(added_at))))
+        if not by_uri:
+            return None
+        return min(
+            by_uri,
+            key=lambda uri: (-len(by_uri[uri][0]), -by_uri[uri][1], uri),
+        )
+
     def is_banned_uri(self, spotify_uri: str) -> bool:
         """True se a URI tem feedback explícito `ban`.
 

@@ -1138,8 +1138,11 @@ class TestTracksInWindow:
             ],
         )
         db.conn.commit()
+        db.upsert_feedback("spotify:track:variant", "like")
 
         assert db.source_count_for_track_identity("Artist", "Track") == 3
+        assert db.canonical_uri_for_track_identity("Artist", "Track") == "spotify:track:shared"
+        assert db.has_feedback_for_track_identity("spotify:track:shared") is True
 
     def test_tracks_in_window_year_wrap(self, tmp_path: Path) -> None:
         """tracks_in_window() funciona com wrap de ano (2025-W52 → 2026-W01)."""

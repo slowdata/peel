@@ -161,7 +161,7 @@ class TestMainIntegration:
             patch.object(NprNewMusicFridayStarting5, "fetch", return_value=[]),
             patch.object(TheQuietusTracksOfMonth, "fetch", return_value=[]),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
-            patch("peel.main.send_digest"),  # Mocka Telegram
+            patch("peel.main.send_digest") as mock_digest,
         ):
             # Executa a run
             run()
@@ -177,10 +177,95 @@ class TestMainIntegration:
         track_count = cursor.fetchone()[0]
         assert track_count > 0, "Deve ter adicionado pelo menos um track"
 
-        # Verifica que o SpotifyClient.replace_playlist_items foi chamado (rotação)
-        assert mock_sp.replace_playlist_items.called
+        # Telegram espelha exactamente a playlist que Spotify recebeu.
+        playlist_uris = mock_sp.replace_playlist_items.call_args.args[1]
+        triage_items = mock_digest.call_args.args[0]
+        assert [item.spotify_uri for item in triage_items] == playlist_uris
 
         db.close()
+
+    def test_dry_run_never_updates_playlist_or_sends_telegram(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        db_path = tmp_path / "test.db"
+        monkeypatch.setenv("PEEL_PLAYLIST_ID", "spotify:playlist:test")
+        monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test_id")
+        monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "test_secret")
+        monkeypatch.setenv("SPOTIFY_REFRESH_TOKEN", "test_token")
+
+        from peel import config as config_module
+
+        monkeypatch.setattr(config_module.settings, "db_path", str(db_path))
+        db = DB(str(db_path))
+        db.init_schema()
+        db.close()
+
+        mock_sp = MagicMock()
+        mock_sp.search_track.return_value = [
+            {"uri": "spotify:track:dry", "name": "Track", "artists": ["Artist"]}
+        ]
+        mock_sp.replace_playlist_items = MagicMock()
+
+        with (
+            patch.object(
+                PitchforkBNT,
+                "fetch",
+                return_value=[Track(source_id="pitchfork_bnt", artist="Artist", title="Track")],
+            ),
+            patch.object(StereogumNewMusic, "fetch", return_value=[]),
+            patch.object(TheQuietus, "fetch", return_value=[]),
+            patch.object(TheQuietusTracksOfMonth, "fetch", return_value=[]),
+            patch.object(GorillaVsBear, "fetch", return_value=[]),
+            patch.object(GuardianMusicAlbums, "fetch", return_value=[]),
+            patch.object(NprNewMusicFridayStarting5, "fetch", return_value=[]),
+            patch("peel.main.SpotifyClient", return_value=mock_sp),
+            patch("peel.main.send_digest") as mock_digest,
+        ):
+            run(dry_run=True)
+
+        mock_sp.replace_playlist_items.assert_not_called()
+        mock_digest.assert_not_called()
+        db = DB(str(db_path))
+        assert db.already_added("spotify:track:dry") is False
+        db.close()
+
+    def test_replace_failure_skips_telegram_digest(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        db_path = tmp_path / "test.db"
+        monkeypatch.setenv("PEEL_PLAYLIST_ID", "spotify:playlist:test")
+        monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test_id")
+        monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "test_secret")
+        monkeypatch.setenv("SPOTIFY_REFRESH_TOKEN", "test_token")
+
+        from peel import config as config_module
+
+        monkeypatch.setattr(config_module.settings, "db_path", str(db_path))
+        mock_sp = MagicMock()
+        mock_sp.search_track.return_value = [
+            {"uri": "spotify:track:replace-fail", "name": "Track", "artists": ["Artist"]}
+        ]
+        mock_sp.replace_playlist_items.side_effect = RuntimeError("Spotify indisponível")
+
+        with (
+            patch.object(
+                PitchforkBNT,
+                "fetch",
+                return_value=[Track(source_id="pitchfork_bnt", artist="Artist", title="Track")],
+            ),
+            patch.object(StereogumNewMusic, "fetch", return_value=[]),
+            patch.object(TheQuietus, "fetch", return_value=[]),
+            patch.object(TheQuietusTracksOfMonth, "fetch", return_value=[]),
+            patch.object(GorillaVsBear, "fetch", return_value=[]),
+            patch.object(GuardianMusicAlbums, "fetch", return_value=[]),
+            patch.object(NprNewMusicFridayStarting5, "fetch", return_value=[]),
+            patch("peel.main.SpotifyClient", return_value=mock_sp),
+            patch("peel.main.send_digest") as mock_digest,
+        ):
+            run()
+
+        mock_sp.replace_playlist_items.assert_called_once()
+        mock_digest.assert_not_called()
 
     def test_run_idempotent_second_execution(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -809,7 +894,7 @@ class TestPlaylistSafetyCaps:
         called_uris = mock_sp.replace_playlist_items.call_args.args[1]
         assert called_uris == ["spotify:track:shared", "spotify:track:single"]
 
-    def test_run_falls_back_to_recency_if_playlist_ranking_fails(
+    def test_run_skips_playlist_and_telegram_if_triage_ranking_fails(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
@@ -845,11 +930,12 @@ class TestPlaylistSafetyCaps:
             patch.object(NprNewMusicFridayStarting5, "fetch", return_value=[]),
             patch.object(DB, "ranked_tracks_in_window", side_effect=RuntimeError("boom")),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
-            patch("peel.main.send_digest"),
+            patch("peel.main.send_digest") as mock_digest,
         ):
             run()
 
-        assert mock_sp.replace_playlist_items.call_args.args[1] == ["spotify:track:1"]
+        mock_sp.replace_playlist_items.assert_not_called()
+        mock_digest.assert_not_called()
 
 
 class TestReviewPlaylistSelection:
@@ -858,7 +944,7 @@ class TestReviewPlaylistSelection:
             ["old-a", "old-b", "new-a", "new-b"],
             ["new-a", "new-b", "old-a"],
             ["new-a", "new-b"],
-            lambda _uri: None,
+            lambda _uri: True,
             limit=4,
         )
 
@@ -869,7 +955,7 @@ class TestReviewPlaylistSelection:
             ["rated-old", "pending-old", "new-a"],
             ["new-a"],
             ["new-a"],
-            lambda uri: (1, "like", None) if uri == "rated-old" else None,
+            lambda uri: uri != "rated-old",
             limit=3,
         )
 
@@ -880,7 +966,7 @@ class TestReviewPlaylistSelection:
             ["old-a", "new-a", "new-b", "new-c"],
             ["new-a", "new-b", "new-c"],
             ["new-a", "new-b", "new-c"],
-            lambda _uri: None,
+            lambda _uri: True,
             limit=3,
         )
 

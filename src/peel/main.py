@@ -91,9 +91,9 @@ def run(dry_run: bool = False) -> None:
     # Timestamp de início (para duration logging)
     start_time = datetime.now(UTC)
 
-    # Dry run: opera numa CÓPIA descartável da DB e não escreve nas playlists.
-    # As escritas (record_track, etc.) vão para a cópia e são deitadas fora; só
-    # o digest do Telegram é enviado, para veres o que a run produziria.
+    # Dry run: opera numa CÓPIA descartável da DB, não escreve playlists nem
+    # envia Telegram. As escritas (record_track, etc.) vão para a cópia e são
+    # deitadas fora no fim.
     db_path = settings.db_path
     if dry_run:
         fd, db_path = tempfile.mkstemp(prefix="peel-dryrun-", suffix=".db")
@@ -116,8 +116,9 @@ def run(dry_run: bool = False) -> None:
     new_track_entries: list[DigestItem] = []  # (source_id, artist, title, url)
     new_track_uris: list[str] = []
     triage_entries: list[TriageItem] = []
+    triage_ready = False
+    playlist_updated = False
     new_album_entries: list[DigestItem] = []  # (source_id, artist, album, url)
-    external_entries: list[DigestItem] = []  # unmatched com URL para ouvir fora do Spotify
     album_recommendations: list[AlbumRecommendation] = []
 
     # Métricas do retry de unmatched (reportadas no log final)
@@ -283,10 +284,6 @@ def run(dry_run: bool = False) -> None:
                                 )
                                 tracks_unmatched += 1
                                 source_stats.unmatched_count += 1
-                                if track.source_url:
-                                    external_entries.append(
-                                        (source.id, track.artist, track.title, track.source_url)
-                                    )
                                 log.warning(
                                     "track.no_match",
                                     source_id=source.id,
@@ -294,6 +291,19 @@ def run(dry_run: bool = False) -> None:
                                     title=track.title,
                                 )
                                 continue
+
+                            canonical_uri = db.canonical_uri_for_track_identity(
+                                track.artist,
+                                track.title,
+                            )
+                            if canonical_uri is not None and canonical_uri != uri:
+                                log.info(
+                                    "track.canonical_uri_reused",
+                                    source_id=source.id,
+                                    matched_uri=uri,
+                                    canonical_uri=canonical_uri,
+                                )
+                                uri = canonical_uri
 
                             if db.is_banned_uri(uri):
                                 log.info(
@@ -437,39 +447,37 @@ def run(dry_run: bool = False) -> None:
                 source_quality,
                 affinity_profile.score,
             )
+            current_week_uris = db.ranked_tracks_in_window(
+                current_week,
+                1,
+                source_quality,
+                affinity_profile.score,
+            )
+            window_uris = select_review_playlist_uris(
+                window_uris,
+                current_week_uris,
+                new_track_uris,
+                lambda uri: not db.has_feedback_for_track_identity(uri),
+                limit=settings.peel_max_tracks_per_run,
+            )
+            triage_entries = _triage_digest_items(
+                db,
+                window_uris,
+                set(new_track_uris),
+                current_week,
+                source_quality,
+                affinity_profile,
+            )
+            triage_ready = len(triage_entries) == len(window_uris)
+            if not triage_ready:
+                log.error(
+                    "playlist.triage_incomplete",
+                    expected_tracks=len(window_uris),
+                    digest_tracks=len(triage_entries),
+                )
         except Exception as e:
-            log.exception("playlist.ranking_failed", error=str(e))
-            window_uris = db.tracks_in_window(current_week, rotation_weeks)
-
-        if review_id:
-            try:
-                current_week_uris = db.ranked_tracks_in_window(
-                    current_week,
-                    1,
-                    source_quality,
-                    affinity_profile.score,
-                )
-                window_uris = select_review_playlist_uris(
-                    window_uris,
-                    current_week_uris,
-                    new_track_uris,
-                    db.feedback_for_track,
-                    limit=settings.peel_max_tracks_per_run,
-                )
-            except Exception as e:
-                log.exception("playlist.triage_selection_failed", error=str(e))
-                window_uris = window_uris[: settings.peel_max_tracks_per_run]
-        else:
-            window_uris = window_uris[: settings.peel_max_tracks_per_run]
-
-        triage_entries = _triage_digest_items(
-            db,
-            window_uris,
-            set(new_track_uris),
-            current_week,
-            source_quality,
-            affinity_profile,
-        )
+            log.exception("playlist.triage_selection_failed", error=str(e))
+            window_uris = []
         try:
             album_recommendations = top_album_recommendations(
                 db,
@@ -482,47 +490,53 @@ def run(dry_run: bool = False) -> None:
             log.exception("albums.recommendations_failed", error=str(e))
             album_recommendations = []
 
-        if dry_run:
+        if not triage_ready:
+            log.error("playlist.rotation_skipped", reason="triage_selection_failed")
+        elif dry_run:
             log.info(
                 "playlist.rotation_skipped_dry_run",
                 playlist_id=target_playlist,
                 track_count=len(window_uris),
                 current_week=current_week,
             )
-        try:
-            if not dry_run:
+        else:
+            try:
                 sp.replace_playlist_items(target_playlist, window_uris)
-            log.info(
-                "playlist.rotated",
-                playlist_id=target_playlist,
-                track_count=len(window_uris),
-                is_review=bool(review_id),
-                current_week=current_week,
-                dry_run=dry_run,
-            )
-        except Exception as e:
-            log.exception(
-                "playlist.replace_failed",
-                playlist_id=target_playlist,
-                error=str(e),
-            )
-            # Não levantamos — digest ainda vai enviar
+                playlist_updated = True
+                log.info(
+                    "playlist.rotated",
+                    playlist_id=target_playlist,
+                    track_count=len(window_uris),
+                    is_review=bool(review_id),
+                    current_week=current_week,
+                    dry_run=False,
+                )
+            except Exception as e:
+                log.exception(
+                    "playlist.replace_failed",
+                    playlist_id=target_playlist,
+                    error=str(e),
+                )
 
     finally:
-        # 4. Envia digest semanal (SEMPRE — mesmo que playlist tenha falhado).
-        #    send_digest tem a sua própria protecção contra HTTP errors.
-        try:
-            send_digest(
-                triage_entries,
-                new_album_entries,
-                # Link para a TRIAGEM (o que há para ouvir/avaliar esta semana);
-                # cai na playlist principal se não houver triagem definida.
-                settings.peel_review_playlist_id or settings.peel_playlist_id,
-                external_entries=external_entries,
-                album_recommendations=_album_digest_items(album_recommendations, album_resolver),
-            )
-        except Exception:
-            log.exception("digest.crashed")
+        # 4. Telegram só pode anunciar a fila que Spotify confirmou. Dry-run é
+        #    completamente sem efeitos externos; unmatched fica no relatório/DB.
+        if dry_run:
+            log.info("digest.skipped", reason="dry_run")
+        elif not playlist_updated:
+            log.warning("digest.skipped", reason="playlist_not_updated")
+        else:
+            try:
+                send_digest(
+                    triage_entries,
+                    new_album_entries,
+                    settings.peel_review_playlist_id or settings.peel_playlist_id,
+                    album_recommendations=_album_digest_items(
+                        album_recommendations, album_resolver
+                    ),
+                )
+            except Exception:
+                log.exception("digest.crashed")
 
         # 5. Fecha DB (sempre, mesmo com erros)
         db.close()
@@ -598,7 +612,7 @@ def select_review_playlist_uris(
     ranked_uris: list[str],
     current_week_uris: list[str],
     new_track_uris: list[str],
-    feedback_for_track: Callable[[str], object | None],
+    is_unrated: Callable[[str], bool],
     *,
     limit: int,
 ) -> list[str]:
@@ -619,9 +633,7 @@ def select_review_playlist_uris(
         return new_uris[:limit]
 
     selected_set = set(new_uris)
-    pending_uris = [
-        uri for uri in ranked_uris if uri not in selected_set and feedback_for_track(uri) is None
-    ]
+    pending_uris = [uri for uri in ranked_uris if uri not in selected_set and is_unrated(uri)]
     result = new_uris + pending_uris[: limit - len(new_uris)]
     log.info(
         "playlist.triage_selected",
@@ -931,6 +943,10 @@ def _retry_unmatched(
             uri = best_match(track, candidates, threshold=settings.match_threshold)
             if uri is None:
                 continue
+
+            canonical_uri = db.canonical_uri_for_track_identity(artist, title)
+            if canonical_uri is not None:
+                uri = canonical_uri
 
             if db.is_banned_uri(uri):
                 db.delete_unmatched(source_id, artist, title)

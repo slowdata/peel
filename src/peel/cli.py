@@ -113,7 +113,7 @@ def run_command(
         bool,
         typer.Option(
             "--dry-run",
-            help="Simula a run e envia o digest, sem escrever na DB nem nas playlists",
+            help="Simula a run sem escrever DB, playlists ou enviar Telegram",
         ),
     ] = False,
 ) -> None:
