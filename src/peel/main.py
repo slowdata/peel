@@ -460,7 +460,7 @@ def run(dry_run: bool = False) -> None:
                 lambda uri: not db.has_feedback_for_track_identity(uri),
                 limit=settings.peel_max_tracks_per_run,
             )
-            triage_entries = _triage_digest_items(
+            triage_entries = build_triage_items(
                 db,
                 window_uris,
                 set(new_track_uris),
@@ -502,6 +502,7 @@ def run(dry_run: bool = False) -> None:
         else:
             try:
                 sp.replace_playlist_items(target_playlist, window_uris)
+                db.replace_review_queue(target_playlist, triage_entries)
                 playlist_updated = True
                 log.info(
                     "playlist.rotated",
@@ -695,7 +696,7 @@ def _load_affinity_profile(db: DB) -> AffinityProfile:
         return build_affinity_profile()
 
 
-def _triage_digest_items(
+def build_triage_items(
     db: DB,
     uris: list[str],
     new_track_uris: set[str],

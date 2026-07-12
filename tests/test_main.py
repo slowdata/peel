@@ -178,9 +178,10 @@ class TestMainIntegration:
         assert track_count > 0, "Deve ter adicionado pelo menos um track"
 
         # Telegram espelha exactamente a playlist que Spotify recebeu.
-        playlist_uris = mock_sp.replace_playlist_items.call_args.args[1]
+        playlist_id, playlist_uris = mock_sp.replace_playlist_items.call_args.args
         triage_items = mock_digest.call_args.args[0]
         assert [item.spotify_uri for item in triage_items] == playlist_uris
+        assert [item.spotify_uri for item in db.review_queue(playlist_id)] == playlist_uris
 
         db.close()
 
@@ -227,6 +228,7 @@ class TestMainIntegration:
         mock_digest.assert_not_called()
         db = DB(str(db_path))
         assert db.already_added("spotify:track:dry") is False
+        assert db.review_queue("spotify:playlist:test") == []
         db.close()
 
     def test_replace_failure_skips_telegram_digest(

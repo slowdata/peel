@@ -63,6 +63,7 @@ https://peel.sept.pt/ig/2026-W24.png
 - [x] NPR New Music Friday — The Starting 5 como fonte de tracks.
 - [x] KEXP — In Our Headphones como fonte de tracks.
 - [x] Triagem dá prioridade a todas as tracks novas; pendentes só preenchem vagas livres.
+- [x] Snapshot persistido + CLI da triagem confirmada no Spotify.
 - [x] Aquarium Drunkard “On The Turntable” como fonte de álbuns.
 - [x] Bandcamp labels como fontes de álbuns.
 - [x] Feature “7 Álbuns a Ouvir” com `album_mentions`.

@@ -157,6 +157,14 @@ Só sources `kind = "track"` podem entrar na playlist. Sources `album`, `context
 
 A playlist de triagem é a fila real para ouvir: todas as tracks novas da run entram primeiro. Só se faltarem lugares até ao cap entram tracks pendentes, sem feedback, de runs anteriores. O Telegram só é enviado depois de Spotify actualizar a triagem e identifica cada faixa como `🆕 nova` ou `↻ pendente`.
 
+```bash
+uv run peel triage                 # fila confirmada, na ordem Spotify
+uv run peel triage --pending       # só pendentes
+uv run peel triage --open          # abre Spotify
+uv run peel triage feedback        # avalia a fila activa
+uv run peel triage bootstrap       # uma vez: importa a triagem já existente
+```
+
 Fontes `album` activas incluem Guardian album reviews e The Quietus album reviews. Entram em `Albums / Context`, relatório e Telegram, mas não vão para Spotify matching/playlist. NPR New Music Friday — The Starting 5 e KEXP — In Our Headphones são fontes `track`: entram no matching/playlist como novidades curadas.
 
 `tracks_found` é calculado a partir dos dados persistidos: matches + unmatched. O comando também mostra telemetria real de `source_runs` (`Runs`, `Fetched/Fresh`, `Proc`, `Stale/Cap/Err`) para distinguir qualidade de fonte, backlog, caps e falhas.

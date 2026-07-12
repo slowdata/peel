@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from html import escape
 from urllib.parse import urlparse
 
@@ -10,6 +9,7 @@ import httpx
 import structlog
 
 from peel.config import settings
+from peel.models import ReviewQueueItem
 from peel.sources.registry import source_label as _friendly
 
 log = structlog.get_logger()
@@ -21,21 +21,8 @@ API_BASE = "https://api.telegram.org"
 MAX_MESSAGE_LENGTH = 4096
 
 
-@dataclass(frozen=True, slots=True)
-class TriageItem:
-    """Faixa que está efectivamente na playlist de triagem."""
-
-    source_id: str
-    artist: str
-    title: str
-    spotify_uri: str
-    source_url: str | None
-    source_count: int
-    affinity: float
-    is_new: bool
-    added_at_week: str
-    current_week: str
-
+# Alias de compatibilidade para o formatter e os seus testes.
+TriageItem = ReviewQueueItem
 
 DigestItem = (
     tuple[str, str, str, str | None]

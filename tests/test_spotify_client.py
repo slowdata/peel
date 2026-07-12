@@ -148,6 +148,32 @@ def mock_spotify_client():
             yield client, mock_sp_instance
 
 
+class TestReadPlaylistItems:
+    def test_playlist_track_uris_accepts_item_and_legacy_track(self, mock_spotify_client) -> None:
+        client, mock_sp = mock_spotify_client
+        mock_sp.playlist_items.side_effect = [
+            {
+                "items": [
+                    {"item": {"uri": "spotify:track:first"}},
+                    {"track": {"uri": "spotify:track:second"}},
+                    {"item": {"uri": "spotify:episode:ignored"}},
+                ],
+                "next": "https://next",
+            },
+            {"items": [{"item": {"uri": "spotify:track:third"}}], "next": None},
+        ]
+
+        assert client.playlist_track_uris("playlist:123") == [
+            "spotify:track:first",
+            "spotify:track:second",
+            "spotify:track:third",
+        ]
+        assert mock_sp.playlist_items.call_args_list == [
+            call("playlist:123", limit=100, offset=0),
+            call("playlist:123", limit=100, offset=3),
+        ]
+
+
 class TestReplacePlaylistItems:
     """Testa o método replace_playlist_items."""
 

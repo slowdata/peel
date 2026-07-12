@@ -28,6 +28,7 @@ from pathlib import Path
 import structlog
 
 from peel.matcher import normalize
+from peel.models import ReviewQueueItem
 
 FEEDBACK_RATINGS: dict[str, int] = {
     "love": 2,
@@ -373,6 +374,30 @@ class DB:
             """
         )
 
+        # Snapshot da fila confirmada na playlist de triagem. Permite que CLI,
+        # Telegram e Spotify partilhem uma fonte de verdade após cada replace.
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS review_queue (
+                playlist_id   TEXT NOT NULL,
+                position      INTEGER NOT NULL,
+                spotify_uri   TEXT NOT NULL,
+                source_id     TEXT NOT NULL,
+                artist        TEXT NOT NULL,
+                title         TEXT NOT NULL,
+                source_url    TEXT,
+                source_count  INTEGER NOT NULL,
+                affinity      REAL NOT NULL,
+                is_new        INTEGER NOT NULL,
+                added_at_week TEXT NOT NULL,
+                current_week  TEXT NOT NULL,
+                updated_at    TEXT NOT NULL,
+                PRIMARY KEY (playlist_id, position),
+                UNIQUE (playlist_id, spotify_uri)
+            )
+            """
+        )
+
         # Cache local de géneros por artista. Vazia por defeito; preenchida só
         # por comando explícito (`peel affinity backfill-genres`) para manter a
         # pipeline semanal sem chamadas extra à Spotify API.
@@ -678,6 +703,83 @@ class DB:
             label=normalized,
             rating=rating,
         )
+
+    def replace_review_queue(
+        self,
+        playlist_id: str,
+        items: list[ReviewQueueItem],
+    ) -> None:
+        """Persiste a ordem exacta confirmada na playlist de triagem."""
+        now = datetime.now(UTC).isoformat()
+        self.conn.execute("DELETE FROM review_queue WHERE playlist_id = ?", (playlist_id,))
+        self.conn.executemany(
+            """
+            INSERT INTO review_queue (
+                playlist_id, position, spotify_uri, source_id, artist, title,
+                source_url, source_count, affinity, is_new, added_at_week,
+                current_week, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    playlist_id,
+                    position,
+                    item.spotify_uri,
+                    item.source_id,
+                    item.artist,
+                    item.title,
+                    item.source_url,
+                    item.source_count,
+                    item.affinity,
+                    int(item.is_new),
+                    item.added_at_week,
+                    item.current_week,
+                    now,
+                )
+                for position, item in enumerate(items, start=1)
+            ],
+        )
+        self.conn.commit()
+        log.info("db.review_queue_replaced", playlist_id=playlist_id, count=len(items))
+
+    def review_queue(self, playlist_id: str) -> list[ReviewQueueItem]:
+        """Snapshot persistido da triagem, pela mesma ordem da playlist Spotify."""
+        rows = self.conn.execute(
+            """
+            SELECT source_id, artist, title, spotify_uri, source_url, source_count,
+                   affinity, is_new, added_at_week, current_week
+            FROM review_queue
+            WHERE playlist_id = ?
+            ORDER BY position ASC
+            """,
+            (playlist_id,),
+        ).fetchall()
+        return [
+            ReviewQueueItem(
+                source_id=str(source_id),
+                artist=str(artist),
+                title=str(title),
+                spotify_uri=str(spotify_uri),
+                source_url=source_url,
+                source_count=int(source_count),
+                affinity=float(affinity),
+                is_new=bool(is_new),
+                added_at_week=str(added_at_week),
+                current_week=str(current_week),
+            )
+            for (
+                source_id,
+                artist,
+                title,
+                spotify_uri,
+                source_url,
+                source_count,
+                affinity,
+                is_new,
+                added_at_week,
+                current_week,
+            ) in rows
+        ]
 
     def unrated_tracks(
         self,

@@ -7,6 +7,46 @@ import pytest
 
 from peel.db import DB, iso_week, rank_window_uris
 from peel.matcher import normalize
+from peel.models import ReviewQueueItem
+
+
+class TestReviewQueue:
+    def test_replace_review_queue_preserves_order_and_replaces_old_snapshot(
+        self, tmp_path: Path
+    ) -> None:
+        db = DB(str(tmp_path / "test.db"))
+        db.init_schema()
+        first = ReviewQueueItem(
+            source_id="kexp",
+            artist="Artist A",
+            title="Track A",
+            spotify_uri="spotify:track:a",
+            source_url=None,
+            source_count=1,
+            affinity=0.5,
+            is_new=True,
+            added_at_week="2026-W28",
+            current_week="2026-W28",
+        )
+        second = first.model_copy(
+            update={
+                "artist": "Artist B",
+                "title": "Track B",
+                "spotify_uri": "spotify:track:b",
+                "is_new": False,
+                "added_at_week": "2026-W27",
+            }
+        )
+
+        db.replace_review_queue("playlist", [second, first])
+        assert [item.spotify_uri for item in db.review_queue("playlist")] == [
+            "spotify:track:b",
+            "spotify:track:a",
+        ]
+
+        db.replace_review_queue("playlist", [first])
+        assert db.review_queue("playlist") == [first]
+        db.close()
 
 
 class TestInitSchema:

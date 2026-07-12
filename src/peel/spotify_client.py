@@ -217,6 +217,28 @@ class SpotifyClient:
             log.exception("spotify.album_search_failed", artist=artist, album=album, error=str(e))
             return []
 
+    def playlist_track_uris(self, playlist_id: str) -> list[str]:
+        """Lê as URIs de uma playlist, preservando ordem.
+
+        A Spotify mudou recentemente o campo de ``track`` para ``item`` nesta
+        resposta; aceita ambos para poder importar a playlist de triagem real
+        como snapshot local sem operações de escrita.
+        """
+        uris: list[str] = []
+        offset = 0
+        while True:
+            page = self.sp.playlist_items(playlist_id, limit=100, offset=offset)
+            items = page.get("items", [])
+            for row in items:
+                item = row.get("item") or row.get("track") or {}
+                uri = item.get("uri")
+                if isinstance(uri, str) and uri.startswith("spotify:track:"):
+                    uris.append(uri)
+            if not page.get("next"):
+                break
+            offset += len(items)
+        return uris
+
     def add_to_playlist(self, playlist_id: str, uris: list[str]) -> None:
         """Adiciona faixas a uma playlist em chunks de 100 (limite da API).
 

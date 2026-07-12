@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 import peel.cli as cli
 from peel.db import DB, iso_week
+from peel.models import ReviewQueueItem
 
 runner = CliRunner()
 
@@ -20,6 +21,7 @@ def _settings(db_path: Path) -> SimpleNamespace:
         spotify_client_secret="client-secret",
         spotify_refresh_token="refresh-token",
         peel_playlist_id="playlist-id",
+        peel_review_playlist_id="",
     )
 
 
@@ -310,6 +312,39 @@ class TestCliSite:
         assert result.exit_code == 0
         assert f"Exported {current_week}" in result.stdout
         assert (site_dir / "src" / "data" / "weeks" / f"{current_week}.json").exists()
+
+
+class TestCliTriage:
+    def test_triage_lists_confirmed_queue(self, tmp_path: Path, monkeypatch) -> None:
+        db_path = tmp_path / "test.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        db.replace_review_queue(
+            "playlist-id",
+            [
+                ReviewQueueItem(
+                    source_id="kexp_in_our_headphones",
+                    artist="Modern Woman",
+                    title="Dashboard Mary",
+                    spotify_uri="spotify:track:modern-woman",
+                    source_url=None,
+                    source_count=1,
+                    affinity=0.5,
+                    is_new=True,
+                    added_at_week="2026-W28",
+                    current_week="2026-W28",
+                )
+            ],
+        )
+        db.close()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+
+        result = runner.invoke(cli.app, ["triage"])
+
+        assert result.exit_code == 0
+        assert "Triagem confirmada (1)" in result.output
+        assert "Modern Woman" in result.output
+        assert "🆕 2026-W28" in result.output
 
 
 class TestCliPlaylist:

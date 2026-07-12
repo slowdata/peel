@@ -15,6 +15,23 @@ from datetime import datetime
 from pydantic import BaseModel, field_validator
 
 
+class ReviewQueueItem(BaseModel):
+    """Snapshot de uma faixa confirmada na playlist de triagem."""
+
+    model_config = {"frozen": True}
+
+    source_id: str
+    artist: str
+    title: str
+    spotify_uri: str
+    source_url: str | None
+    source_count: int
+    affinity: float
+    is_new: bool
+    added_at_week: str
+    current_week: str
+
+
 class Track(BaseModel):
     """Faixa candidata vinda de uma fonte de curadoria.
 

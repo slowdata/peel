@@ -28,9 +28,11 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from peel.affinity import build_affinity_profile
 from peel.config import settings
 from peel.db import DB, FEEDBACK_RATINGS, iso_week
 from peel.doctor_sources import inspect_registered_sources
+from peel.main import build_triage_items
 from peel.main import run as run_pipeline
 from peel.matcher import normalize
 from peel.musicbrainz import fetch_musicbrainz_artist_genres
@@ -44,6 +46,7 @@ from peel.release_radar import (
 from peel.report import generate_weekly_report
 from peel.scoring import SourceScore, build_source_scores
 from peel.site_export import export_site, make_album_resolver
+from peel.sources.registry import source_label
 from peel.spotify_client import SpotifyClient, SpotifyReauthRequired
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -63,12 +66,18 @@ app = typer.Typer(add_completion=False, help="Peel — música curada, sincroniz
 sync_app = typer.Typer(add_completion=False, help="Sincronização local/GitHub.")
 doctor_app = typer.Typer(add_completion=False, help="Diagnósticos do Peel.")
 playlist_app = typer.Typer(add_completion=False, help="Ferramentas de playlists Spotify.")
+triage_app = typer.Typer(
+    add_completion=False,
+    invoke_without_command=True,
+    help="Fila de triagem confirmada no Spotify.",
+)
 radar_app = typer.Typer(add_completion=False, help="Snapshots do Spotify Release Radar.")
 site_app = typer.Typer(add_completion=False, help="Exportação para o site peel-sept.")
 affinity_app = typer.Typer(add_completion=False, help="Perfil local de afinidade.")
 app.add_typer(sync_app, name="sync")
 app.add_typer(doctor_app, name="doctor")
 app.add_typer(playlist_app, name="playlist")
+app.add_typer(triage_app, name="triage")
 app.add_typer(radar_app, name="radar")
 app.add_typer(site_app, name="site")
 app.add_typer(affinity_app, name="affinity")
@@ -296,6 +305,127 @@ def feedback(
             console.print(f"Saved: {row[1]} — {row[2]} [{chosen_rating}]")
     finally:
         db.close()
+
+
+@triage_app.callback(invoke_without_command=True)
+def triage(
+    ctx: typer.Context,
+    pending: Annotated[bool, typer.Option("--pending", help="Mostra só pendentes")] = False,
+    open_playlist: Annotated[
+        bool,
+        typer.Option("--open", help="Abre a playlist Spotify confirmada"),
+    ] = False,
+) -> None:
+    """Mostra a triagem exacta confirmada depois da última actualização Spotify."""
+    if ctx.invoked_subcommand is not None:
+        return
+
+    playlist_id = settings.peel_review_playlist_id or settings.peel_playlist_id
+    db = DB(str(_resolve_path(settings.db_path)))
+    try:
+        db.init_schema()
+        items = db.review_queue(playlist_id)
+        if pending:
+            items = [item for item in items if not item.is_new]
+    finally:
+        db.close()
+
+    if not items:
+        console.print("Sem snapshot de triagem confirmado. Aguarda a próxima weekly.")
+        return
+
+    table = Table(title=f"Peel — Triagem confirmada ({len(items)})")
+    table.add_column("#", justify="right")
+    table.add_column("Estado")
+    table.add_column("Source")
+    table.add_column("Artist", style="bold")
+    table.add_column("Title")
+    for index, item in enumerate(items, start=1):
+        state = f"🆕 {item.current_week}" if item.is_new else f"↻ {item.added_at_week}"
+        table.add_row(
+            str(index),
+            state,
+            source_label(item.source_id),
+            item.artist,
+            item.title,
+        )
+    console.print(table)
+
+    if open_playlist:
+        webbrowser.open(f"https://open.spotify.com/playlist/{playlist_id}")
+
+
+@triage_app.command("feedback")
+def triage_feedback(
+    limit: Annotated[int, typer.Option("--limit", min=1, help="Máximo de tracks")] = 28,
+) -> None:
+    """Avalia apenas faixas activas da triagem ainda sem feedback."""
+    playlist_id = settings.peel_review_playlist_id or settings.peel_playlist_id
+    db = DB(str(_resolve_path(settings.db_path)))
+    try:
+        db.init_schema()
+        items = [
+            item
+            for item in db.review_queue(playlist_id)
+            if not db.has_feedback_for_track_identity(item.spotify_uri)
+        ][:limit]
+        if not items:
+            console.print("Sem tracks activas por avaliar.")
+            return
+
+        for index, item in enumerate(items, start=1):
+            console.print(
+                f"[{index}/{len(items)}] {item.artist} — {item.title} "
+                f"({source_label(item.source_id)})"
+            )
+            chosen_rating = _prompt_rating(default="like")
+            if chosen_rating in {"q", "quit", "exit"}:
+                break
+            _save_feedback(db, item.spotify_uri, chosen_rating, _prompt_comment(default=""))
+            console.print(f"Saved: {item.artist} — {item.title} [{chosen_rating}]")
+    finally:
+        db.close()
+
+
+@triage_app.command("bootstrap")
+def triage_bootstrap() -> None:
+    """Guarda a playlist de triagem actual como snapshot local confirmado.
+
+    Útil uma vez após instalar esta funcionalidade; futuras weeklys gravam a
+    snapshot automaticamente depois do replace Spotify bem-sucedido.
+    """
+    playlist_id = settings.peel_review_playlist_id or settings.peel_playlist_id
+    try:
+        client = SpotifyClient()
+    except SpotifyReauthRequired as exc:
+        _abort_spotify_reauth(exc)
+    uris = client.playlist_track_uris(playlist_id)
+
+    db = DB(str(_resolve_path(settings.db_path)))
+    try:
+        db.init_schema()
+        scores = build_source_scores(db, weeks=4)
+        source_quality = {
+            score.source_id: (score.avg_rating or 0.0, score.score) for score in scores
+        }
+        items = build_triage_items(
+            db,
+            uris,
+            set(),
+            iso_week(datetime.now(UTC)),
+            source_quality,
+            build_affinity_profile(db),
+        )
+        if len(items) != len(uris):
+            raise typer.BadParameter(
+                "A playlist tem tracks sem detalhe local; não foi criado snapshot. "
+                "Corre uma weekly ou confirma a DB sincronizada."
+            )
+        db.replace_review_queue(playlist_id, items)
+    finally:
+        db.close()
+
+    console.print(f"Snapshot criado: {len(items)} tracks em {playlist_id}.")
 
 
 @app.command()
