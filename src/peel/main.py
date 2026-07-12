@@ -436,6 +436,30 @@ def run(dry_run: bool = False) -> None:
         except Exception as e:
             log.exception("playlist.ranking_failed", error=str(e))
             window_uris = db.tracks_in_window(current_week, rotation_weeks)
+
+        if review_id and settings.peel_review_exploration_slots:
+            try:
+                current_week_uris = db.ranked_tracks_in_window(
+                    current_week,
+                    1,
+                    source_quality,
+                    affinity_profile.score,
+                )
+                source_ids_by_uri = db.source_ids_for_uris(current_week_uris, week=current_week)
+                source_ids = {source_id for ids in source_ids_by_uri.values() for source_id in ids}
+                window_uris = reserve_exploration_slots(
+                    window_uris,
+                    current_week_uris,
+                    source_ids_by_uri,
+                    source_scores,
+                    db.source_run_counts(source_ids),
+                    limit=settings.peel_max_tracks_per_run,
+                    slots=settings.peel_review_exploration_slots,
+                    min_ratings=settings.peel_review_exploration_min_ratings,
+                    max_runs=settings.peel_review_exploration_max_runs,
+                )
+            except Exception as e:
+                log.exception("playlist.exploration_ranking_failed", error=str(e))
         window_uris = window_uris[: settings.peel_max_tracks_per_run]
         try:
             album_recommendations = top_album_recommendations(
@@ -568,6 +592,63 @@ def _load_banned_track_keys(db: DB) -> set[tuple[str, str]]:
     except Exception as e:
         log.exception("feedback.bans_load_failed", error=str(e))
         return set()
+
+
+def reserve_exploration_slots(
+    ranked_uris: list[str],
+    current_week_uris: list[str],
+    source_ids_by_uri: dict[str, set[str]],
+    scores: list[SourceScore],
+    source_run_counts: dict[str, int],
+    *,
+    limit: int,
+    slots: int,
+    min_ratings: int,
+    max_runs: int,
+) -> list[str]:
+    """Reserva lugares da triagem para fontes novas sem feedback suficiente.
+
+    A ranking principal mantém-se para a maioria da playlist. A reserva só usa
+    tracks da semana actual e assegura que fontes novas podem ser ouvidas antes
+    de uma source estabelecida, com muito histórico positivo, ocupar todos os
+    lugares. Não filtra tracks: aplica-se apenas à ordem/cap da triagem.
+    """
+    if limit <= 0:
+        return []
+    if slots <= 0:
+        return ranked_uris[:limit]
+
+    scores_by_source = {score.source_id: score for score in scores}
+    source_ids = {source_id for ids in source_ids_by_uri.values() for source_id in ids}
+    exploration_sources = {
+        source_id
+        for source_id in source_ids
+        if (
+            source_id not in scores_by_source
+            or (
+                scores_by_source[source_id].rating_count < min_ratings
+                and source_run_counts.get(source_id, 0) <= max_runs
+            )
+        )
+    }
+    exploration_uris = [
+        uri for uri in current_week_uris if source_ids_by_uri.get(uri, set()) & exploration_sources
+    ]
+    selected = list(dict.fromkeys(exploration_uris))[: min(slots, limit)]
+    if not selected:
+        return ranked_uris[:limit]
+
+    selected_set = set(selected)
+    ranked_without_selected = [uri for uri in ranked_uris if uri not in selected_set]
+    result = ranked_without_selected[: limit - len(selected)] + selected
+    log.info(
+        "playlist.exploration_slots_reserved",
+        slots_requested=slots,
+        slots_reserved=len(selected),
+        source_ids=sorted(exploration_sources),
+        uris=selected,
+    )
+    return result
 
 
 def slots_for_source(

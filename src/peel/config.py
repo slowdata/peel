@@ -35,6 +35,20 @@ class Settings(BaseSettings):
     peel_review_playlist_window_weeks: int = Field(
         default=4, alias="PEEL_REVIEW_PLAYLIST_WINDOW_WEEKS"
     )
+    # Reserva slots da triagem para sources sem amostra de feedback. Evita que
+    # rankings históricos abafem fontes novas como a KEXP antes de serem ouvidas.
+    peel_review_exploration_slots: int = Field(
+        default=6,
+        alias="PEEL_REVIEW_EXPLORATION_SLOTS",
+    )
+    peel_review_exploration_min_ratings: int = Field(
+        default=5,
+        alias="PEEL_REVIEW_EXPLORATION_MIN_RATINGS",
+    )
+    peel_review_exploration_max_runs: int = Field(
+        default=2,
+        alias="PEEL_REVIEW_EXPLORATION_MAX_RUNS",
+    )
     peel_max_tracks_per_source: int = Field(default=12, alias="PEEL_MAX_TRACKS_PER_SOURCE")
     # Candidatas por run na triagem. A final (peel finalize) corta depois ao Top 7
     # por semana, mas a triagem pode ter múltiplos de 7 para ouvir e avaliar.

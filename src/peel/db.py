@@ -1088,6 +1088,72 @@ class DB:
             uris.append(uri)
         return uris
 
+    def source_ids_for_uris(
+        self,
+        uris: Iterable[str],
+        *,
+        week: str | None = None,
+    ) -> dict[str, set[str]]:
+        """Devolve a união de sources para a identidade de cada URI.
+
+        Uma faixa pode ter URIs Spotify por edição/região. A triagem explora a
+        identidade normalizada, não apenas o URI escolhido no ranking, para não
+        esconder uma source nova atrás de uma variante antiga.
+        """
+        unique_uris = list(dict.fromkeys(uris))
+        result = {uri: set() for uri in unique_uris}
+        identities_by_uri: dict[str, tuple[str, str]] = {}
+        for index in range(0, len(unique_uris), 900):
+            chunk = unique_uris[index : index + 900]
+            placeholders = ", ".join("?" for _ in chunk)
+            query = (
+                "SELECT spotify_uri, artist, title FROM tracks "
+                f"WHERE spotify_uri IN ({placeholders})"
+            )
+            params: list[str] = list(chunk)
+            if week is not None:
+                query += " AND added_at_week = ?"
+                params.append(week)
+            for spotify_uri, artist, title in self.conn.execute(query, params):
+                identities_by_uri[str(spotify_uri)] = (
+                    normalize(str(artist)),
+                    normalize(str(title)),
+                )
+
+        uris_by_identity: dict[tuple[str, str], set[str]] = {}
+        for uri, identity in identities_by_uri.items():
+            uris_by_identity.setdefault(identity, set()).add(uri)
+        if not uris_by_identity:
+            return result
+
+        query = "SELECT artist, title, source_id FROM tracks"
+        params = []
+        if week is not None:
+            query += " WHERE added_at_week = ?"
+            params.append(week)
+        for artist, title, source_id in self.conn.execute(query, params):
+            matching_uris = uris_by_identity.get((normalize(str(artist)), normalize(str(title))))
+            if matching_uris is None:
+                continue
+            for uri in matching_uris:
+                result[uri].add(str(source_id))
+        return result
+
+    def source_run_counts(self, source_ids: Iterable[str]) -> dict[str, int]:
+        """Nº histórico de runs bem sucedidas por source (inclui a actual)."""
+        unique_ids = list(dict.fromkeys(source_ids))
+        result = {source_id: 0 for source_id in unique_ids}
+        for index in range(0, len(unique_ids), 900):
+            chunk = unique_ids[index : index + 900]
+            placeholders = ", ".join("?" for _ in chunk)
+            query = (
+                "SELECT source_id, COUNT(*) FROM source_runs "
+                f"WHERE status = 'ok' AND source_id IN ({placeholders}) GROUP BY source_id"
+            )
+            for source_id, count in self.conn.execute(query, chunk):
+                result[str(source_id)] = int(count)
+        return result
+
     def ranked_tracks_in_window(
         self,
         current_week: str,
@@ -1126,22 +1192,20 @@ class DB:
         return keepers[:limit]
 
     def source_count_for_track_identity(self, artist: str, title: str) -> int:
-        """Maior nº de sources para uma faixa com o mesmo artist/title normalizado."""
+        """Nº distinto de sources para uma identidade normalizada de faixa."""
         target = (normalize(artist), normalize(title))
         rows = self.conn.execute(
             """
-            SELECT spotify_uri, artist, title, source_id
+            SELECT artist, title, source_id
             FROM tracks
             """
         ).fetchall()
-        sources_by_uri: dict[str, set[str]] = {}
-        for spotify_uri, row_artist, row_title, source_id in rows:
-            if (normalize(str(row_artist)), normalize(str(row_title))) != target:
-                continue
-            sources_by_uri.setdefault(str(spotify_uri), set()).add(str(source_id))
-        if not sources_by_uri:
-            return 1
-        return max(len(sources) for sources in sources_by_uri.values())
+        sources = {
+            str(source_id)
+            for row_artist, row_title, source_id in rows
+            if (normalize(str(row_artist)), normalize(str(row_title))) == target
+        }
+        return max(1, len(sources))
 
     def _filtered_window_track_rows(self, current_week: str, window: int) -> list[WindowTrackRow]:
         cutoff_week = self._cutoff_week(current_week, window)

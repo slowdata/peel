@@ -25,6 +25,7 @@ REPORTS_DIR = Path("data/reports")
 @dataclass(slots=True)
 class TrackBucket:
     spotify_uri: str
+    spotify_uris: list[str]
     artist: str
     title: str
     added_at_week: str
@@ -135,15 +136,23 @@ def _load_weekly_tracks(db: DB, week: str) -> list[WeeklyTrack]:
         (week,),
     ).fetchall()
 
-    buckets: dict[tuple[str, str, str], TrackBucket] = {}
-    order: list[tuple[str, str, str]] = []
+    # A mesma faixa pode chegar de várias sources com capitalização ou aliases
+    # diferentes ("Nate Sib" vs "nate sib") e, por vezes, URI de edição/região
+    # diferente. Agregamos primeiro por URI; se este variar, pela identidade
+    # normalizada. A primeira forma recebida fica como apresentação canónica.
+    buckets: dict[str, TrackBucket] = {}
+    identity_to_bucket: dict[tuple[str, str], str] = {}
+    order: list[str] = []
 
     for spotify_uri, artist, title, added_at_week, added_at, source_id, source_url in rows:
-        key = (str(spotify_uri), str(artist), str(title))
+        uri = str(spotify_uri)
+        identity = (normalize(str(artist)), normalize(str(title)))
+        key = uri if uri in buckets else identity_to_bucket.get(identity, uri)
         bucket = buckets.get(key)
         if bucket is None:
             bucket = TrackBucket(
-                spotify_uri=str(spotify_uri),
+                spotify_uri=uri,
+                spotify_uris=[uri],
                 artist=str(artist),
                 title=str(title),
                 added_at_week=str(added_at_week),
@@ -152,14 +161,24 @@ def _load_weekly_tracks(db: DB, week: str) -> list[WeeklyTrack]:
                 sources=[],
             )
             buckets[key] = bucket
+            identity_to_bucket[identity] = key
             order.append(key)
+        if uri not in bucket.spotify_uris:
+            bucket.spotify_uris.append(uri)
+        identity_to_bucket[identity] = key
         bucket.last_added_at = str(added_at)
-        bucket.sources.append((str(source_id), source_url))
+        if str(source_id) not in {existing_source for existing_source, _ in bucket.sources}:
+            bucket.sources.append((str(source_id), source_url))
 
     tracks: list[WeeklyTrack] = []
     for key in order:
         bucket = buckets[key]
-        feedback = db.feedback_for_track(bucket.spotify_uri)
+        feedbacks = [
+            feedback
+            for uri in bucket.spotify_uris
+            if (feedback := db.feedback_for_track(uri)) is not None
+        ]
+        feedback = max(feedbacks, key=lambda item: item[0], default=None)
         tracks.append(
             WeeklyTrack(
                 spotify_uri=bucket.spotify_uri,

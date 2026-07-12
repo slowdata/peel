@@ -14,6 +14,7 @@ from peel.main import (
     _filter_fresh_source_items,
     _retry_unmatched,
     _sort_track_digest_entries,
+    reserve_exploration_slots,
     run,
     slots_for_source,
 )
@@ -849,6 +850,72 @@ class TestPlaylistSafetyCaps:
             run()
 
         assert mock_sp.replace_playlist_items.call_args.args[1] == ["spotify:track:1"]
+
+
+class TestExplorationSlots:
+    def test_reserves_current_week_tracks_from_unproven_sources(self) -> None:
+        result = reserve_exploration_slots(
+            ["legacy-a", "legacy-b", "legacy-c", "kexp-a", "kexp-b"],
+            ["kexp-a", "kexp-b", "legacy-a"],
+            {
+                "kexp-a": {"kexp"},
+                "kexp-b": {"kexp"},
+                "legacy-a": {"stereogum"},
+            },
+            [SourceScore(source_id="stereogum", rating_count=12)],
+            {"kexp": 1, "stereogum": 20},
+            limit=4,
+            slots=2,
+            min_ratings=5,
+            max_runs=2,
+        )
+
+        assert result == ["legacy-a", "legacy-b", "kexp-a", "kexp-b"]
+
+    def test_does_not_reserve_slots_for_sources_with_enough_feedback(self) -> None:
+        result = reserve_exploration_slots(
+            ["proven-a", "proven-b"],
+            ["proven-a", "proven-b"],
+            {"proven-a": {"stereogum"}, "proven-b": {"stereogum"}},
+            [SourceScore(source_id="stereogum", rating_count=5)],
+            {"stereogum": 20},
+            limit=2,
+            slots=1,
+            min_ratings=5,
+            max_runs=2,
+        )
+
+        assert result == ["proven-a", "proven-b"]
+
+    def test_does_not_reserve_an_unrated_source_after_grace_runs(self) -> None:
+        result = reserve_exploration_slots(
+            ["legacy-a", "old-source-a"],
+            ["old-source-a"],
+            {"old-source-a": {"old-source"}},
+            [SourceScore(source_id="old-source", rating_count=0)],
+            {"old-source": 3},
+            limit=2,
+            slots=1,
+            min_ratings=5,
+            max_runs=2,
+        )
+
+        assert result == ["legacy-a", "old-source-a"]
+
+    def test_can_disable_exploration_slots(self) -> None:
+        result = reserve_exploration_slots(
+            ["legacy-a", "kexp-a"],
+            ["kexp-a"],
+            {"kexp-a": {"kexp"}},
+            [],
+            {"kexp": 1},
+            limit=2,
+            slots=0,
+            min_ratings=5,
+            max_runs=2,
+        )
+
+        assert result == ["legacy-a", "kexp-a"]
 
 
 class TestSourceSlots:

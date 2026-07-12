@@ -1089,6 +1089,68 @@ class TestTracksInWindow:
         assert db.tracks_in_window("2026-W24", window=1) == ["spotify:track:w24"]
         assert db.ranked_tracks_in_window("2026-W24", window=1) == ["spotify:track:w24"]
 
+    def test_source_ids_for_uris_can_filter_by_week(self, tmp_path: Path) -> None:
+        db = DB(str(tmp_path / "test.db"))
+        db.init_schema()
+        db.conn.executemany(
+            """
+            INSERT INTO tracks
+            (spotify_uri, source_id, artist, title, source_url, added_at, added_at_week)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    "spotify:track:shared",
+                    "source-a",
+                    "Artist",
+                    "Track",
+                    None,
+                    "2026-07-01",
+                    "2026-W27",
+                ),
+                (
+                    "spotify:track:shared",
+                    "source-b",
+                    "Artist",
+                    "Track",
+                    None,
+                    "2026-07-08",
+                    "2026-W28",
+                ),
+                (
+                    "spotify:track:fresh",
+                    "source-c",
+                    "Artist",
+                    "Fresh",
+                    None,
+                    "2026-07-08",
+                    "2026-W28",
+                ),
+                (
+                    "spotify:track:variant",
+                    "source-d",
+                    "artist",
+                    "track",
+                    None,
+                    "2026-07-08",
+                    "2026-W28",
+                ),
+            ],
+        )
+        db.conn.commit()
+
+        assert db.source_ids_for_uris(["spotify:track:shared", "spotify:track:fresh"]) == {
+            "spotify:track:shared": {"source-a", "source-b", "source-d"},
+            "spotify:track:fresh": {"source-c"},
+        }
+        assert db.source_ids_for_uris(
+            ["spotify:track:shared", "spotify:track:fresh"], week="2026-W28"
+        ) == {
+            "spotify:track:shared": {"source-b", "source-d"},
+            "spotify:track:fresh": {"source-c"},
+        }
+        assert db.source_count_for_track_identity("Artist", "Track") == 3
+
     def test_tracks_in_window_year_wrap(self, tmp_path: Path) -> None:
         """tracks_in_window() funciona com wrap de ano (2025-W52 → 2026-W01)."""
         db_path = tmp_path / "test.db"

@@ -108,6 +108,59 @@ class TestWeeklyReport:
         assert "| source-c | 1 | 1 | 0 | 0 | — |" in report
         db.close()
 
+    def test_build_weekly_report_dedupes_track_sources_with_casing_difference(
+        self, tmp_path: Path
+    ) -> None:
+        db = DB(str(tmp_path / "peel.db"))
+        db.init_schema()
+        week = "2026-W28"
+        db.conn.executemany(
+            """
+            INSERT INTO tracks
+            (spotify_uri, source_id, artist, title, source_url, added_at, added_at_week)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    "spotify:track:face-card",
+                    "lineofbestfit_news",
+                    "Nate Sib",
+                    "Face Card",
+                    "https://best.example/face-card",
+                    "2026-07-11T11:00:00+00:00",
+                    week,
+                ),
+                (
+                    "spotify:track:face-card-alt",
+                    "stereogum_new_music",
+                    "nate sib",
+                    "Face Card",
+                    "https://stereo.example/face-card",
+                    "2026-07-11T11:01:00+00:00",
+                    week,
+                ),
+                (
+                    "spotify:track:face-card-live",
+                    "lineofbestfit_news",
+                    "NATE SIB",
+                    "Face Card",
+                    "https://best.example/face-card-live",
+                    "2026-07-11T11:02:00+00:00",
+                    week,
+                ),
+            ],
+        )
+        db.conn.commit()
+        db.upsert_feedback("spotify:track:face-card-alt", "like", None)
+
+        report = build_weekly_report(db, week)
+
+        assert report.count("Face Card —") == 1
+        assert "Nate Sib — Face Card — 2 fontes — rating: like" in report
+        assert "lineofbestfit_news — https://best.example/face-card" in report
+        assert "stereogum_new_music — https://stereo.example/face-card" in report
+        db.close()
+
     def test_build_weekly_report_dedupes_album_context_by_normalized_identity(
         self, tmp_path: Path
     ) -> None:
