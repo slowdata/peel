@@ -346,6 +346,38 @@ class TestCliTriage:
         assert "Modern Woman" in result.output
         assert "🆕 2026-W28" in result.output
 
+    def test_triage_shows_feedback_and_pending_hides_rated(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        db_path = tmp_path / "test.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        item = ReviewQueueItem(
+            source_id="kexp_in_our_headphones",
+            artist="Modern Woman",
+            title="Dashboard Mary",
+            spotify_uri="spotify:track:modern-woman",
+            source_url=None,
+            source_count=1,
+            affinity=0.5,
+            is_new=False,
+            added_at_week="2026-W27",
+            current_week="2026-W28",
+        )
+        db.replace_review_queue("playlist-id", [item])
+        db.record_track(item.spotify_uri, item.source_id, item.artist, item.title, None)
+        db.upsert_feedback(item.spotify_uri, "love")
+        db.close()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+
+        result = runner.invoke(cli.app, ["triage"])
+        pending = runner.invoke(cli.app, ["triage", "--pending"])
+
+        assert result.exit_code == 0
+        assert "✓ love" in result.output
+        assert pending.exit_code == 0
+        assert "Sem tracks activas sem avaliação" in pending.output
+
 
 class TestCliPlaylist:
     def test_playlist_fill_week_dry_run_lists_tracks(

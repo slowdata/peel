@@ -1182,6 +1182,7 @@ class TestTracksInWindow:
 
         assert db.source_count_for_track_identity("Artist", "Track") == 3
         assert db.canonical_uri_for_track_identity("Artist", "Track") == "spotify:track:shared"
+        assert db.feedback_for_track_identity("spotify:track:shared") == (1, "like", None)
         assert db.has_feedback_for_track_identity("spotify:track:shared") is True
 
     def test_tracks_in_window_year_wrap(self, tmp_path: Path) -> None:

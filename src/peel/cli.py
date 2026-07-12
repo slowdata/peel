@@ -310,7 +310,10 @@ def feedback(
 @triage_app.callback(invoke_without_command=True)
 def triage(
     ctx: typer.Context,
-    pending: Annotated[bool, typer.Option("--pending", help="Mostra só pendentes")] = False,
+    pending: Annotated[
+        bool,
+        typer.Option("--pending", help="Mostra só tracks activas sem avaliação"),
+    ] = False,
     open_playlist: Annotated[
         bool,
         typer.Option("--open", help="Abre a playlist Spotify confirmada"),
@@ -324,14 +327,18 @@ def triage(
     db = DB(str(_resolve_path(settings.db_path)))
     try:
         db.init_schema()
-        items = db.review_queue(playlist_id)
+        queue_items = db.review_queue(playlist_id)
+        items = [(item, db.feedback_for_track_identity(item.spotify_uri)) for item in queue_items]
         if pending:
-            items = [item for item in items if not item.is_new]
+            items = [(item, feedback) for item, feedback in items if feedback is None]
     finally:
         db.close()
 
     if not items:
-        console.print("Sem snapshot de triagem confirmado. Aguarda a próxima weekly.")
+        if pending:
+            console.print("Sem tracks activas sem avaliação.")
+        else:
+            console.print("Sem snapshot de triagem confirmado. Aguarda a próxima weekly.")
         return
 
     table = Table(title=f"Peel — Triagem confirmada ({len(items)})")
@@ -340,8 +347,11 @@ def triage(
     table.add_column("Source")
     table.add_column("Artist", style="bold")
     table.add_column("Title")
-    for index, item in enumerate(items, start=1):
-        state = f"🆕 {item.current_week}" if item.is_new else f"↻ {item.added_at_week}"
+    for index, (item, feedback) in enumerate(items, start=1):
+        if feedback is not None:
+            state = f"✓ {feedback[1]}"
+        else:
+            state = f"🆕 {item.current_week}" if item.is_new else f"↻ {item.added_at_week}"
         table.add_row(
             str(index),
             state,
@@ -367,7 +377,7 @@ def triage_feedback(
         items = [
             item
             for item in db.review_queue(playlist_id)
-            if not db.has_feedback_for_track_identity(item.spotify_uri)
+            if db.feedback_for_track_identity(item.spotify_uri) is None
         ][:limit]
         if not items:
             console.print("Sem tracks activas por avaliar.")

@@ -582,8 +582,8 @@ class DB:
             return None
         return int(row[0]), str(row[1]), row[2]
 
-    def has_feedback_for_track_identity(self, spotify_uri: str) -> bool:
-        """True se qualquer URI da mesma faixa normalizada já recebeu feedback."""
+    def feedback_for_track_identity(self, spotify_uri: str) -> tuple[int, str, str | None] | None:
+        """Feedback mais recente de qualquer URI da mesma faixa normalizada."""
         identity_rows = self.conn.execute(
             "SELECT artist, title FROM tracks WHERE spotify_uri = ?",
             (spotify_uri,),
@@ -592,18 +592,28 @@ class DB:
             (normalize(str(artist)), normalize(str(title))) for artist, title in identity_rows
         }
         if not identities:
-            return self.feedback_for_track(spotify_uri) is not None
+            return self.feedback_for_track(spotify_uri)
 
         rows = self.conn.execute(
             """
-            SELECT t.artist, t.title
+            SELECT t.artist, t.title, f.rating, f.label, f.comment, f.rated_at
             FROM tracks t
             JOIN feedback f ON f.spotify_uri = t.spotify_uri
             """
         ).fetchall()
-        return any(
-            (normalize(str(artist)), normalize(str(title))) in identities for artist, title in rows
-        )
+        matches = [
+            (int(rating), str(label), comment, str(rated_at))
+            for artist, title, rating, label, comment, rated_at in rows
+            if (normalize(str(artist)), normalize(str(title))) in identities
+        ]
+        if not matches:
+            return None
+        rating, label, comment, _ = max(matches, key=lambda item: item[3])
+        return rating, label, comment
+
+    def has_feedback_for_track_identity(self, spotify_uri: str) -> bool:
+        """True se qualquer URI da mesma faixa normalizada já recebeu feedback."""
+        return self.feedback_for_track_identity(spotify_uri) is not None
 
     def canonical_uri_for_track_identity(self, artist: str, title: str) -> str | None:
         """URI representativa já persistida para a mesma identidade normalizada."""
