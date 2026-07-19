@@ -89,7 +89,7 @@ class TestBuildSourceScores:
         assert source_a.liked_count == 2
         assert source_a.skipped_count == 0
         assert source_a.avg_rating == 1.5
-        assert source_a.score == 21.0
+        assert source_a.score == 18.166666666666668
 
         source_b = scores[1]
         assert source_b.tracks_found == 1
@@ -113,9 +113,37 @@ class TestBuildSourceScores:
         assert source_c.liked_count == 0
         assert source_c.skipped_count == 1
         assert source_c.avg_rating == -1.0
-        assert source_c.score == -11.0
+        assert source_c.score == -10.5
 
         db.close()
+
+    def test_source_score_normalizes_equivalent_quality_across_volumes(self) -> None:
+        """Volume bruto não pode tornar uma source equivalente dominante."""
+        from peel.scoring import SourceScore
+
+        high_volume = SourceScore(
+            source_id="high-volume",
+            tracks_matched=100,
+            new_unique_tracks=75,
+            consensus_hits=25,
+            unmatched_count=25,
+            rating_total=100,
+            rating_count=100,
+            skipped_count=25,
+        )
+        low_volume = SourceScore(
+            source_id="low-volume",
+            tracks_matched=4,
+            new_unique_tracks=3,
+            consensus_hits=1,
+            unmatched_count=1,
+            rating_total=4,
+            rating_count=4,
+            skipped_count=1,
+        )
+
+        # Mesmas taxas, dentro da granularidade dos contadores pequenos.
+        assert high_volume.score == low_volume.score
 
     def test_build_source_scores_adds_source_run_metrics(self, tmp_path: Path) -> None:
         db = DB(str(tmp_path / "peel.db"))

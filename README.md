@@ -155,7 +155,7 @@ PEEL_MAX_SOURCE_ITEM_AGE_DAYS=30
 
 Só sources `kind = "track"` podem entrar na playlist. Sources `album`, `context`, `podcast`, `scrape` ou `manual_spotify` ficam fora da playlist automática. Items publicados há mais de `PEEL_MAX_SOURCE_ITEM_AGE_DAYS` dias são ignorados quando a source expõe data.
 
-A playlist de triagem é a fila real para ouvir: todas as tracks novas da run entram primeiro. Só se faltarem lugares até ao cap entram tracks pendentes, sem feedback, de runs anteriores. O Telegram só é enviado depois de Spotify actualizar a triagem e identifica cada faixa como `🆕 nova` ou `↻ pendente`.
+A playlist de triagem é a fila real para ouvir: todas as tracks novas da run entram primeiro. Só se faltarem lugares até ao cap entram tracks pendentes, sem feedback, de runs anteriores. Nos pendentes, consenso mantém prioridade e o score da source já inclui feedback; repetições da mesma source sofrem uma penalização linear suave — não há quotas nem caps. O Telegram só é enviado depois de Spotify actualizar a triagem e identifica cada faixa como `🆕 nova` ou `↻ pendente`.
 
 ```bash
 uv run peel triage                 # fila confirmada, na ordem Spotify

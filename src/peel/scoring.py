@@ -1,9 +1,9 @@
 """Source scoring using persisted Peel data.
 
-The score is intentionally simple and observational. It combines:
-- matched tracks and unmatched candidates attributed to each source;
-- explicit user feedback;
-- source_runs telemetry (fetched/fresh/processed/stale/caps/errors) when available.
+The score is intentionally simple and observational. It combines normalized
+quality signals from matched/unmatched candidates and explicit user feedback.
+Every component is a rate (or an average), so a source's score describes the
+quality of its output rather than growing with its raw publishing volume.
 
 ``tracks_found`` remains the playlist-facing candidate count: matched + unmatched.
 Raw source volume is exposed separately via ``fetched_count`` and friends.
@@ -58,14 +58,49 @@ class SourceScore:
         return self.rating_total / self.rating_count
 
     @property
+    def consensus_rate(self) -> float:
+        """Partilha de matches que outra source também recomendou."""
+        if self.tracks_matched == 0:
+            return 0.0
+        return self.consensus_hits / self.tracks_matched
+
+    @property
+    def new_unique_rate(self) -> float:
+        """Partilha de matches inicialmente descoberta por esta source."""
+        if self.tracks_matched == 0:
+            return 0.0
+        return self.new_unique_tracks / self.tracks_matched
+
+    @property
+    def unmatched_rate(self) -> float:
+        """Partilha de candidatos que não encontrou match no Spotify."""
+        if self.tracks_found == 0:
+            return 0.0
+        return self.unmatched_count / self.tracks_found
+
+    @property
+    def skipped_rate(self) -> float:
+        """Partilha de feedback explícito negativo entre tracks avaliadas."""
+        if self.rating_count == 0:
+            return 0.0
+        return self.skipped_count / self.rating_count
+
+    @property
     def score(self) -> float:
+        """Score comparável entre sources, independente do volume bruto.
+
+        Feedback real continua a ter o maior peso. Consenso e descoberta nova
+        são sinais secundários positivos; matches falhados e feedback negativo
+        reduzem o score. Todos os contadores são normalizados antes de pesar,
+        impedindo uma source prolífica de acumular vantagem só por publicar mais.
+        """
         avg = self.avg_rating or 0.0
         return (
             10 * avg
-            + 3 * self.consensus_hits
-            + 2 * self.new_unique_tracks
-            - 2 * self.skipped_count
-            - 1 * self.unmatched_count
+            + 3 * self.consensus_rate
+            + 2 * self.new_unique_rate
+            - 2 * self.skipped_rate
+            - self.unmatched_rate
         )
 
     @property

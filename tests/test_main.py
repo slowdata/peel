@@ -10,8 +10,10 @@ from peel.affinity import build_affinity_profile
 from peel.albums import AlbumRecommendation
 from peel.db import DB
 from peel.main import (
+    ReviewCandidate,
     _album_digest_items,
     _filter_fresh_source_items,
+    _load_review_candidate_metadata,
     _retry_unmatched,
     _sort_track_digest_entries,
     run,
@@ -46,6 +48,23 @@ def _disable_network_album_sources(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(KexpInOurHeadphones, "fetch", lambda self: [])
     monkeypatch.setattr(AquariumDrunkard, "fetch", lambda self: [])
     monkeypatch.setattr(BandcampLabel, "fetch", lambda self: [])
+
+
+def _candidate(
+    source_id: str,
+    *,
+    source_count: int = 1,
+    source_score: float = 0.0,
+    affinity: float = 0.5,
+    latest_at: float = 0.0,
+) -> ReviewCandidate:
+    return ReviewCandidate(
+        source_id=source_id,
+        source_count=source_count,
+        source_score=source_score,
+        affinity=affinity,
+        latest_at=latest_at,
+    )
 
 
 def test_sort_track_digest_entries_uses_affinity_after_quality(tmp_path: Path) -> None:
@@ -973,6 +992,162 @@ class TestReviewPlaylistSelection:
         )
 
         assert result == ["new-a", "new-b", "new-c"]
+
+    def test_pending_diversity_prevents_equivalent_high_volume_source_monopoly(self) -> None:
+        ranked = [
+            *(f"high-{index}" for index in range(10)),
+            *(f"low-{index}" for index in range(10)),
+        ]
+        metadata = {
+            uri: _candidate("high-volume" if uri.startswith("high") else "low-volume")
+            for uri in ranked
+        }
+
+        result = select_review_playlist_uris(
+            ranked,
+            [],
+            [],
+            lambda _uri: True,
+            limit=8,
+            candidate_metadata=metadata,
+        )
+
+        assert sum(uri.startswith("high") for uri in result) == 4
+        assert sum(uri.startswith("low") for uri in result) == 4
+
+    def test_pending_diversity_reaches_unrated_source_after_positive_feedback_lead(self) -> None:
+        """Uma source sem ratings entra numa fila grande sem virar quota."""
+        ranked = [
+            *(f"rated-{index}" for index in range(28)),
+            *(f"unrated-{index}" for index in range(6)),
+        ]
+        metadata = {
+            uri: _candidate("rated", source_score=18.75)
+            if uri.startswith("rated")
+            else _candidate("unrated", source_score=2.0)
+            for uri in ranked
+        }
+
+        result = select_review_playlist_uris(
+            ranked,
+            [],
+            [],
+            lambda _uri: True,
+            limit=20,
+            candidate_metadata=metadata,
+        )
+
+        assert any(uri.startswith("unrated") for uri in result)
+
+    def test_pending_diversity_is_not_a_hard_cap_for_extreme_source(self) -> None:
+        ranked = [
+            *(f"strong-{index}" for index in range(28)),
+            *(f"weak-{index}" for index in range(28)),
+        ]
+        metadata = {
+            uri: _candidate("strong", source_score=100.0)
+            if uri.startswith("strong")
+            else _candidate("weak", source_score=0.0)
+            for uri in ranked
+        }
+
+        result = select_review_playlist_uris(
+            ranked,
+            [],
+            [],
+            lambda _uri: True,
+            limit=28,
+            candidate_metadata=metadata,
+        )
+
+        assert result == [f"strong-{index}" for index in range(28)]
+
+    def test_pending_diversity_keeps_consensus_before_source_repetition(self) -> None:
+        metadata = {
+            "single": _candidate("other", source_count=1, source_score=20.0),
+            "consensus": _candidate("repeated", source_count=2, source_score=0.0),
+        }
+
+        result = select_review_playlist_uris(
+            ["single", "consensus"],
+            [],
+            [],
+            lambda _uri: True,
+            limit=2,
+            candidate_metadata=metadata,
+        )
+
+        assert result == ["consensus", "single"]
+
+    def test_pending_diversity_does_not_filter_low_affinity_candidates(self) -> None:
+        metadata = {
+            "low-affinity": _candidate("source-a", affinity=0.0),
+            "high-affinity": _candidate("source-b", affinity=1.0),
+        }
+
+        result = select_review_playlist_uris(
+            ["low-affinity", "high-affinity"],
+            [],
+            [],
+            lambda _uri: True,
+            limit=2,
+            candidate_metadata=metadata,
+        )
+
+        assert set(result) == {"low-affinity", "high-affinity"}
+
+    def test_pending_diversity_falls_back_to_base_ranking_for_incomplete_metadata(self) -> None:
+        metadata = {"first": _candidate("source-a")}
+
+        with patch("peel.main.log") as mock_log:
+            result = select_review_playlist_uris(
+                ["first", "second"],
+                [],
+                [],
+                lambda _uri: True,
+                limit=2,
+                candidate_metadata=metadata,
+            )
+
+        assert result == ["first", "second"]
+        mock_log.warning.assert_called_once_with(
+            "playlist.triage_metadata_incomplete_fallback",
+            missing_tracks=1,
+            pending_tracks=2,
+        )
+
+    def test_metadata_load_failure_returns_base_ranking_fallback(self) -> None:
+        with (
+            patch("peel.main._review_candidate_metadata", side_effect=RuntimeError("boom")),
+            patch("peel.main.log") as mock_log,
+        ):
+            metadata = _load_review_candidate_metadata(None, [], {}, build_affinity_profile())
+
+        assert metadata is None
+        assert select_review_playlist_uris(
+            ["first", "second"],
+            [],
+            [],
+            lambda _uri: True,
+            limit=2,
+            candidate_metadata=metadata,
+        ) == ["first", "second"]
+        mock_log.warning.assert_called_once_with(
+            "playlist.triage_metadata_failed_fallback", error="boom"
+        )
+
+    def test_pending_diversity_is_deterministic(self) -> None:
+        ranked = [*(f"a-{index}" for index in range(4)), *(f"b-{index}" for index in range(4))]
+        metadata = {uri: _candidate(uri[0]) for uri in ranked}
+
+        first = select_review_playlist_uris(
+            ranked, [], [], lambda _uri: True, limit=6, candidate_metadata=metadata
+        )
+        second = select_review_playlist_uris(
+            ranked, [], [], lambda _uri: True, limit=6, candidate_metadata=metadata
+        )
+
+        assert first == second
 
 
 class TestSourceSlots:

@@ -18,7 +18,8 @@ import contextlib
 import os
 import shutil
 import tempfile
-from collections.abc import Callable, Iterable
+from collections import Counter
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -46,6 +47,28 @@ structlog.configure(
 )
 
 log = structlog.get_logger()
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewCandidate:
+    """Metadados locais para aplicar diversidade suave aos pendentes.
+
+    Consenso mantém prioridade lexicográfica. A qualidade da source é um único
+    score comparável, já com feedback incluído, e sofre diminishing returns à
+    medida que a mesma source entra na fila pendente.
+    """
+
+    source_id: str
+    source_count: int
+    source_score: float
+    affinity: float
+    latest_at: float
+
+
+# Penalização linear por escolha pendente já atribuída à mesma source. A escala
+# cobre uma fila de 28 sem criar quota/cap: diferenças de qualidade extremas
+# continuam a poder justificar domínio, mas qualidade próxima não monopoliza.
+SOURCE_REPEAT_PENALTY = 2.0
 
 
 @dataclass(slots=True)
@@ -453,12 +476,19 @@ def run(dry_run: bool = False) -> None:
                 source_quality,
                 affinity_profile.score,
             )
+            candidate_metadata = _load_review_candidate_metadata(
+                db,
+                window_uris,
+                source_quality,
+                affinity_profile,
+            )
             window_uris = select_review_playlist_uris(
                 window_uris,
                 current_week_uris,
                 new_track_uris,
                 lambda uri: not db.has_feedback_for_track_identity(uri),
                 limit=settings.peel_max_tracks_per_run,
+                candidate_metadata=candidate_metadata,
             )
             triage_entries = build_triage_items(
                 db,
@@ -469,6 +499,28 @@ def run(dry_run: bool = False) -> None:
                 affinity_profile,
             )
             triage_ready = len(triage_entries) == len(window_uris)
+            if triage_ready:
+                distribution = dict(
+                    sorted(Counter(item.source_id for item in triage_entries).items())
+                )
+                new_distribution = dict(
+                    sorted(
+                        Counter(item.source_id for item in triage_entries if item.is_new).items()
+                    )
+                )
+                pending_distribution = dict(
+                    sorted(
+                        Counter(
+                            item.source_id for item in triage_entries if not item.is_new
+                        ).items()
+                    )
+                )
+                log.info(
+                    "playlist.triage_source_distribution",
+                    sources=distribution,
+                    new_sources=new_distribution,
+                    pending_sources=pending_distribution,
+                )
             if not triage_ready:
                 log.error(
                     "playlist.triage_incomplete",
@@ -616,13 +668,16 @@ def select_review_playlist_uris(
     is_unrated: Callable[[str], bool],
     *,
     limit: int,
+    candidate_metadata: Mapping[str, ReviewCandidate] | None = None,
 ) -> list[str]:
     """Constrói a fila de triagem: novas primeiro, pendentes só como fill.
 
     Todas as tracks novas desta run entram antes de qualquer faixa anterior.
     Como a própria ingestão aplica ``PEEL_MAX_TRACKS_PER_RUN``, o limite da
     triagem nunca deve cortar novidades. As vagas restantes são preenchidas com
-    tracks sem feedback das semanas anteriores, pela ranking normal.
+    tracks sem feedback das semanas anteriores. Nessa fase apenas, repetições
+    de source sofrem diminishing returns no score secundário; não há quotas,
+    caps ou filtros de source.
     """
     if limit <= 0:
         return []
@@ -635,15 +690,142 @@ def select_review_playlist_uris(
 
     selected_set = set(new_uris)
     pending_uris = [uri for uri in ranked_uris if uri not in selected_set and is_unrated(uri)]
-    result = new_uris + pending_uris[: limit - len(new_uris)]
+    selected_pending = _select_diverse_pending_uris(
+        pending_uris,
+        candidate_metadata,
+        limit=limit - len(new_uris),
+    )
+    result = new_uris + selected_pending
     log.info(
         "playlist.triage_selected",
         new_tracks=len(new_uris),
-        pending_tracks=len(result) - len(new_uris),
+        pending_tracks=len(selected_pending),
         total=len(result),
         uris=result,
     )
     return result
+
+
+def _select_diverse_pending_uris(
+    pending_uris: list[str],
+    candidate_metadata: Mapping[str, ReviewCandidate] | None,
+    *,
+    limit: int,
+) -> list[str]:
+    """Escolhe pendentes com diminishing returns por source, sem quotas.
+
+    Consenso mantém precedência total. A qualidade da source entra uma única
+    vez, já incluindo feedback real, e perde ``2.0`` por escolha anterior da
+    mesma source. Alternativas de qualidade semelhante surgem mais cedo, mas
+    uma source materialmente melhor pode continuar a dominar.
+    """
+    if limit <= 0:
+        return []
+    if not candidate_metadata:
+        return pending_uris[:limit]
+    missing_uris = [uri for uri in pending_uris if uri not in candidate_metadata]
+    if missing_uris:
+        log.warning(
+            "playlist.triage_metadata_incomplete_fallback",
+            missing_tracks=len(missing_uris),
+            pending_tracks=len(pending_uris),
+        )
+        return pending_uris[:limit]
+
+    remaining = list(enumerate(pending_uris))
+    selected: list[str] = []
+    source_counts: Counter[str] = Counter()
+
+    while remaining and len(selected) < limit:
+
+        def selection_key(
+            item: tuple[int, str],
+        ) -> tuple[float, float, float, float, int, str]:
+            original_index, uri = item
+            candidate = candidate_metadata[uri]
+            repeat_penalty = SOURCE_REPEAT_PENALTY * source_counts[candidate.source_id]
+            adjusted_source_score = candidate.source_score - repeat_penalty
+            return (
+                -float(candidate.source_count),
+                -adjusted_source_score,
+                -candidate.affinity,
+                -candidate.latest_at,
+                original_index,
+                uri,
+            )
+
+        selected_index = min(
+            range(len(remaining)), key=lambda index: selection_key(remaining[index])
+        )
+        _, uri = remaining.pop(selected_index)
+        selected.append(uri)
+        source_counts[candidate_metadata[uri].source_id] += 1
+
+    return selected
+
+
+def _load_review_candidate_metadata(
+    db: DB,
+    uris: list[str],
+    source_quality: Mapping[str, tuple[float, float]],
+    affinity_profile: AffinityProfile,
+) -> dict[str, ReviewCandidate] | None:
+    """Carrega metadados de diversidade, mantendo a rotação fail-open."""
+    try:
+        return _review_candidate_metadata(db, uris, source_quality, affinity_profile)
+    except Exception as exc:  # noqa: BLE001 - a triagem pode usar ranking base
+        log.warning("playlist.triage_metadata_failed_fallback", error=str(exc))
+        return None
+
+
+def _review_candidate_metadata(
+    db: DB,
+    uris: list[str],
+    source_quality: Mapping[str, tuple[float, float]],
+    affinity_profile: AffinityProfile,
+) -> dict[str, ReviewCandidate]:
+    """Reconstitui os sinais locais do ranking para pendentes da triagem.
+
+    A source representativa usa a mesma regra de ``build_triage_items``. Só lê
+    SQLite; não adiciona chamadas de rede nem altera a descoberta de tracks.
+    """
+    metadata: dict[str, ReviewCandidate] = {}
+    for uri in uris:
+        rows = db.conn.execute(
+            """
+            SELECT artist, title, source_id, added_at
+            FROM tracks
+            WHERE spotify_uri = ?
+            """,
+            (uri,),
+        ).fetchall()
+        if not rows:
+            continue
+        artist, title, source_id, _ = min(
+            rows,
+            key=lambda row: (
+                -source_quality.get(str(row[2]), (0.0, 0.0))[0],
+                -source_quality.get(str(row[2]), (0.0, 0.0))[1],
+                str(row[2]),
+            ),
+        )
+        latest_at = max(_timestamp_value(str(row[3])) for row in rows)
+        _, source_score = source_quality.get(str(source_id), (0.0, 0.0))
+        metadata[uri] = ReviewCandidate(
+            source_id=str(source_id),
+            source_count=_safe_source_count(db, str(artist), str(title)),
+            source_score=source_score,
+            affinity=affinity_profile.score(str(artist)),
+            latest_at=latest_at,
+        )
+    return metadata
+
+
+def _timestamp_value(value: str) -> float:
+    try:
+        return datetime.fromisoformat(value).timestamp()
+    except ValueError:
+        return 0.0
 
 
 def slots_for_source(
