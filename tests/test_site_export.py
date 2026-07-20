@@ -3,8 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from peel.db import DB
 from peel.matcher import normalize
+from peel.playlists import canonical_playlist_id
 from peel.site_export import (
     build_site_week_payload,
     export_site,
@@ -183,6 +186,15 @@ def test_week_helpers() -> None:
     assert weeks_to_export("2026-W24", 2) == ["2026-W23", "2026-W24"]
 
 
+def test_canonical_playlist_id_accepts_id_uri_and_url() -> None:
+    assert canonical_playlist_id("playlist-id") == "playlist-id"
+    assert canonical_playlist_id("spotify:playlist:playlist-id") == "playlist-id"
+    assert (
+        canonical_playlist_id("https://open.spotify.com/playlist/playlist-id?si=share")
+        == "playlist-id"
+    )
+
+
 def test_playlist_url_from_id_accepts_id_uri_and_url() -> None:
     assert playlist_url_from_id(None) is None
     assert playlist_url_from_id("playlist-id") == "https://open.spotify.com/playlist/playlist-id"
@@ -251,6 +263,161 @@ def test_build_site_week_payload_ranks_tracks_and_counts_sources(tmp_path: Path)
         {"name": "NPR", "url": "https://www.npr.org/music"},
         {"name": "Pitchfork", "url": "https://pitchfork.com"},
     ]
+
+
+def test_finalized_snapshot_overrides_editorial_ranking_and_survives_reexport(
+    tmp_path: Path,
+) -> None:
+    db = DB(str(tmp_path / "peel.db"))
+    db.init_schema()
+    week = "2026-W24"
+    _insert_track(
+        db,
+        uri="spotify:track:editorial",
+        source_id="high",
+        artist="Editorial Artist",
+        title="Editorial Track",
+        added_at="2026-06-10T10:00:00+00:00",
+        week=week,
+    )
+    _insert_track(
+        db,
+        uri="spotify:track:confirmed",
+        source_id="low",
+        artist="Confirmed Artist",
+        title="Confirmed Track",
+        added_at="2026-06-09T10:00:00+00:00",
+        week=week,
+    )
+    db.replace_finalized_week_tracks(
+        week,
+        "weekly",
+        ["spotify:track:confirmed"],
+    )
+    # Uma menção posterior não pode alterar metadata da semana já finalizada.
+    _insert_track(
+        db,
+        uri="spotify:track:confirmed",
+        source_id="future",
+        artist="Changed Artist",
+        title="Changed Track",
+        added_at="2026-06-16T10:00:00+00:00",
+        week="2026-W25",
+    )
+
+    initial = build_site_week_payload(
+        db,
+        week,
+        None,
+        source_quality={"high": (2.0, 100.0), "low": (0.0, 0.0)},
+        finalized_playlist_id="https://open.spotify.com/playlist/weekly?si=share",
+    )
+    reexport = build_site_week_payload(
+        db,
+        week,
+        None,
+        source_quality={"high": (-2.0, -100.0), "low": (2.0, 100.0)},
+        finalized_playlist_id="spotify:playlist:weekly",
+    )
+
+    assert [track["spotify_url"] for track in initial["tracks"]] == [
+        "https://open.spotify.com/track/confirmed"
+    ]
+    assert [track["spotify_url"] for track in reexport["tracks"]] == [
+        "https://open.spotify.com/track/confirmed"
+    ]
+    assert initial["tracks"][0]["artist"] == "Confirmed Artist"
+    assert initial["tracks"][0]["title"] == "Confirmed Track"
+    assert initial["tracks"][0]["source_count"] == 1
+
+    site_dir = tmp_path / "site"
+    export_site(
+        db,
+        site_dir,
+        weeks=1,
+        playlist_id="https://open.spotify.com/playlist/weekly?si=share",
+        current_week=week,
+    )
+    payload = json.loads((site_dir / "src" / "data" / "weeks" / f"{week}.json").read_text())
+    assert [track["spotify_url"] for track in payload["tracks"]] == [
+        "https://open.spotify.com/track/confirmed"
+    ]
+    db.close()
+
+
+def test_week_without_finalized_snapshot_keeps_editorial_fallback(tmp_path: Path) -> None:
+    db = DB(str(tmp_path / "peel.db"))
+    db.init_schema()
+    week = "2026-W24"
+    _insert_track(
+        db,
+        uri="spotify:track:editorial",
+        source_id="high",
+        artist="Editorial Artist",
+        title="Editorial Track",
+        added_at="2026-06-10T10:00:00+00:00",
+        week=week,
+    )
+    _insert_track(
+        db,
+        uri="spotify:track:other",
+        source_id="low",
+        artist="Other Artist",
+        title="Other Track",
+        added_at="2026-06-09T10:00:00+00:00",
+        week=week,
+    )
+
+    payload = build_site_week_payload(
+        db,
+        week,
+        None,
+        source_quality={"high": (2.0, 100.0), "low": (0.0, 0.0)},
+        finalized_playlist_id="spotify:playlist:weekly",
+    )
+
+    assert payload["tracks"][0]["spotify_url"] == "https://open.spotify.com/track/editorial"
+    db.close()
+
+
+def test_finalized_snapshot_missing_track_metadata_fails_clearly(tmp_path: Path) -> None:
+    db = DB(str(tmp_path / "peel.db"))
+    db.init_schema()
+    db.replace_finalized_week_tracks(
+        "2026-W24",
+        "spotify:playlist:weekly",
+        ["spotify:track:missing"],
+    )
+
+    with pytest.raises(ValueError, match="without track metadata"):
+        build_site_week_payload(
+            db,
+            "2026-W24",
+            None,
+            finalized_playlist_id="spotify:playlist:weekly",
+        )
+    db.close()
+
+
+def test_export_site_writes_empty_finalized_snapshot(tmp_path: Path) -> None:
+    db = DB(str(tmp_path / "peel.db"))
+    db.init_schema()
+    db.replace_finalized_week_tracks("2026-W24", "weekly", [])
+
+    exported = export_site(
+        db,
+        tmp_path / "site",
+        weeks=1,
+        playlist_id="spotify:playlist:weekly",
+        current_week="2026-W24",
+    )
+
+    assert [item.week for item in exported] == ["2026-W24"]
+    payload = json.loads(
+        (tmp_path / "site" / "src" / "data" / "weeks" / "2026-W24.json").read_text()
+    )
+    assert payload["tracks"] == []
+    db.close()
 
 
 def test_build_site_week_payload_limits_tracks_to_seven(tmp_path: Path) -> None:

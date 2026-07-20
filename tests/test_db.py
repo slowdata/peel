@@ -590,6 +590,56 @@ class TestRecordAlbum:
         assert mentions_count == 2
 
 
+class TestFinalizedWeekTracks:
+    def test_replace_and_read_preserves_order_idempotently(self, tmp_path: Path) -> None:
+        db = DB(str(tmp_path / "test.db"))
+        db.init_schema()
+        db.init_schema()  # migração CREATE TABLE é idempotente
+
+        db.replace_finalized_week_tracks(
+            "2026-W29",
+            "weekly",
+            ["spotify:track:second", "spotify:track:first"],
+        )
+        assert db.finalized_week_uris("2026-W29", "spotify:playlist:weekly") == [
+            "spotify:track:second",
+            "spotify:track:first",
+        ]
+        assert db.finalized_week_uris(
+            "2026-W29", "https://open.spotify.com/playlist/weekly?si=share"
+        ) == ["spotify:track:second", "spotify:track:first"]
+
+        db.replace_finalized_week_tracks(
+            "2026-W29",
+            "spotify:playlist:weekly",
+            ["spotify:track:first"],
+        )
+        assert db.finalized_week_uris("2026-W29", "spotify:playlist:weekly") == [
+            "spotify:track:first"
+        ]
+        assert db.finalized_week_uris("2026-W28", "spotify:playlist:weekly") is None
+
+        db.replace_finalized_week_tracks("2026-W30", "spotify:playlist:weekly", [])
+        assert db.finalized_week_uris("2026-W30", "spotify:playlist:weekly") == []
+
+    def test_replace_rejects_duplicate_or_more_than_seven_uris(self, tmp_path: Path) -> None:
+        db = DB(str(tmp_path / "test.db"))
+        db.init_schema()
+
+        with pytest.raises(ValueError, match="duplicate"):
+            db.replace_finalized_week_tracks(
+                "2026-W29",
+                "weekly",
+                ["spotify:track:duplicate", "spotify:track:duplicate"],
+            )
+        with pytest.raises(ValueError, match="more than 7"):
+            db.replace_finalized_week_tracks(
+                "2026-W29",
+                "weekly",
+                [f"spotify:track:{index}" for index in range(8)],
+            )
+
+
 class TestFeedback:
     """Testa feedback explícito do utilizador."""
 

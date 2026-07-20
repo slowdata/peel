@@ -29,6 +29,7 @@ import structlog
 
 from peel.matcher import normalize
 from peel.models import ReviewQueueItem
+from peel.playlists import canonical_playlist_id
 
 FEEDBACK_RATINGS: dict[str, int] = {
     "love": 2,
@@ -394,6 +395,33 @@ class DB:
                 updated_at    TEXT NOT NULL,
                 PRIMARY KEY (playlist_id, position),
                 UNIQUE (playlist_id, spotify_uri)
+            )
+            """
+        )
+
+        # Snapshot canónico de uma semana finalizada. O cabeçalho conserva até
+        # uma playlist finalizada vazia; as tracks fixam URIs e ordem para que
+        # exports/re-exports não voltem a recalcular um Top 7 diferente.
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS finalized_weeks (
+                week         TEXT NOT NULL,
+                playlist_id  TEXT NOT NULL,
+                finalized_at TEXT NOT NULL,
+                PRIMARY KEY (week, playlist_id)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS finalized_week_tracks (
+                week         TEXT NOT NULL,
+                playlist_id  TEXT NOT NULL,
+                position     INTEGER NOT NULL,
+                spotify_uri  TEXT NOT NULL,
+                finalized_at TEXT NOT NULL,
+                PRIMARY KEY (week, playlist_id, position),
+                UNIQUE (week, playlist_id, spotify_uri)
             )
             """
         )
@@ -790,6 +818,80 @@ class DB:
                 current_week,
             ) in rows
         ]
+
+    def replace_finalized_week_tracks(
+        self,
+        week: str,
+        playlist_id: str,
+        spotify_uris: list[str],
+    ) -> None:
+        """Persiste a ordem exacta que Spotify confirmou para uma semana.
+
+        A substituição é idempotente e só deve ser chamada depois de
+        ``replace_playlist_items`` completar sem erro. O snapshot é a fonte de
+        verdade para exports futuros dessa semana finalizada.
+        """
+        playlist_key = canonical_playlist_id(playlist_id)
+        if len(spotify_uris) > 7:
+            raise ValueError("finalized week snapshot cannot contain more than 7 Spotify URIs")
+        if len(set(spotify_uris)) != len(spotify_uris):
+            raise ValueError("finalized week snapshot cannot contain duplicate Spotify URIs")
+
+        now = datetime.now(UTC).isoformat()
+        self.conn.execute(
+            """
+            INSERT INTO finalized_weeks (week, playlist_id, finalized_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(week, playlist_id) DO UPDATE SET finalized_at = excluded.finalized_at
+            """,
+            (week, playlist_key, now),
+        )
+        self.conn.execute(
+            "DELETE FROM finalized_week_tracks WHERE week = ? AND playlist_id = ?",
+            (week, playlist_key),
+        )
+        self.conn.executemany(
+            """
+            INSERT INTO finalized_week_tracks
+            (week, playlist_id, position, spotify_uri, finalized_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            [
+                (week, playlist_key, position, spotify_uri, now)
+                for position, spotify_uri in enumerate(spotify_uris, start=1)
+            ],
+        )
+        self.conn.commit()
+        log.info(
+            "db.finalized_week_tracks_replaced",
+            week=week,
+            playlist_id=playlist_key,
+            count=len(spotify_uris),
+        )
+
+    def finalized_week_uris(self, week: str, playlist_id: str) -> list[str] | None:
+        """Lê o snapshot finalizado, ou ``None`` se a semana ainda é legacy."""
+        playlist_key = canonical_playlist_id(playlist_id)
+        exists = self.conn.execute(
+            """
+            SELECT 1
+            FROM finalized_weeks
+            WHERE week = ? AND playlist_id = ?
+            """,
+            (week, playlist_key),
+        ).fetchone()
+        if exists is None:
+            return None
+        rows = self.conn.execute(
+            """
+            SELECT spotify_uri
+            FROM finalized_week_tracks
+            WHERE week = ? AND playlist_id = ?
+            ORDER BY position ASC
+            """,
+            (week, playlist_key),
+        ).fetchall()
+        return [str(row[0]) for row in rows]
 
     def unrated_tracks(
         self,

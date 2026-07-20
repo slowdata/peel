@@ -20,6 +20,7 @@ import structlog
 from peel.albums import AlbumRecommendation, spotify_album_url, top_album_recommendations
 from peel.db import DB, FEEDBACK_RATINGS, SourceQuality, iso_week, rank_window_uris
 from peel.matcher import normalize, score
+from peel.playlists import canonical_playlist_id
 from peel.scoring import build_source_scores
 from peel.sources.registry import source_homepage, source_label
 
@@ -100,15 +101,25 @@ def export_site(
 
     source_quality = _load_source_quality(db)
     playlist_url = playlist_url_from_id(playlist_id)
+    finalized_playlist_id = canonical_playlist_id(playlist_id) if playlist_id else None
     exported: list[ExportedWeek] = []
     for week in weeks_to_export(resolved_current_week, weeks):
+        has_finalized_snapshot = (
+            bool(finalized_playlist_id)
+            and db.finalized_week_uris(week, finalized_playlist_id) is not None
+        )
         payload = build_site_week_payload(
-            db, week, playlist_url, source_quality, album_resolver=album_resolver
+            db,
+            week,
+            playlist_url,
+            source_quality,
+            album_resolver=album_resolver,
+            finalized_playlist_id=finalized_playlist_id,
         )
         # Não publicar semanas sem faixas (ex. a semana ISO atual antes do run
         # semanal): a homepage do site é a semana mais recente, e uma semana
         # vazia faria a homepage "saltar" para um hero sem músicas.
-        if not payload["tracks"]:
+        if not payload["tracks"] and not has_finalized_snapshot:
             log.info("site_export.skipped_empty_week", week=week)
             continue
         path = output_dir / f"{week}.json"
@@ -123,10 +134,26 @@ def build_site_week_payload(
     playlist_url: str | None,
     source_quality: dict[str, SourceQuality] | None = None,
     album_resolver: AlbumResolver | None = None,
+    finalized_playlist_id: str | None = None,
 ) -> dict[str, Any]:
-    """Constrói o JSON de uma semana seguindo exactamente o contrato do site."""
+    """Constrói o JSON de uma semana seguindo exactamente o contrato do site.
+
+    Sem snapshot finalizado mantém o ranking editorial legacy. Quando existe,
+    usa as URIs e a ordem que Spotify confirmou, mesmo que scores/feedback
+    mudem numa re-exportação posterior.
+    """
     quality = source_quality or _load_source_quality(db)
-    tracks = _export_tracks(db, week, quality)
+    finalized_playlist_key = (
+        canonical_playlist_id(finalized_playlist_id) if finalized_playlist_id else None
+    )
+    finalized_uris = (
+        db.finalized_week_uris(week, finalized_playlist_key) if finalized_playlist_key else None
+    )
+    tracks = (
+        _export_finalized_tracks(db, week, finalized_uris, quality)
+        if finalized_uris is not None
+        else _export_tracks(db, week, quality)
+    )
     albums = _export_albums(db, week, quality, album_resolver=album_resolver)
     sources = _sources_for_payload(tracks, albums)
     start = _week_start(week)
@@ -184,6 +211,64 @@ def playlist_url_from_id(playlist_id: str | None) -> str | None:
     if value.startswith(prefix):
         value = value[len(prefix) :]
     return f"https://open.spotify.com/playlist/{value}"
+
+
+def _export_finalized_tracks(
+    db: DB,
+    week: str,
+    spotify_uris: list[str],
+    source_quality: dict[str, SourceQuality],
+) -> list[dict[str, Any]]:
+    """Materializa um Top 7 finalizado sem alterar URIs, ordem ou rank.
+
+    Falha em vez de publicar uma lista parcial se o snapshot não tiver metadados
+    locais suficientes. Assim um retry posterior preserva o contrato Spotify ↔
+    snapshot ↔ site em vez de substituir silenciosamente tracks por ranking.
+    """
+    if not spotify_uris:
+        return []
+
+    placeholders = ", ".join("?" for _ in spotify_uris)
+    rows = db.conn.execute(
+        f"""
+        SELECT spotify_uri, artist, title, source_id, source_url, added_at
+        FROM tracks
+        WHERE spotify_uri IN ({placeholders})
+          AND added_at_week <= ?
+        ORDER BY added_at ASC, source_id ASC, spotify_uri ASC
+        """,
+        [*spotify_uris, week],
+    ).fetchall()
+    normalized_rows = [
+        (str(uri), str(artist), str(title), str(source_id), source_url, str(added_at))
+        for uri, artist, title, source_id, source_url, added_at in rows
+    ]
+    buckets = _track_buckets(normalized_rows, source_quality)
+    missing_uris = [uri for uri in spotify_uris if uri not in buckets]
+    if missing_uris:
+        raise ValueError(
+            f"finalized snapshot for {week} has URI(s) without track metadata: "
+            f"{', '.join(missing_uris)}"
+        )
+
+    tracks: list[dict[str, Any]] = []
+    for rank, uri in enumerate(spotify_uris, start=1):
+        bucket = buckets[uri]
+        spotify_url = spotify_track_url(uri)
+        if spotify_url is None:
+            raise ValueError(f"finalized snapshot for {week} has invalid Spotify URI: {uri}")
+        best_source = _best_source(bucket.sources, source_quality)
+        tracks.append(
+            {
+                "rank": rank,
+                "artist": bucket.artist,
+                "title": bucket.title,
+                "source": source_label(best_source),
+                "source_count": len(bucket.sources),
+                "spotify_url": spotify_url,
+            }
+        )
+    return tracks
 
 
 def _export_tracks(

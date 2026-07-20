@@ -154,6 +154,125 @@ class TestCliRun:
         assert '"event": "pipeline.debug"' in result.stdout
 
 
+class TestCliFinalize:
+    def _db_with_keeper(self, tmp_path: Path) -> Path:
+        db_path = tmp_path / "peel.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        _insert_week_track(db, "spotify:track:keeper", "Keeper Artist", "Keeper Track", "2026-W24")
+        db.upsert_feedback("spotify:track:keeper", "like")
+        db.close()
+        return db_path
+
+    def test_finalize_persists_confirmed_snapshot_before_export(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        db_path = self._db_with_keeper(tmp_path)
+        mock_spotify = MagicMock()
+        observed_snapshots: list[list[str] | None] = []
+        observed_export_weeks: list[str | None] = []
+
+        def fake_export(db, *_args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+            observed_snapshots.append(db.finalized_week_uris("2026-W24", "playlist-id"))
+            observed_export_weeks.append(kwargs.get("current_week"))
+            return []
+
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+        monkeypatch.setattr(cli, "SpotifyClient", lambda: mock_spotify)
+        monkeypatch.setattr(cli, "export_site", fake_export)
+
+        result = runner.invoke(
+            cli.app,
+            ["finalize", "--week", "2026-W24", "--site-dir", str(tmp_path / "site")],
+        )
+
+        assert result.exit_code == 0
+        mock_spotify.replace_playlist_items.assert_called_once_with(
+            "playlist-id", ["spotify:track:keeper"]
+        )
+        assert observed_snapshots == [["spotify:track:keeper"]]
+        assert observed_export_weeks == ["2026-W24"]
+        assert "Corre uv run peel sync push." in result.stdout
+        db = DB(str(db_path))
+        assert db.finalized_week_uris("2026-W24", "playlist-id") == ["spotify:track:keeper"]
+        db.close()
+
+    def test_finalize_spotify_failure_leaves_no_snapshot_or_export(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        db_path = self._db_with_keeper(tmp_path)
+        mock_spotify = MagicMock()
+        mock_spotify.replace_playlist_items.side_effect = RuntimeError("Spotify unavailable")
+        mock_export = MagicMock()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+        monkeypatch.setattr(cli, "SpotifyClient", lambda: mock_spotify)
+        monkeypatch.setattr(cli, "export_site", mock_export)
+
+        result = runner.invoke(cli.app, ["finalize", "--week", "2026-W24"])
+
+        assert result.exit_code != 0
+        mock_export.assert_not_called()
+        db = DB(str(db_path))
+        assert db.finalized_week_uris("2026-W24", "playlist-id") is None
+        db.close()
+
+    def test_finalize_export_failure_keeps_confirmed_snapshot_for_retry(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        db_path = self._db_with_keeper(tmp_path)
+        mock_spotify = MagicMock()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+        monkeypatch.setattr(cli, "SpotifyClient", lambda: mock_spotify)
+        monkeypatch.setattr(cli, "export_site", MagicMock(side_effect=RuntimeError("site failed")))
+
+        result = runner.invoke(cli.app, ["finalize", "--week", "2026-W24"])
+
+        assert result.exit_code != 0
+        assert "snapshot ficou guardado" in result.stdout
+        assert "peel site export" in result.stdout
+        mock_spotify.replace_playlist_items.assert_called_once_with(
+            "playlist-id", ["spotify:track:keeper"]
+        )
+        db = DB(str(db_path))
+        assert db.finalized_week_uris("2026-W24", "playlist-id") == ["spotify:track:keeper"]
+        db.close()
+
+    def test_finalize_no_export_still_persists_confirmed_snapshot(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        db_path = self._db_with_keeper(tmp_path)
+        mock_spotify = MagicMock()
+        mock_export = MagicMock()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+        monkeypatch.setattr(cli, "SpotifyClient", lambda: mock_spotify)
+        monkeypatch.setattr(cli, "export_site", mock_export)
+
+        result = runner.invoke(cli.app, ["finalize", "--week", "2026-W24", "--no-export"])
+
+        assert result.exit_code == 0
+        assert "Corre uv run peel sync push." in result.stdout
+        mock_export.assert_not_called()
+        db = DB(str(db_path))
+        assert db.finalized_week_uris("2026-W24", "playlist-id") == ["spotify:track:keeper"]
+        db.close()
+
+    def test_finalize_rejects_invalid_week_before_spotify_or_snapshot(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        db_path = self._db_with_keeper(tmp_path)
+        mock_spotify = MagicMock()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+        monkeypatch.setattr(cli, "SpotifyClient", lambda: mock_spotify)
+
+        result = runner.invoke(cli.app, ["finalize", "--week", "bad-week", "--no-export"])
+
+        assert result.exit_code != 0
+        mock_spotify.replace_playlist_items.assert_not_called()
+        db = DB(str(db_path))
+        assert db.finalized_week_uris("2026-W24", "playlist-id") is None
+        db.close()
+
+
 class TestCliStatus:
     def test_status_shows_counts_and_sources(self, tmp_path: Path, monkeypatch) -> None:
         db_path = tmp_path / "peel.db"

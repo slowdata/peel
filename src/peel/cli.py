@@ -37,6 +37,7 @@ from peel.main import run as run_pipeline
 from peel.matcher import normalize
 from peel.models import ReviewQueueItem
 from peel.musicbrainz import fetch_musicbrainz_artist_genres
+from peel.playlists import canonical_playlist_id
 from peel.release_radar import (
     DEFAULT_RELEASE_RADAR_URL,
     ReleaseRadarTrack,
@@ -159,7 +160,8 @@ def finalize(
     ] = True,
 ) -> None:
     """Publica a semana: keepers (love/like) da triagem → playlist Weekly + export do site."""
-    target_week = week or iso_week(datetime.now(UTC))
+    target_week = _normalize_week_option(week) if week else iso_week(datetime.now(UTC))
+    snapshot_playlist_id = canonical_playlist_id(settings.peel_playlist_id)
     db = DB(str(_resolve_path(settings.db_path)))
     try:
         db.init_schema()
@@ -169,18 +171,28 @@ def finalize(
         except SpotifyReauthRequired as exc:
             _abort_spotify_reauth(exc)
         sp.replace_playlist_items(settings.peel_playlist_id, keepers)
+        db.replace_finalized_week_tracks(target_week, snapshot_playlist_id, keepers)
         console.print(
             f"Finalized {target_week}: {len(keepers)} keepers → {settings.peel_playlist_id}"
         )
         if export:
-            export_site(
-                db,
-                _resolve_path(str(site_dir)),
-                weeks=2,
-                playlist_id=settings.peel_playlist_id,
-                album_resolver=make_album_resolver(sp),
-            )
+            try:
+                export_site(
+                    db,
+                    _resolve_path(str(site_dir)),
+                    weeks=2,
+                    playlist_id=snapshot_playlist_id,
+                    current_week=target_week,
+                    album_resolver=make_album_resolver(sp),
+                )
+            except Exception:
+                console.print(
+                    "Export falhou depois da confirmação Spotify; o snapshot ficou guardado. "
+                    "Corre uv run peel site export para repetir."
+                )
+                raise
             console.print("Site exported.")
+        console.print("Corre uv run peel sync push.")
     finally:
         db.close()
 

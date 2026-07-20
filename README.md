@@ -166,7 +166,11 @@ uv run peel feedback --history --week 2026-W28
 uv run peel triage feedback        # alias compatível de `peel feedback`
 uv run peel triage --open          # abre Spotify
 uv run peel triage bootstrap       # uma vez: importa a triagem já existente
+uv run peel finalize --week 2026-W29 # após feedback: confirma o Top 7 em Spotify e no site
 ```
+
+`finalize` grava o Top 7 e a ordem que Spotify confirmou. Re-exports posteriores
+usam esse snapshot canónico; semanas ainda não finalizadas mantêm o ranking editorial.
 
 Os comandos humanos escondem logs internos por defeito; para diagnóstico local,
 usa `uv run peel --verbose triage` (a weekly mantém logs JSON completos para CI).
