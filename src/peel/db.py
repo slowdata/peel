@@ -795,8 +795,14 @@ class DB:
         self,
         week: str | None = None,
         limit: int = 50,
+        exclude_identities: set[tuple[str, str]] | None = None,
     ) -> list[tuple[str, str, str, str, int, str, str]]:
-        """Tracks ainda sem feedback explícito."""
+        """Tracks ainda sem feedback explícito, opcionalmente excluindo identidades.
+
+        ``exclude_identities`` usa artista/título normalizados. O filtro é feito
+        antes de aplicar ``limit`` para que uma triagem activa grande não esconda
+        backlog histórico elegível que apareça mais abaixo no ranking.
+        """
         params: list[object] = []
         where_clause = """
             WHERE f.spotify_uri IS NULL
@@ -812,7 +818,9 @@ class DB:
         if week is not None:
             where_clause += " AND t.added_at_week = ?"
             params.append(week)
-        params.append(limit)
+        limit_clause = "" if exclude_identities else "LIMIT ?"
+        if not exclude_identities:
+            params.append(limit)
 
         cursor = self.conn.execute(
             f"""
@@ -829,11 +837,18 @@ class DB:
             {where_clause}
             GROUP BY t.spotify_uri, t.artist, t.title
             ORDER BY last_added_at DESC, t.artist COLLATE NOCASE, t.title COLLATE NOCASE
-            LIMIT ?
+            {limit_clause}
             """,
             params,
         )
-        return [tuple(row) for row in cursor.fetchall()]
+        rows = [tuple(row) for row in cursor.fetchall()]
+        if not exclude_identities:
+            return rows
+        return [
+            row
+            for row in rows
+            if (normalize(str(row[1])), normalize(str(row[2]))) not in exclude_identities
+        ][:limit]
 
     def record_unmatched(
         self,

@@ -15,6 +15,7 @@ Resiliência:
 from __future__ import annotations
 
 import contextlib
+import logging
 import os
 import shutil
 import tempfile
@@ -37,14 +38,26 @@ from peel.sources.registry import active_sources
 from peel.spotify_client import SpotifyClient
 from peel.telegram import AlbumPickItem, DigestItem, TriageItem, send_digest
 
-# Setup de logging estruturado (JSON para GitHub Actions)
-structlog.configure(
-    processors=[
-        structlog.processors.add_log_level,
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.JSONRenderer(),
-    ]
-)
+
+def configure_logging(*, verbose: bool = False, pipeline: bool = False) -> None:
+    """Configura logging estruturado de forma explícita e idempotente.
+
+    Comandos humanos mostram apenas warnings/errors por defeito. A pipeline
+    semanal e ``--verbose`` mantêm DEBUG JSON completo para CI/diagnóstico.
+    ``cache_logger_on_first_use=False`` permite reconfigurar loggers já
+    importados sem efeitos globais inesperados de ordem de imports.
+    """
+    min_level = logging.DEBUG if verbose or pipeline else logging.WARNING
+    structlog.configure(
+        wrapper_class=structlog.make_filtering_bound_logger(min_level),
+        processors=[
+            structlog.processors.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.processors.JSONRenderer(),
+        ],
+        cache_logger_on_first_use=False,
+    )
+
 
 log = structlog.get_logger()
 
@@ -111,6 +124,8 @@ def run(dry_run: bool = False) -> None:
     - Adição à playlist
     - Logging de resultados
     """
+    configure_logging(pipeline=True)
+
     # Timestamp de início (para duration logging)
     start_time = datetime.now(UTC)
 

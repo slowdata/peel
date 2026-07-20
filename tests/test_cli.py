@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import structlog
 from typer.testing import CliRunner
 
 import peel.cli as cli
@@ -22,6 +23,25 @@ def _settings(db_path: Path) -> SimpleNamespace:
         spotify_refresh_token="refresh-token",
         peel_playlist_id="playlist-id",
         peel_review_playlist_id="",
+    )
+
+
+def _queue_item(
+    spotify_uri: str,
+    artist: str = "Queue Artist",
+    title: str = "Queue Track",
+) -> ReviewQueueItem:
+    return ReviewQueueItem(
+        source_id="source-a",
+        artist=artist,
+        title=title,
+        spotify_uri=spotify_uri,
+        source_url=None,
+        source_count=1,
+        affinity=0.5,
+        is_new=False,
+        added_at_week="2026-W28",
+        current_week="2026-W28",
     )
 
 
@@ -121,6 +141,17 @@ class TestCliRun:
 
         assert result.exit_code == 0
         mock_run.assert_called_once_with(dry_run=True)
+
+    def test_run_keeps_structured_debug_logging(self, monkeypatch) -> None:
+        def fake_run(*, dry_run: bool) -> None:
+            structlog.get_logger().debug("pipeline.debug", dry_run=dry_run)
+
+        monkeypatch.setattr(cli, "run_pipeline", fake_run)
+
+        result = runner.invoke(cli.app, ["run"])
+
+        assert result.exit_code == 0
+        assert '"event": "pipeline.debug"' in result.stdout
 
 
 class TestCliStatus:
@@ -223,19 +254,214 @@ class TestCliFeedback:
         db_path = tmp_path / "peel.db"
         db = DB(str(db_path))
         db.init_schema()
-        db.record_track("spotify:track:1", "source-a", "Artist A", "Track A", None)
+        item = _queue_item("spotify:track:1", "Artist A", "Track A")
+        db.record_track(item.spotify_uri, item.source_id, item.artist, item.title, None)
+        db.replace_review_queue("playlist-id", [item])
+        db.close()
 
         monkeypatch.setattr(cli, "settings", _settings(db_path))
 
         result = runner.invoke(cli.app, ["feedback", "--limit", "1"], input="like\nbom groove\n")
 
         assert result.exit_code == 0
-        assert "Feedback" in result.stdout
+        assert "Artist A" in result.stdout
+        assert "Triagem activa completa" in result.stdout
+        assert "Corre uv run peel sync push." in result.stdout
 
         db2 = DB(str(db_path))
         db2.init_schema()
         assert db2.feedback_for_track("spotify:track:1") == (1, "like", "bom groove")
         db2.close()
+
+    def test_feedback_default_only_evaluates_active_triage_queue(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        db_path = tmp_path / "peel.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        active = _queue_item("spotify:track:active", "Active Artist", "Active Track")
+        db.record_track(active.spotify_uri, active.source_id, active.artist, active.title, None)
+        db.record_track(
+            "spotify:track:historic", "source-a", "Historic Artist", "Historic Track", None
+        )
+        db.replace_review_queue("playlist-id", [active])
+        db.close()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+
+        result = runner.invoke(cli.app, ["feedback"], input="like\n\n")
+
+        assert result.exit_code == 0
+        assert "Active Artist" in result.stdout
+        assert "Historic Artist" not in result.stdout
+        assert "db.connected" not in result.stdout
+        db = DB(str(db_path))
+        assert db.feedback_for_track(active.spotify_uri) is not None
+        assert db.feedback_for_track("spotify:track:historic") is None
+        db.close()
+
+    def test_feedback_quits_without_saving_current_active_track(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        db_path = tmp_path / "peel.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        active = _queue_item("spotify:track:active", "Active Artist", "Active Track")
+        db.record_track(active.spotify_uri, active.source_id, active.artist, active.title, None)
+        db.replace_review_queue("playlist-id", [active])
+        db.close()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+
+        result = runner.invoke(cli.app, ["feedback"], input="q\n")
+
+        assert result.exit_code == 0
+        assert "Sessão interrompida" in result.stdout
+        assert "Corre uv run peel sync push." not in result.stdout
+        db = DB(str(db_path))
+        assert db.feedback_for_track(active.spotify_uri) is None
+        db.close()
+
+    def test_feedback_history_evaluates_historical_backlog(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        db_path = tmp_path / "peel.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        db.record_track(
+            "spotify:track:historic", "source-a", "Historic Artist", "Historic Track", None
+        )
+        db.close()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+
+        result = runner.invoke(cli.app, ["feedback", "--history"], input="love\n\n")
+
+        assert result.exit_code == 0
+        assert "Historic Artist" in result.stdout
+        assert "Corre uv run peel sync push." in result.stdout
+        db = DB(str(db_path))
+        assert db.feedback_for_track("spotify:track:historic") == (2, "love", None)
+        db.close()
+
+    def test_feedback_history_excludes_active_identities_and_uri_variants(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        db_path = tmp_path / "peel.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        active = _queue_item("spotify:track:active", "Active Artist", "Active Track")
+        db.record_track(active.spotify_uri, active.source_id, active.artist, active.title, None)
+        # URI diferente e capitalização diferente: a identidade continua activa.
+        db.record_track(
+            "spotify:track:active-variant",
+            "source-b",
+            "ACTIVE ARTIST",
+            "ACTIVE TRACK",
+            None,
+        )
+        db.record_track(
+            "spotify:track:historic", "source-a", "Historic Artist", "Historic Track", None
+        )
+        db.replace_review_queue("playlist-id", [active])
+        db.close()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+
+        result = runner.invoke(cli.app, ["feedback", "--history"], input="like\n\n")
+
+        assert result.exit_code == 0
+        assert "Historic Artist" in result.stdout
+        assert "Active Artist" not in result.stdout
+        db = DB(str(db_path))
+        assert db.feedback_for_track("spotify:track:historic") is not None
+        assert db.feedback_for_track(active.spotify_uri) is None
+        assert db.feedback_for_track("spotify:track:active-variant") is None
+        db.close()
+
+    def test_feedback_week_requires_history_without_writing(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        db_path = tmp_path / "peel.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        db.record_track(
+            "spotify:track:historic", "source-a", "Historic Artist", "Historic Track", None
+        )
+        db.close()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+
+        result = runner.invoke(cli.app, ["feedback", "--week", "2026-W28"])
+
+        assert result.exit_code == 2
+        assert "--week requer --history" in result.stderr
+        db = DB(str(db_path))
+        assert db.feedback_for_track("spotify:track:historic") is None
+        db.close()
+
+    def test_feedback_history_rejects_invalid_week_without_writing(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        db_path = tmp_path / "peel.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        db.record_track(
+            "spotify:track:historic", "source-a", "Historic Artist", "Historic Track", None
+        )
+        db.close()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+
+        result = runner.invoke(cli.app, ["feedback", "--history", "--week", "not-a-week"])
+
+        assert result.exit_code == 2
+        assert "Invalid ISO week" in result.stderr
+        db = DB(str(db_path))
+        assert db.feedback_for_track("spotify:track:historic") is None
+        db.close()
+
+    def test_feedback_reports_complete_active_queue_without_offering_history(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        db_path = tmp_path / "peel.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        active = _queue_item("spotify:track:active", "Active Artist", "Active Track")
+        db.record_track(active.spotify_uri, active.source_id, active.artist, active.title, None)
+        db.upsert_feedback(active.spotify_uri, "like")
+        db.record_track(
+            "spotify:track:historic", "source-a", "Historic Artist", "Historic Track", None
+        )
+        db.replace_review_queue("playlist-id", [active])
+        db.close()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+
+        result = runner.invoke(cli.app, ["feedback"])
+
+        assert result.exit_code == 0
+        assert "Triagem activa completa" in result.stdout
+        assert "Historic Artist" not in result.stdout
+        assert "Corre uv run peel sync push." not in result.stdout
+
+    def test_triage_feedback_is_compatible_alias_for_active_queue(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        db_path = tmp_path / "peel.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        active = _queue_item("spotify:track:active", "Active Artist", "Active Track")
+        db.record_track(active.spotify_uri, active.source_id, active.artist, active.title, None)
+        db.record_track(
+            "spotify:track:historic", "source-a", "Historic Artist", "Historic Track", None
+        )
+        db.replace_review_queue("playlist-id", [active])
+        db.close()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+
+        result = runner.invoke(cli.app, ["triage", "feedback"], input="skip\n\n")
+
+        assert result.exit_code == 0
+        assert "Active Artist" in result.stdout
+        assert "Historic Artist" not in result.stdout
+        db = DB(str(db_path))
+        assert db.feedback_for_track(active.spotify_uri) == (-1, "skip", None)
+        assert db.feedback_for_track("spotify:track:historic") is None
+        db.close()
 
     def test_prompt_comment_retries_after_unicode_decode_error(self, monkeypatch) -> None:
         calls = 0
@@ -346,7 +572,49 @@ class TestCliTriage:
         assert "Modern Woman" in result.output
         assert "🆕 2026-W28" in result.output
 
-    def test_triage_shows_feedback_and_pending_hides_rated(
+    def test_human_triage_hides_internal_info_logs(self, tmp_path: Path, monkeypatch) -> None:
+        db_path = tmp_path / "test.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        item = _queue_item("spotify:track:active", "Active Artist", "Active Track")
+        db.record_track(item.spotify_uri, item.source_id, item.artist, item.title, None)
+        db.replace_review_queue("playlist-id", [item])
+        db.close()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+
+        result = runner.invoke(cli.app, ["triage"])
+
+        assert result.exit_code == 0
+        assert "Active Artist" in result.stdout
+        assert "db.connected" not in result.stdout
+        assert "schema_initialized" not in result.stdout
+
+    def test_verbose_human_command_shows_debug_but_normal_hides_it(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        db_path = tmp_path / "test.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        item = _queue_item("spotify:track:active", "Active Artist", "Active Track")
+        db.record_track(item.spotify_uri, item.source_id, item.artist, item.title, None)
+        db.replace_review_queue("playlist-id", [item])
+        db.close()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+        original_review_queue = DB.review_queue
+
+        def review_queue_with_debug(self, playlist_id):  # noqa: ANN001
+            structlog.get_logger().debug("human.debug")
+            return original_review_queue(self, playlist_id)
+
+        monkeypatch.setattr(DB, "review_queue", review_queue_with_debug)
+
+        normal = runner.invoke(cli.app, ["triage"])
+        verbose = runner.invoke(cli.app, ["--verbose", "triage"])
+
+        assert '"event": "human.debug"' not in normal.stdout
+        assert '"event": "human.debug"' in verbose.stdout
+
+    def test_triage_shows_feedback_and_unrated_aliases_hide_rated(
         self, tmp_path: Path, monkeypatch
     ) -> None:
         db_path = tmp_path / "test.db"
@@ -371,11 +639,14 @@ class TestCliTriage:
         monkeypatch.setattr(cli, "settings", _settings(db_path))
 
         result = runner.invoke(cli.app, ["triage"])
+        unrated = runner.invoke(cli.app, ["triage", "--unrated"])
         pending = runner.invoke(cli.app, ["triage", "--pending"])
 
         assert result.exit_code == 0
         assert "✓ love" in result.output
+        assert unrated.exit_code == 0
         assert pending.exit_code == 0
+        assert "Sem tracks activas sem avaliação" in unrated.output
         assert "Sem tracks activas sem avaliação" in pending.output
 
 

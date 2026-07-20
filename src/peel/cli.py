@@ -32,9 +32,10 @@ from peel.affinity import build_affinity_profile
 from peel.config import settings
 from peel.db import DB, FEEDBACK_RATINGS, iso_week
 from peel.doctor_sources import inspect_registered_sources
-from peel.main import build_triage_items
+from peel.main import build_triage_items, configure_logging
 from peel.main import run as run_pipeline
 from peel.matcher import normalize
+from peel.models import ReviewQueueItem
 from peel.musicbrainz import fetch_musicbrainz_artist_genres
 from peel.release_radar import (
     DEFAULT_RELEASE_RADAR_URL,
@@ -81,6 +82,18 @@ app.add_typer(triage_app, name="triage")
 app.add_typer(radar_app, name="radar")
 app.add_typer(site_app, name="site")
 app.add_typer(affinity_app, name="affinity")
+
+
+@app.callback()
+def cli_callback(
+    ctx: typer.Context,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", help="Mostra logs estruturados locais para diagnóstico"),
+    ] = False,
+) -> None:
+    """Configura logging para a CLI sem alterar o modo da pipeline."""
+    configure_logging(verbose=verbose, pipeline=ctx.invoked_subcommand == "run")
 
 
 @dataclass(slots=True)
@@ -275,10 +288,28 @@ def feedback(
     uri: str | None = typer.Option(None, "--uri", help="Spotify URI a avaliar"),
     rating: str | None = typer.Option(None, "--rating", help="love|like|meh|skip|ban"),
     comment: str | None = typer.Option(None, "--comment", help="Comentário opcional"),
-    week: str | None = typer.Option(None, "--week", help="Semana ISO a avaliar"),
-    limit: int = typer.Option(20, "--limit", min=1, help="Número máximo de tracks"),
+    history: bool = typer.Option(
+        False, "--history", help="Avalia backlog histórico fora da triagem"
+    ),
+    week: str | None = typer.Option(
+        None,
+        "--week",
+        help="Semana ISO do backlog (requer --history)",
+    ),
+    limit: int = typer.Option(28, "--limit", min=1, help="Número máximo de tracks"),
 ) -> None:
-    """Regista feedback explícito ou entra em modo interactivo."""
+    """Avalia a triagem activa; use ``--history`` para o backlog histórico."""
+    normalized_week: str | None = None
+    if week is not None:
+        if not history:
+            typer.echo("Erro: --week requer --history.", err=True)
+            raise typer.Exit(code=2)
+        try:
+            normalized_week = _normalize_week_option(week)
+        except typer.BadParameter as exc:
+            typer.echo(f"Erro: {exc}", err=True)
+            raise typer.Exit(code=2) from exc
+
     db_path = _resolve_path(settings.db_path)
     db = DB(str(db_path))
     try:
@@ -290,29 +321,122 @@ def feedback(
             console.print(f"Saved feedback: {uri} -> {chosen_rating}")
             return
 
-        rows = db.unrated_tracks(week=week, limit=limit)
-        if not rows:
-            console.print("Sem tracks por avaliar.")
-            return
-
-        for index, row in enumerate(rows, start=1):
-            _print_feedback_prompt(db, row, index, len(rows))
-            chosen_rating = _prompt_rating(default="like")
-            if chosen_rating in {"q", "quit", "exit"}:
-                break
-            chosen_comment = _prompt_comment(default="")
-            _save_feedback(db, row[0], chosen_rating, chosen_comment)
-            console.print(f"Saved: {row[1]} — {row[2]} [{chosen_rating}]")
+        if history:
+            _run_history_feedback_session(db, week=normalized_week, limit=limit)
+        else:
+            _run_triage_feedback_session(db, limit=limit)
     finally:
         db.close()
+
+
+def _active_unrated_triage_items(db: DB) -> list[ReviewQueueItem]:
+    """Tracks activas sem feedback, pela ordem exacta do snapshot Spotify."""
+    playlist_id = settings.peel_review_playlist_id or settings.peel_playlist_id
+    return [
+        item
+        for item in db.review_queue(playlist_id)
+        if db.feedback_for_track_identity(item.spotify_uri) is None
+    ]
+
+
+def _run_triage_feedback_session(db: DB, *, limit: int) -> None:
+    """Sessão interactiva canónica da fila activa de triagem."""
+    playlist_id = settings.peel_review_playlist_id or settings.peel_playlist_id
+    if not db.review_queue(playlist_id):
+        console.print("Sem snapshot de triagem confirmado. Aguarda a próxima weekly.")
+        return
+
+    items = _active_unrated_triage_items(db)
+    if not items:
+        console.print("Triagem activa completa: todas as tracks já foram avaliadas.")
+        return
+
+    interrupted = False
+    saved_count = 0
+    for index, item in enumerate(items[:limit], start=1):
+        console.print(
+            f"[{index}/{min(len(items), limit)}] {item.artist} — {item.title} "
+            f"({source_label(item.source_id)})"
+        )
+        chosen_rating = _prompt_rating(default="like")
+        if chosen_rating in {"q", "quit", "exit"}:
+            interrupted = True
+            break
+        _save_feedback(db, item.spotify_uri, chosen_rating, _prompt_comment(default=""))
+        saved_count += 1
+        console.print(f"Saved: {item.artist} — {item.title} [{chosen_rating}]")
+
+    remaining = len(_active_unrated_triage_items(db))
+    if interrupted:
+        console.print(f"Sessão interrompida. Faltam {remaining} tracks activas por avaliar.")
+    elif remaining:
+        console.print(f"Sessão terminada. Faltam {remaining} tracks activas por avaliar.")
+    else:
+        console.print("Triagem activa completa: todas as tracks já foram avaliadas.")
+    if saved_count:
+        console.print("Corre uv run peel sync push.")
+
+
+def _active_triage_identities(db: DB) -> set[tuple[str, str]]:
+    """Identidades normalizadas activas, incluindo variantes de URI."""
+    playlist_id = settings.peel_review_playlist_id or settings.peel_playlist_id
+    return {
+        (normalize(item.artist), normalize(item.title)) for item in db.review_queue(playlist_id)
+    }
+
+
+def _run_history_feedback_session(db: DB, *, week: str | None, limit: int) -> None:
+    """Sessão explícita do backlog histórico, excluindo a triagem activa."""
+    exclude_identities = _active_triage_identities(db)
+    rows = db.unrated_tracks(
+        week=week,
+        limit=limit,
+        exclude_identities=exclude_identities,
+    )
+    if not rows:
+        console.print("Sem tracks históricas por avaliar.")
+        return
+
+    interrupted = False
+    saved_count = 0
+    for index, row in enumerate(rows, start=1):
+        _print_feedback_prompt(db, row, index, len(rows))
+        chosen_rating = _prompt_rating(default="like")
+        if chosen_rating in {"q", "quit", "exit"}:
+            interrupted = True
+            break
+        chosen_comment = _prompt_comment(default="")
+        _save_feedback(db, row[0], chosen_rating, chosen_comment)
+        saved_count += 1
+        console.print(f"Saved: {row[1]} — {row[2]} [{chosen_rating}]")
+
+    remaining = bool(
+        db.unrated_tracks(
+            week=week,
+            limit=1,
+            exclude_identities=exclude_identities,
+        )
+    )
+    if interrupted:
+        console.print("Sessão histórica interrompida.")
+    elif remaining:
+        console.print("Sessão histórica terminada; ainda há tracks por avaliar.")
+    else:
+        console.print("Backlog histórico completo.")
+    if saved_count:
+        console.print("Corre uv run peel sync push.")
 
 
 @triage_app.callback(invoke_without_command=True)
 def triage(
     ctx: typer.Context,
-    pending: Annotated[
+    unrated: Annotated[
         bool,
-        typer.Option("--pending", help="Mostra só tracks activas sem avaliação"),
+        typer.Option(
+            "--unrated",
+            "--pending",
+            help="Mostra só tracks activas sem avaliação",
+        ),
     ] = False,
     open_playlist: Annotated[
         bool,
@@ -329,13 +453,13 @@ def triage(
         db.init_schema()
         queue_items = db.review_queue(playlist_id)
         items = [(item, db.feedback_for_track_identity(item.spotify_uri)) for item in queue_items]
-        if pending:
+        if unrated:
             items = [(item, feedback) for item, feedback in items if feedback is None]
     finally:
         db.close()
 
     if not items:
-        if pending:
+        if unrated:
             console.print("Sem tracks activas sem avaliação.")
         else:
             console.print("Sem snapshot de triagem confirmado. Aguarda a próxima weekly.")
@@ -369,30 +493,11 @@ def triage(
 def triage_feedback(
     limit: Annotated[int, typer.Option("--limit", min=1, help="Máximo de tracks")] = 28,
 ) -> None:
-    """Avalia apenas faixas activas da triagem ainda sem feedback."""
-    playlist_id = settings.peel_review_playlist_id or settings.peel_playlist_id
+    """Alias de compatibilidade para ``peel feedback``."""
     db = DB(str(_resolve_path(settings.db_path)))
     try:
         db.init_schema()
-        items = [
-            item
-            for item in db.review_queue(playlist_id)
-            if db.feedback_for_track_identity(item.spotify_uri) is None
-        ][:limit]
-        if not items:
-            console.print("Sem tracks activas por avaliar.")
-            return
-
-        for index, item in enumerate(items, start=1):
-            console.print(
-                f"[{index}/{len(items)}] {item.artist} — {item.title} "
-                f"({source_label(item.source_id)})"
-            )
-            chosen_rating = _prompt_rating(default="like")
-            if chosen_rating in {"q", "quit", "exit"}:
-                break
-            _save_feedback(db, item.spotify_uri, chosen_rating, _prompt_comment(default=""))
-            console.print(f"Saved: {item.artist} — {item.title} [{chosen_rating}]")
+        _run_triage_feedback_session(db, limit=limit)
     finally:
         db.close()
 

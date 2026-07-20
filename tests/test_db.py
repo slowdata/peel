@@ -644,6 +644,32 @@ class TestFeedback:
 
         assert {row[0] for row in rows} == {"spotify:track:other"}
 
+    def test_unrated_tracks_excludes_normalized_identities_before_limit(
+        self, tmp_path: Path
+    ) -> None:
+        db = DB(str(tmp_path / "test.db"))
+        db.init_schema()
+        db.record_track("spotify:track:active", "source-a", "Active Artist", "Active Track", None)
+        db.record_track(
+            "spotify:track:historic", "source-b", "Historic Artist", "Historic Track", None
+        )
+        db.conn.execute(
+            "UPDATE tracks SET added_at = ? WHERE spotify_uri = ?",
+            ("2026-05-02T10:00:00+00:00", "spotify:track:active"),
+        )
+        db.conn.execute(
+            "UPDATE tracks SET added_at = ? WHERE spotify_uri = ?",
+            ("2026-05-01T10:00:00+00:00", "spotify:track:historic"),
+        )
+        db.conn.commit()
+
+        rows = db.unrated_tracks(
+            limit=1,
+            exclude_identities={(normalize("ACTIVE ARTIST"), normalize("ACTIVE TRACK"))},
+        )
+
+        assert [row[0] for row in rows] == ["spotify:track:historic"]
+
     def test_is_banned_uri(self, tmp_path: Path) -> None:
         db = DB(str(tmp_path / "test.db"))
         db.init_schema()

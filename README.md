@@ -159,11 +159,17 @@ A playlist de triagem é a fila real para ouvir: todas as tracks novas da run en
 
 ```bash
 uv run peel triage                 # fila confirmada, na ordem Spotify
-uv run peel triage --pending       # só pendentes
+uv run peel triage --unrated       # só tracks activas sem avaliação (--pending é alias)
+uv run peel feedback               # avalia a fila activa, pela ordem Spotify
+uv run peel feedback --history     # backlog histórico explícito
+uv run peel feedback --history --week 2026-W28
+uv run peel triage feedback        # alias compatível de `peel feedback`
 uv run peel triage --open          # abre Spotify
-uv run peel triage feedback        # avalia a fila activa
 uv run peel triage bootstrap       # uma vez: importa a triagem já existente
 ```
+
+Os comandos humanos escondem logs internos por defeito; para diagnóstico local,
+usa `uv run peel --verbose triage` (a weekly mantém logs JSON completos para CI).
 
 Fontes `album` activas incluem Guardian album reviews e The Quietus album reviews. Entram em `Albums / Context`, relatório e Telegram, mas não vão para Spotify matching/playlist. NPR New Music Friday — The Starting 5 e KEXP — In Our Headphones são fontes `track`: entram no matching/playlist como novidades curadas.
 
