@@ -27,11 +27,16 @@ from datetime import UTC, datetime, timedelta
 import structlog
 
 from peel.affinity import AffinityProfile, build_affinity_profile
-from peel.albums import AlbumRecommendation, spotify_album_url, top_album_recommendations
+from peel.albums import (
+    AlbumRecommendation,
+    first_album_url,
+    select_album_queue,
+    spotify_album_url,
+)
 from peel.config import settings
 from peel.db import DB, iso_week
 from peel.matcher import best_match, normalize
-from peel.models import Track
+from peel.models import AlbumQueueItem, Track
 from peel.scoring import SourceScore, build_source_scores
 from peel.site_export import make_album_resolver, spotify_album_search_url
 from peel.sources.registry import active_sources
@@ -156,8 +161,11 @@ def run(dry_run: bool = False) -> None:
     triage_entries: list[TriageItem] = []
     triage_ready = False
     playlist_updated = False
-    new_album_entries: list[DigestItem] = []  # (source_id, artist, album, url)
-    album_recommendations: list[AlbumRecommendation] = []
+    album_queue_items: list[AlbumQueueItem] = []
+    # Only a fully resolved selection is eligible to replace an existing
+    # snapshot. Empty is a valid, successful decision; failure is not.
+    album_queue_ready = False
+    persisted_album_queue: list[AlbumQueueItem] = []
 
     # Métricas do retry de unmatched (reportadas no log final)
     retried_total = 0
@@ -240,20 +248,6 @@ def run(dry_run: bool = False) -> None:
                             if is_new:
                                 albums_added += 1
                                 source_stats.album_count += 1
-                                new_album_entries.append(
-                                    (
-                                        source.id,
-                                        track.artist,
-                                        track.title,
-                                        _album_listen_url(
-                                            track.artist,
-                                            track.title,
-                                            track.spotify_album_uri,
-                                            [track.source_url],
-                                            album_resolver,
-                                        ),
-                                    )
-                                )
                                 log.info(
                                     "album.recorded",
                                     source_id=source.id,
@@ -546,16 +540,20 @@ def run(dry_run: bool = False) -> None:
             log.exception("playlist.triage_selection_failed", error=str(e))
             window_uris = []
         try:
-            album_recommendations = top_album_recommendations(
+            selected_albums = select_album_queue(
                 db,
                 current_week,
-                weeks=2,
                 limit=7,
                 source_quality=source_quality,
             )
+            # No máximo sete lookups Spotify, apenas para picks que serão
+            # entregues; o snapshot conserva o resultado para re-exports.
+            album_queue_items = _album_queue_snapshot_items(
+                current_week, selected_albums, album_resolver
+            )
+            album_queue_ready = True
         except Exception as e:
             log.exception("albums.recommendations_failed", error=str(e))
-            album_recommendations = []
 
         if not triage_ready:
             log.error("playlist.rotation_skipped", reason="triage_selection_failed")
@@ -571,6 +569,13 @@ def run(dry_run: bool = False) -> None:
                 sp.replace_playlist_items(target_playlist, window_uris)
                 db.replace_review_queue(target_playlist, triage_entries)
                 playlist_updated = True
+                if album_queue_ready:
+                    try:
+                        db.replace_album_queue(current_week, album_queue_items)
+                    except Exception as exc:  # never announce unpersisted candidates
+                        log.exception("albums.snapshot_persist_failed", error=str(exc))
+                confirmed = db.album_queue(current_week)
+                persisted_album_queue = confirmed if confirmed is not None else []
                 log.info(
                     "playlist.rotated",
                     playlist_id=target_playlist,
@@ -597,11 +602,11 @@ def run(dry_run: bool = False) -> None:
             try:
                 send_digest(
                     triage_entries,
-                    new_album_entries,
+                    # A queue canónica substitui o dump de menções cruas;
+                    # Telegram mostra uma única lista, na ordem persistida.
+                    [],
                     settings.peel_review_playlist_id or settings.peel_playlist_id,
-                    album_recommendations=_album_digest_items(
-                        album_recommendations, album_resolver
-                    ),
+                    album_recommendations=_album_queue_digest_items(persisted_album_queue),
                 )
             except Exception:
                 log.exception("digest.crashed")
@@ -1025,6 +1030,69 @@ def _album_digest_items(
             _first_album_source_url(source_url for _, source_url in item.source_urls),
         )
         for item in recommendations
+    ]
+
+
+def _album_queue_snapshot_items(
+    week: str,
+    selected: list[tuple[AlbumRecommendation, bool]],
+    album_resolver: Callable[[str, str], str | None] | None,
+) -> list[AlbumQueueItem]:
+    """Resolve links once, for the chosen queue only, then freeze them."""
+    snapshots: list[AlbumQueueItem] = []
+    for position, (item, is_new) in enumerate(selected, start=1):
+        urls = tuple(url for _, url in item.source_urls)
+        listen_url: str | None = None
+        listen_kind: str | None = None
+        if item.spotify_album_uri:
+            listen_url, listen_kind = spotify_album_url(item.spotify_album_uri), "spotify"
+        elif album_resolver:
+            try:
+                listen_url = album_resolver(item.artist, item.album)
+            except Exception as exc:  # noqa: BLE001 - queue remains usable offline
+                log.warning(
+                    "albums.resolver_failed", artist=item.artist, album=item.album, error=str(exc)
+                )
+            if listen_url:
+                listen_kind = "spotify"
+        if not listen_url:
+            listen_url = first_album_url(urls)
+            if listen_url and "bandcamp.com" in listen_url:
+                listen_kind = "bandcamp"
+        if not listen_url:
+            listen_url, listen_kind = spotify_album_search_url(item.artist, item.album), "search"
+        editorial_url = _first_album_source_url(urls)
+        snapshots.append(
+            AlbumQueueItem(
+                week=week,
+                position=position,
+                artist=item.artist,
+                album=item.album,
+                artist_key=item.artist_key,
+                album_key=item.album_key,
+                source_ids=item.sources,
+                source_count=item.source_count,
+                listen_url=listen_url,
+                listen_kind=listen_kind,
+                editorial_url=editorial_url,
+                is_new=is_new,
+            )
+        )
+    return snapshots
+
+
+def _album_queue_digest_items(items: list[AlbumQueueItem]) -> list[AlbumPickItem]:
+    """Telegram consumes the same persisted-order values as CLI/site."""
+    return [
+        (
+            item.artist,
+            item.album,
+            item.source_count,
+            item.source_ids,
+            item.listen_url,
+            item.editorial_url,
+        )
+        for item in items
     ]
 
 

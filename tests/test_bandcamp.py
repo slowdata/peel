@@ -28,7 +28,7 @@ def test_parse_fixture_extracts_releases_and_respects_max_items() -> None:
     assert [(track.artist, track.title) for track in tracks] == [
         ("LCD Soundsystem", "American Dream"),
         ("Automatic", "Is It Now?"),
-        ("Yaeji", "Raingurl"),
+        ("Factory Floor", "Two Different Ways"),
     ]
     assert all(track.source_id == "bandcamp_dfa" for track in tracks)
 
@@ -40,7 +40,7 @@ def test_parse_fixture_resolves_relative_and_absolute_urls() -> None:
 
     assert tracks[0].source_url == "https://dfarecords.bandcamp.com/album/american-dream"
     assert tracks[1].source_url == "https://automaticband.bandcamp.com/album/is-it-now"
-    assert tracks[2].source_url == "https://dfarecords.bandcamp.com/track/raingurl"
+    assert tracks[2].source_url == "https://dfarecords.bandcamp.com/album/two-different-ways"
 
 
 def test_parse_fixture_skips_malformed_and_unsupported_items() -> None:
@@ -51,7 +51,6 @@ def test_parse_fixture_skips_malformed_and_unsupported_items() -> None:
     assert [(track.artist, track.title) for track in tracks] == [
         ("LCD Soundsystem", "American Dream"),
         ("Automatic", "Is It Now?"),
-        ("Yaeji", "Raingurl"),
         ("Factory Floor", "Two Different Ways"),
     ]
 

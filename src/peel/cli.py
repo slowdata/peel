@@ -11,9 +11,12 @@ Backoffice local para:
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
 import tomllib
 import webbrowser
@@ -29,10 +32,11 @@ from rich.panel import Panel
 from rich.table import Table
 
 from peel.affinity import build_affinity_profile
+from peel.albums import select_album_queue
 from peel.config import settings
 from peel.db import DB, FEEDBACK_RATINGS, iso_week
 from peel.doctor_sources import inspect_registered_sources
-from peel.main import build_triage_items, configure_logging
+from peel.main import _album_queue_snapshot_items, build_triage_items, configure_logging
 from peel.main import run as run_pipeline
 from peel.matcher import normalize
 from peel.models import ReviewQueueItem
@@ -76,6 +80,9 @@ triage_app = typer.Typer(
 radar_app = typer.Typer(add_completion=False, help="Snapshots do Spotify Release Radar.")
 site_app = typer.Typer(add_completion=False, help="Exportação para o site peel-sept.")
 affinity_app = typer.Typer(add_completion=False, help="Perfil local de afinidade.")
+albums_app = typer.Typer(
+    add_completion=False, invoke_without_command=True, help="Fila semanal canónica de álbuns."
+)
 app.add_typer(sync_app, name="sync")
 app.add_typer(doctor_app, name="doctor")
 app.add_typer(playlist_app, name="playlist")
@@ -83,6 +90,7 @@ app.add_typer(triage_app, name="triage")
 app.add_typer(radar_app, name="radar")
 app.add_typer(site_app, name="site")
 app.add_typer(affinity_app, name="affinity")
+app.add_typer(albums_app, name="albums")
 
 
 @app.callback()
@@ -437,6 +445,172 @@ def _run_history_feedback_session(db: DB, *, week: str | None, limit: int) -> No
         console.print("Backlog histórico completo.")
     if saved_count:
         console.print("Corre uv run peel sync push.")
+
+
+@albums_app.callback(invoke_without_command=True)
+def albums(
+    ctx: typer.Context,
+    unrated: Annotated[
+        bool, typer.Option("--unrated", help="Mostra só álbuns por avaliar")
+    ] = False,
+    open_rank: Annotated[
+        int | None, typer.Option("--open", min=1, help="Abre link de escuta do rank")
+    ] = None,
+) -> None:
+    """Mostra a fila persistida; não recalcula recomendações."""
+    if ctx.invoked_subcommand is not None:
+        return
+    db = DB(str(_resolve_path(settings.db_path)))
+    try:
+        db.init_schema()
+        items = db.latest_album_queue()
+        if items is None:
+            console.print("Sem fila de álbuns confirmada. Aguarda a próxima weekly.")
+            return
+        if not items:
+            console.print("A fila de álbuns confirmada mais recente está vazia.")
+            return
+        shown = [
+            item
+            for item in items
+            if not unrated or db.album_feedback_for_identity(item.artist, item.album) is None
+        ]
+        if open_rank is not None:
+            chosen = next((item for item in items if item.position == open_rank), None)
+            if not chosen:
+                raise typer.BadParameter(f"Não existe rank {open_rank} na fila activa.")
+            if not chosen.listen_url:
+                console.print(f"Sem link de escuta para {chosen.artist} — {chosen.album}.")
+                return
+            webbrowser.open(chosen.listen_url)
+            return
+        if not shown:
+            console.print("Sem álbuns activos por avaliar.")
+            return
+        table = Table(title=f"Peel — Álbuns ({shown[0].week})")
+        table.add_column("#", justify="right")
+        table.add_column("Estado")
+        table.add_column("Artist", style="bold")
+        table.add_column("Album")
+        table.add_column("Sources")
+        table.add_column("Listen")
+        for item in shown:
+            feedback = db.album_feedback_for_identity(item.artist, item.album)
+            table.add_row(
+                str(item.position),
+                f"✓ {feedback[1]}" if feedback else "pendente",
+                item.artist,
+                item.album,
+                str(item.source_count),
+                item.listen_url or "",
+            )
+        console.print(table)
+    finally:
+        db.close()
+
+
+@albums_app.command("refresh")
+def albums_refresh(
+    week: Annotated[str, typer.Option("--week", help="Semana ISO a reconstruir")],
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Mostra sem escrever")] = False,
+) -> None:
+    """Reconstrói explicitamente uma snapshot sem weekly ou Telegram.
+
+    Repetir ``--week`` substitui deliberadamente a snapshot dessa semana antes
+    de publicar; uma re-exportação normal, pelo contrário, apenas a lê.
+    """
+    target_week = _normalize_week_option(week)
+    real_path = _resolve_path(settings.db_path)
+    temp_path: str | None = None
+    if dry_run:
+        fd, temp_path = tempfile.mkstemp(prefix="peel-albums-refresh-", suffix=".db")
+        os.close(fd)
+        shutil.copyfile(real_path, temp_path)
+        db_path = Path(temp_path)
+    else:
+        db_path = real_path
+    db = DB(str(db_path))
+    try:
+        db.init_schema()
+        # Sunday is inside the target ISO week; using Monday would exclude
+        # practically the entire target week from the same quality window the
+        # weekly pipeline uses.
+        reference = datetime.fromisocalendar(
+            int(target_week[:4]), int(target_week[-2:]), 7
+        ).replace(tzinfo=UTC)
+        quality = {
+            score.source_id: (score.avg_rating or 0.0, score.score)
+            for score in build_source_scores(db, weeks=4, reference_dt=reference)
+        }
+        selected = select_album_queue(db, target_week, limit=7, source_quality=quality)
+        if not selected and db.album_queue(target_week) is not None:
+            console.print("Sem álbuns elegíveis; snapshot existente preservada.")
+            return
+        resolver = None
+        if not dry_run:
+            try:
+                resolver = make_album_resolver(SpotifyClient())
+            except SpotifyReauthRequired as exc:
+                _abort_spotify_reauth(exc)
+        items = _album_queue_snapshot_items(target_week, selected, resolver)
+        table = Table(title=f"Peel — Álbuns {target_week}")
+        table.add_column("#", justify="right")
+        table.add_column("Artist", style="bold")
+        table.add_column("Album")
+        table.add_column("Listen")
+        for item in items:
+            table.add_row(str(item.position), item.artist, item.album, item.listen_url or "")
+        console.print(table)
+        if dry_run:
+            console.print("Dry run: snapshot não escrita.")
+            return
+        db.replace_album_queue(target_week, items)
+        console.print(
+            "Snapshot reconstruída. Corre uv run peel site export e uv run peel sync push."
+        )
+    finally:
+        db.close()
+        if temp_path:
+            Path(temp_path).unlink(missing_ok=True)
+
+
+@albums_app.command("feedback")
+def albums_feedback() -> None:
+    """Avalia álbuns pendentes da fila activa (q não grava o actual)."""
+    db = DB(str(_resolve_path(settings.db_path)))
+    try:
+        db.init_schema()
+        items = db.latest_album_queue() or []
+        pending = [
+            item
+            for item in items
+            if db.album_feedback_for_identity(item.artist, item.album) is None
+        ]
+        if not pending:
+            console.print("Fila de álbuns completa: todos os álbuns foram avaliados.")
+            return
+        saved = 0
+        for index, item in enumerate(pending, start=1):
+            console.print(f"[{index}/{len(pending)}] {item.artist} — {item.album}")
+            if item.listen_url:
+                console.print(item.listen_url)
+            rating = _prompt_rating(default="like")
+            if rating in {"q", "quit", "exit"}:
+                break
+            db.upsert_album_feedback(item.artist, item.album, rating, _prompt_comment(default=""))
+            saved += 1
+            console.print(f"Saved: {item.artist} — {item.album} [{rating}]")
+        remaining = sum(
+            db.album_feedback_for_identity(item.artist, item.album) is None for item in items
+        )
+        if remaining:
+            console.print(f"Sessão terminada. Faltam {remaining} álbuns por avaliar.")
+        else:
+            console.print("Fila de álbuns completa: todos os álbuns foram avaliados.")
+        if saved:
+            console.print("Corre uv run peel sync push.")
+    finally:
+        db.close()
 
 
 @triage_app.callback(invoke_without_command=True)
@@ -1286,6 +1460,10 @@ def _normalize_week_option(week: str) -> str:
         raise typer.BadParameter(f"Invalid ISO week: {week!r}. Expected YYYY-Www") from exc
     if not 1 <= week_number <= 53:
         raise typer.BadParameter("ISO week must be between 1 and 53")
+    try:
+        datetime.fromisocalendar(year, week_number, 1)
+    except ValueError as exc:
+        raise typer.BadParameter(f"Invalid ISO week: {week!r}") from exc
     return f"{year:04d}-W{week_number:02d}"
 
 

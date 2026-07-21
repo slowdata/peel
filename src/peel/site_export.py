@@ -20,6 +20,7 @@ import structlog
 from peel.albums import AlbumRecommendation, spotify_album_url, top_album_recommendations
 from peel.db import DB, FEEDBACK_RATINGS, SourceQuality, iso_week, rank_window_uris
 from peel.matcher import normalize, score
+from peel.models import AlbumQueueItem
 from peel.playlists import canonical_playlist_id
 from peel.scoring import build_source_scores
 from peel.sources.registry import source_homepage, source_label
@@ -104,6 +105,9 @@ def export_site(
     finalized_playlist_id = canonical_playlist_id(playlist_id) if playlist_id else None
     exported: list[ExportedWeek] = []
     for week in weeks_to_export(resolved_current_week, weeks):
+        path = output_dir / f"{week}.json"
+        existing_albums = _existing_albums(path) if path.exists() else None
+        has_album_snapshot = db.album_queue(week) is not None
         has_finalized_snapshot = (
             bool(finalized_playlist_id)
             and db.finalized_week_uris(week, finalized_playlist_id) is not None
@@ -113,16 +117,28 @@ def export_site(
             week,
             playlist_url,
             source_quality,
+            # A published artifact is immutable without a DB decision. This
+            # also means its albums never invoke the Spotify resolver again.
+            preserved_albums=None if has_album_snapshot else existing_albums,
             album_resolver=album_resolver,
             finalized_playlist_id=finalized_playlist_id,
         )
+        if (
+            week == resolved_current_week
+            and payload["tracks"]
+            and not has_album_snapshot
+            and existing_albums is None
+        ):
+            raise ValueError(
+                f"current week {week} has tracks but no confirmed album snapshot "
+                "or published artifact"
+            )
         # Não publicar semanas sem faixas (ex. a semana ISO atual antes do run
         # semanal): a homepage do site é a semana mais recente, e uma semana
         # vazia faria a homepage "saltar" para um hero sem músicas.
         if not payload["tracks"] and not has_finalized_snapshot:
             log.info("site_export.skipped_empty_week", week=week)
             continue
-        path = output_dir / f"{week}.json"
         path.write_text(_json_dumps(payload), encoding="utf-8")
         exported.append(ExportedWeek(week=week, path=path))
     return exported
@@ -135,6 +151,7 @@ def build_site_week_payload(
     source_quality: dict[str, SourceQuality] | None = None,
     album_resolver: AlbumResolver | None = None,
     finalized_playlist_id: str | None = None,
+    preserved_albums: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Constrói o JSON de uma semana seguindo exactamente o contrato do site.
 
@@ -154,7 +171,11 @@ def build_site_week_payload(
         if finalized_uris is not None
         else _export_tracks(db, week, quality)
     )
-    albums = _export_albums(db, week, quality, album_resolver=album_resolver)
+    albums = (
+        preserved_albums
+        if preserved_albums is not None
+        else _export_albums(db, week, quality, album_resolver=album_resolver)
+    )
     sources = _sources_for_payload(tracks, albums)
     start = _week_start(week)
     end = start + timedelta(days=6)
@@ -308,23 +329,57 @@ def _export_tracks(
     return tracks
 
 
+def _existing_albums(path: Path) -> list[dict[str, Any]]:
+    """Read a published array strictly; never overwrite malformed artifacts."""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"existing site JSON is invalid: {path}") from exc
+    albums = payload.get("albums") if isinstance(payload, dict) else None
+    if not isinstance(albums, list) or not all(isinstance(item, dict) for item in albums):
+        raise ValueError(f"existing site JSON has invalid albums array: {path}")
+    return albums
+
+
 def _export_albums(
     db: DB,
     week: str,
     source_quality: dict[str, SourceQuality],
     album_resolver: AlbumResolver | None = None,
 ) -> list[dict[str, Any]]:
+    snapshot = db.album_queue(week)
+    if snapshot is not None:
+        return [_snapshot_album_to_json(item) for item in snapshot]
+    # Sem snapshot só há fallback para semanas históricas. Não é usado para
+    # semanas entregues pela pipeline actual, onde ordem/links ficam congelados.
     recommendations = top_album_recommendations(
-        db,
-        week,
-        weeks=SITE_ALBUM_WINDOW_WEEKS,
-        limit=7,
-        source_quality=source_quality,
+        db, week, weeks=SITE_ALBUM_WINDOW_WEEKS, limit=7, source_quality=source_quality
     )
     return [
         _album_to_json(index, item, source_quality, album_resolver)
         for index, item in enumerate(recommendations, 1)
     ]
+
+
+def _snapshot_album_to_json(item: AlbumQueueItem) -> dict[str, Any]:
+    spotify_url = item.listen_url if item.listen_kind in {"spotify", "search"} else None
+    spotify_match: AlbumSpotifyMatch | None = None
+    if item.listen_kind == "spotify":
+        spotify_match = "direct"
+    elif item.listen_kind == "search":
+        spotify_match = "search"
+    return {
+        "rank": item.position,
+        "artist": item.artist,
+        "title": item.album,
+        "source": ", ".join(source_label(source) for source in item.source_ids),
+        "source_count": item.source_count,
+        "link": item.editorial_url,
+        "listen_url": item.listen_url,
+        "listen_kind": item.listen_kind,
+        "spotify_url": spotify_url,
+        "spotify_match": spotify_match,
+    }
 
 
 def _album_to_json(

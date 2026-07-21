@@ -8,7 +8,7 @@ import pytest
 
 from peel.affinity import build_affinity_profile
 from peel.albums import AlbumRecommendation
-from peel.db import DB
+from peel.db import DB, iso_week
 from peel.main import (
     ReviewCandidate,
     _album_digest_items,
@@ -20,8 +20,9 @@ from peel.main import (
     select_review_playlist_uris,
     slots_for_source,
 )
-from peel.models import Track
+from peel.models import AlbumQueueItem, Track
 from peel.scoring import SourceScore
+from peel.site_export import build_site_week_payload
 from peel.sources.bandcamp import BandcampLabel
 from peel.sources.rss import (
     AquariumDrunkard,
@@ -126,6 +127,34 @@ def test_album_digest_items_use_listen_url_and_source_url() -> None:
     assert items[1][5] == "https://artist.bandcamp.com/album/x"
 
 
+def _album_queue_item(week: str, position: int, album: str) -> AlbumQueueItem:
+    return AlbumQueueItem(
+        week=week,
+        position=position,
+        artist=f"Artist {album}",
+        album=album,
+        artist_key=f"artist {album.lower()}",
+        album_key=album.lower(),
+        source_ids=("thequietus",),
+        source_count=1,
+        listen_url=f"https://listen.example/{album.lower()}",
+        listen_kind="spotify",
+        editorial_url=f"https://review.example/{album.lower()}",
+        is_new=True,
+    )
+
+
+def _configure_album_pipeline_db(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[Path, str]:
+    from peel import config as config_module
+
+    db_path = tmp_path / "album-pipeline.db"
+    monkeypatch.setattr(config_module.settings, "db_path", str(db_path))
+    monkeypatch.setattr(config_module.settings, "peel_playlist_id", "spotify:playlist:test")
+    return db_path, iso_week(datetime.now(UTC))
+
+
 class TestMainIntegration:
     """Testes de integração end-to-end."""
 
@@ -202,6 +231,80 @@ class TestMainIntegration:
         assert [item.spotify_uri for item in triage_items] == playlist_uris
         assert [item.spotify_uri for item in db.review_queue(playlist_id)] == playlist_uris
 
+        db.close()
+
+    def test_album_selection_failure_preserves_snapshot_and_telegram_uses_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        db_path, week = _configure_album_pipeline_db(tmp_path, monkeypatch)
+        db = DB(str(db_path))
+        db.init_schema()
+        prior = [_album_queue_item(week, 1, "Prior")]
+        db.replace_album_queue(week, prior)
+        db.close()
+        spotify = MagicMock()
+
+        with (
+            patch("peel.main.active_sources", return_value=[]),
+            patch("peel.main.SpotifyClient", return_value=spotify),
+            patch("peel.main.select_album_queue", side_effect=RuntimeError("selection failed")),
+            patch("peel.main.send_digest") as digest,
+        ):
+            run()
+
+        spotify.replace_playlist_items.assert_called_once()
+        db = DB(str(db_path))
+        assert db.album_queue(week) == prior
+        telegram_picks = digest.call_args.kwargs["album_recommendations"]
+        assert [item[1] for item in telegram_picks] == ["Prior"]
+        db.close()
+
+    def test_successful_empty_album_selection_persists_empty_snapshot(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        db_path, week = _configure_album_pipeline_db(tmp_path, monkeypatch)
+        spotify = MagicMock()
+
+        with (
+            patch("peel.main.active_sources", return_value=[]),
+            patch("peel.main.SpotifyClient", return_value=spotify),
+            patch("peel.main.select_album_queue", return_value=[]),
+            patch("peel.main.send_digest") as digest,
+        ):
+            run()
+
+        db = DB(str(db_path))
+        assert db.album_queue(week) == []
+        assert digest.call_args.kwargs["album_recommendations"] == []
+        db.close()
+
+    def test_album_snapshot_order_is_shared_by_db_telegram_and_site(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        db_path, week = _configure_album_pipeline_db(tmp_path, monkeypatch)
+        expected = [_album_queue_item(week, 1, "Second"), _album_queue_item(week, 2, "First")]
+        spotify = MagicMock()
+
+        with (
+            patch("peel.main.active_sources", return_value=[]),
+            patch("peel.main.SpotifyClient", return_value=spotify),
+            patch("peel.main.select_album_queue", return_value=[]),
+            patch("peel.main._album_queue_snapshot_items", return_value=expected),
+            patch("peel.main.send_digest") as digest,
+        ):
+            run()
+
+        db = DB(str(db_path))
+        persisted = db.album_queue(week)
+        assert persisted == expected
+        telegram_order = [item[1] for item in digest.call_args.kwargs["album_recommendations"]]
+        payload = build_site_week_payload(db, week, None, source_quality={})
+        assert (
+            [item.album for item in persisted or []]
+            == telegram_order
+            == [album["title"] for album in payload["albums"]]
+            == ["Second", "First"]
+        )
         db.close()
 
     def test_dry_run_never_updates_playlist_or_sends_telegram(

@@ -32,6 +32,25 @@ class ReviewQueueItem(BaseModel):
     current_week: str
 
 
+class AlbumQueueItem(BaseModel):
+    """Linha da snapshot semanal de álbuns, estável até refresh explícito."""
+
+    model_config = {"frozen": True}
+
+    week: str
+    position: int
+    artist: str
+    album: str
+    artist_key: str
+    album_key: str
+    source_ids: tuple[str, ...]
+    source_count: int
+    listen_url: str | None
+    listen_kind: str | None
+    editorial_url: str | None
+    is_new: bool
+
+
 class Track(BaseModel):
     """Faixa candidata vinda de uma fonte de curadoria.
 

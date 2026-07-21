@@ -20,6 +20,7 @@ Dates: ISO 8601 UTC via datetime.now(UTC).isoformat().
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime, timedelta
@@ -28,7 +29,7 @@ from pathlib import Path
 import structlog
 
 from peel.matcher import normalize
-from peel.models import ReviewQueueItem
+from peel.models import AlbumQueueItem, ReviewQueueItem
 from peel.playlists import canonical_playlist_id
 
 FEEDBACK_RATINGS: dict[str, int] = {
@@ -138,6 +139,31 @@ def _timestamp_sort_value(value: str) -> float:
         return datetime.fromisoformat(value).timestamp()
     except ValueError:
         return 0.0
+
+
+def _timestamp_value(value: str) -> float:
+    try:
+        return datetime.fromisoformat(value).timestamp()
+    except ValueError:
+        return 0.0
+
+
+def _week_for_timestamp(value: str) -> str:
+    try:
+        return iso_week(datetime.fromisoformat(value))
+    except ValueError:
+        return ""
+
+
+def _validate_iso_week(value: str) -> None:
+    """Require canonical ``YYYY-Www`` and a real ISO week before writes."""
+    if not re.fullmatch(r"\d{4}-W\d{2}", value):
+        raise ValueError(f"invalid ISO week: {value!r}")
+    try:
+        year_text, week_text = value.split("-W", 1)
+        datetime.fromisocalendar(int(year_text), int(week_text), 1)
+    except ValueError as exc:
+        raise ValueError(f"invalid ISO week: {value!r}") from exc
 
 
 def iso_week(dt: datetime) -> str:
@@ -330,6 +356,7 @@ class DB:
                 spotify_album_uri TEXT,
                 seen_at           TEXT NOT NULL,
                 added_at_week     TEXT NOT NULL,
+                first_seen_reliable INTEGER NOT NULL DEFAULT 1,
                 PRIMARY KEY (artist_key, album_key, source_id)
             )
             """
@@ -426,6 +453,53 @@ class DB:
             """
         )
 
+        # Fila canónica de álbuns. Ao contrário de ``album_mentions``, estas
+        # linhas são uma decisão semanal já entregue: ordem e links não podem
+        # voltar a depender de ranking, rede ou feeds num re-export.
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS album_queue_weeks (
+                week       TEXT PRIMARY KEY,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS album_queue_items (
+                week          TEXT NOT NULL,
+                position      INTEGER NOT NULL,
+                artist        TEXT NOT NULL,
+                album         TEXT NOT NULL,
+                artist_key    TEXT NOT NULL,
+                album_key     TEXT NOT NULL,
+                source_ids    TEXT NOT NULL,
+                source_count  INTEGER NOT NULL,
+                listen_url    TEXT,
+                listen_kind   TEXT,
+                editorial_url TEXT,
+                is_new        INTEGER NOT NULL,
+                PRIMARY KEY (week, position),
+                UNIQUE (week, artist_key, album_key)
+            )
+            """
+        )
+
+        # Feedback é por identidade normalizada, não por URI/edição Spotify.
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS album_feedback (
+                artist_key TEXT NOT NULL,
+                album_key  TEXT NOT NULL,
+                rating     INTEGER NOT NULL,
+                label      TEXT NOT NULL,
+                comment    TEXT,
+                rated_at   TEXT NOT NULL,
+                PRIMARY KEY (artist_key, album_key)
+            )
+            """
+        )
+
         # Cache local de géneros por artista. Vazia por defeito; preenchida só
         # por comando explícito (`peel affinity backfill-genres`) para manter a
         # pipeline semanal sem chamadas extra à Spotify API.
@@ -451,9 +525,17 @@ class DB:
 
         self._ensure_column("unmatched", "source_url", "TEXT")
         self._ensure_column("album_mentions", "spotify_album_uri", "TEXT")
+        self._ensure_column("album_mentions", "first_seen_at", "TEXT")
+        self._ensure_column("album_mentions", "first_seen_week", "TEXT")
+        self._ensure_column("album_mentions", "last_seen_at", "TEXT")
+        self._ensure_column("album_mentions", "last_seen_week", "TEXT")
+        # Legacy observations do not prove when a particular source first
+        # mentioned an album. New observations made after this migration do.
+        self._ensure_column("album_mentions", "first_seen_reliable", "INTEGER NOT NULL DEFAULT 0")
         self._ensure_column("artist_genres", "source", "TEXT")
         self._ensure_column("artist_genres", "external_id", "TEXT")
         self._backfill_album_mentions()
+        self._migrate_album_mention_freshness()
 
     def _backfill_album_mentions(self) -> None:
         """Migra álbuns canónicos antigos para menções por source.
@@ -476,8 +558,8 @@ class DB:
                 """
                 INSERT OR IGNORE INTO album_mentions
                 (artist, album, artist_key, album_key, source_id, source_url,
-                 spotify_album_uri, seen_at, added_at_week)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 spotify_album_uri, seen_at, added_at_week, first_seen_reliable)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                 """,
                 (
                     str(artist),
@@ -494,6 +576,113 @@ class DB:
             count += cursor.rowcount
         self.conn.commit()
         log.info("db.album_mentions_backfilled", count=count)
+
+    def _migrate_album_mention_freshness(self) -> None:
+        """Repair first/last observation without an ambiguous SQL join.
+
+        ``albums`` is legacy canonical state and can contain spelling/case
+        variants.  Evidence is therefore matched in Python by normalized
+        identity *and source*, choosing the oldest row deterministically. Any
+        partial migration is corrected to that proof, whether its stored
+        first observation is too early or too late. Rows without proof keep
+        their existing conservative first value and remain marked uncertain.
+        """
+        evidence: dict[tuple[str, str, str], tuple[str, str]] = {}
+        for artist, album, source_id, seen_at, week in self.conn.execute(
+            "SELECT artist, album, source_id, seen_at, added_at_week FROM albums"
+        ):
+            key = (normalize(str(artist)), normalize(str(album)), str(source_id))
+            candidate = (str(seen_at), str(week or _week_for_timestamp(str(seen_at))))
+            current = evidence.get(key)
+            if current is None or _timestamp_value(candidate[0]) < _timestamp_value(current[0]):
+                evidence[key] = candidate
+
+        rows = self.conn.execute(
+            """
+            SELECT artist_key, album_key, source_id, seen_at, added_at_week,
+                   first_seen_at, first_seen_week, last_seen_at, last_seen_week,
+                   first_seen_reliable
+            FROM album_mentions
+            """
+        ).fetchall()
+        updates: list[tuple[str | int, ...]] = []
+        for (
+            artist_key,
+            album_key,
+            source_id,
+            seen_at,
+            seen_week,
+            first_at,
+            first_week,
+            last_at,
+            last_week,
+            first_reliable,
+        ) in rows:
+            legacy_at = str(seen_at)
+            legacy_week = str(seen_week or _week_for_timestamp(legacy_at))
+            proof = evidence.get((str(artist_key), str(album_key), str(source_id)))
+            stored_first_at = str(first_at) if first_at else legacy_at
+            stored_first_week = str(first_week) if first_week else legacy_week
+            # Exact normalized identity + source evidence is authoritative in
+            # both directions. A partial migration may have set a first date
+            # too late *or* too early; neither is trustworthy without proof.
+            if proof:
+                target_first_at, target_first_week = proof
+                target_reliable = 1
+            else:
+                target_first_at, target_first_week = stored_first_at, stored_first_week
+                target_reliable = 1 if first_reliable else 0
+
+            # A legacy ``seen_at`` was the polling timestamp. Keep the latest
+            # known value independently even while restoring canonical first.
+            target_last_at = max(
+                (str(value) for value in (last_at, legacy_at) if value),
+                key=_timestamp_value,
+            )
+            target_last_week = str(last_week or legacy_week)
+            if target_last_at == legacy_at:
+                target_last_week = legacy_week
+
+            current_values = (
+                first_at,
+                first_week,
+                last_at,
+                last_week,
+                seen_at,
+                seen_week,
+                first_reliable,
+            )
+            target_values = (
+                target_first_at,
+                target_first_week,
+                target_last_at,
+                target_last_week,
+                target_first_at,
+                target_first_week,
+                target_reliable,
+            )
+            if current_values != target_values:
+                updates.append(
+                    (
+                        *target_values,
+                        str(artist_key),
+                        str(album_key),
+                        str(source_id),
+                    )
+                )
+        if not updates:
+            return
+        self.conn.executemany(
+            """
+            UPDATE album_mentions
+            SET first_seen_at = ?, first_seen_week = ?, last_seen_at = ?, last_seen_week = ?,
+                seen_at = ?, added_at_week = ?, first_seen_reliable = ?
+            WHERE artist_key = ? AND album_key = ? AND source_id = ?
+            """,
+            updates,
+        )
+        self.conn.commit()
+        log.info("db.album_freshness_migrated", count=len(updates))
 
     def already_added(self, spotify_uri: str) -> bool:
         """Verifica se um URI já foi adicionado (por qualquer source).
@@ -1112,16 +1301,17 @@ class DB:
     ) -> None:
         """Grava/actualiza uma menção de álbum por source.
 
-        DECISÃO: se a mesma source voltar a mencionar o álbum noutra semana,
-        actualizamos `seen_at`/`added_at_week`; assim a selecção semanal reflecte
-        a rotação actual, não apenas a primeira vez que vimos o álbum.
+        A primeira observação por ``(identidade, source)`` é imutável. Polling
+        repetido só actualiza ``last_seen_*``; caso contrário feeds estáticos
+        voltariam a promover discos antigos como se fossem novos.
         """
         self.conn.execute(
             """
             INSERT INTO album_mentions
             (artist, album, artist_key, album_key, source_id, source_url,
-             spotify_album_uri, seen_at, added_at_week)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             spotify_album_uri, seen_at, added_at_week,
+             first_seen_at, first_seen_week, last_seen_at, last_seen_week, first_seen_reliable)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
             ON CONFLICT(artist_key, album_key, source_id) DO UPDATE SET
                 artist = excluded.artist,
                 album = excluded.album,
@@ -1130,8 +1320,8 @@ class DB:
                     excluded.spotify_album_uri,
                     album_mentions.spotify_album_uri
                 ),
-                seen_at = excluded.seen_at,
-                added_at_week = excluded.added_at_week
+                last_seen_at = excluded.last_seen_at,
+                last_seen_week = excluded.last_seen_week
             """,
             (
                 artist,
@@ -1143,8 +1333,159 @@ class DB:
                 spotify_album_uri,
                 seen_at,
                 added_at_week,
+                seen_at,
+                added_at_week,
+                seen_at,
+                added_at_week,
             ),
         )
+
+    def replace_album_queue(self, week: str, items: list[AlbumQueueItem]) -> None:
+        """Guarda a selecção semanal exacta de álbuns depois de ser resolvida.
+
+        A pipeline real e ``albums refresh`` chamam este método. Repetir uma
+        exportação apenas lê estas linhas; não pesquisa Spotify nem recalcula.
+        """
+        _validate_iso_week(week)
+        if len(items) > 7:
+            raise ValueError("album queue cannot contain more than 7 items")
+        if any(item.week != week for item in items):
+            raise ValueError("album queue item week must match the target week")
+        if [item.position for item in items] != list(range(1, len(items) + 1)):
+            raise ValueError("album queue positions must be contiguous from 1")
+        now = datetime.now(UTC).isoformat()
+        # The old confirmed queue is more valuable than a half-written refresh.
+        # SAVEPOINT also works when callers already have a transaction open.
+        self.conn.execute("SAVEPOINT replace_album_queue")
+        try:
+            self.conn.execute(
+                """
+                INSERT INTO album_queue_weeks (week, created_at) VALUES (?, ?)
+                ON CONFLICT(week) DO UPDATE SET created_at = excluded.created_at
+                """,
+                (week, now),
+            )
+            self.conn.execute("DELETE FROM album_queue_items WHERE week = ?", (week,))
+            self.conn.executemany(
+                """
+                INSERT INTO album_queue_items
+                (week, position, artist, album, artist_key, album_key, source_ids,
+                 source_count, listen_url, listen_kind, editorial_url, is_new)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        item.week,
+                        item.position,
+                        item.artist,
+                        item.album,
+                        item.artist_key,
+                        item.album_key,
+                        json.dumps(item.source_ids),
+                        item.source_count,
+                        item.listen_url,
+                        item.listen_kind,
+                        item.editorial_url,
+                        int(item.is_new),
+                    )
+                    for item in items
+                ],
+            )
+        except Exception:
+            self.conn.execute("ROLLBACK TO replace_album_queue")
+            self.conn.execute("RELEASE replace_album_queue")
+            raise
+        self.conn.execute("RELEASE replace_album_queue")
+        self.conn.commit()
+
+    def album_queue(self, week: str) -> list[AlbumQueueItem] | None:
+        """Lê uma snapshot semanal; ``None`` significa semana legacy."""
+        exists = self.conn.execute(
+            "SELECT 1 FROM album_queue_weeks WHERE week = ?", (week,)
+        ).fetchone()
+        if exists is None:
+            return None
+        rows = self.conn.execute(
+            """
+            SELECT position, artist, album, artist_key, album_key, source_ids, source_count,
+                   listen_url, listen_kind, editorial_url, is_new
+            FROM album_queue_items WHERE week = ? ORDER BY position
+            """,
+            (week,),
+        ).fetchall()
+        return [
+            AlbumQueueItem(
+                week=week,
+                position=int(position),
+                artist=str(artist),
+                album=str(album),
+                artist_key=str(artist_key),
+                album_key=str(album_key),
+                source_ids=tuple(json.loads(str(source_ids))),
+                source_count=int(source_count),
+                listen_url=listen_url,
+                listen_kind=listen_kind,
+                editorial_url=editorial_url,
+                is_new=bool(is_new),
+            )
+            for (
+                position,
+                artist,
+                album,
+                artist_key,
+                album_key,
+                source_ids,
+                source_count,
+                listen_url,
+                listen_kind,
+                editorial_url,
+                is_new,
+            ) in rows
+        ]
+
+    def latest_album_queue(self) -> list[AlbumQueueItem] | None:
+        row = self.conn.execute(
+            "SELECT week FROM album_queue_weeks ORDER BY week DESC LIMIT 1"
+        ).fetchone()
+        return self.album_queue(str(row[0])) if row else None
+
+    def upsert_album_feedback(
+        self, artist: str, album: str, label: str, comment: str | None = None
+    ) -> None:
+        normalized = label.strip().lower()
+        if normalized not in FEEDBACK_RATINGS:
+            allowed = ", ".join(sorted(FEEDBACK_RATINGS))
+            raise ValueError(f"invalid feedback label: {label!r}. Allowed: {allowed}")
+        self.conn.execute(
+            """
+            INSERT INTO album_feedback (artist_key, album_key, rating, label, comment, rated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(artist_key, album_key) DO UPDATE SET
+                rating=excluded.rating, label=excluded.label, comment=excluded.comment,
+                rated_at=excluded.rated_at
+            """,
+            (
+                normalize(artist),
+                normalize(album),
+                FEEDBACK_RATINGS[normalized],
+                normalized,
+                comment,
+                datetime.now(UTC).isoformat(),
+            ),
+        )
+        self.conn.commit()
+
+    def album_feedback_for_identity(
+        self, artist: str, album: str
+    ) -> tuple[int, str, str | None] | None:
+        row = self.conn.execute(
+            """
+            SELECT rating, label, comment FROM album_feedback
+            WHERE artist_key = ? AND album_key = ?
+            """,
+            (normalize(artist), normalize(album)),
+        ).fetchone()
+        return (int(row[0]), str(row[1]), row[2]) if row else None
 
     def record_source_run(
         self,

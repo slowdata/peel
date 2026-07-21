@@ -294,6 +294,7 @@ def test_finalized_snapshot_overrides_editorial_ranking_and_survives_reexport(
         "weekly",
         ["spotify:track:confirmed"],
     )
+    db.replace_album_queue(week, [])
     # Uma menção posterior não pode alterar metadata da semana já finalizada.
     _insert_track(
         db,
@@ -531,6 +532,66 @@ def test_build_site_week_payload_empty_week_is_valid(tmp_path: Path) -> None:
     }
 
 
+def test_export_preserves_published_albums_without_snapshot_and_snapshot_supersedes(
+    tmp_path: Path,
+) -> None:
+    db = DB(str(tmp_path / "peel.db"))
+    db.init_schema()
+    week = "2026-W24"
+    _insert_track(
+        db,
+        uri="spotify:track:x",
+        source_id="stereogum_new_music",
+        artist="Artist",
+        title="Track",
+        added_at="2026-06-10T00:00:00+00:00",
+        week=week,
+    )
+    path = tmp_path / "site" / "src" / "data" / "weeks" / f"{week}.json"
+    path.parent.mkdir(parents=True)
+    preserved = [{"rank": 9, "artist": "Frozen", "title": "Album", "source": "Pitchfork"}]
+    path.write_text(json.dumps({"albums": preserved}), encoding="utf-8")
+    resolver_calls: list[tuple[str, str]] = []
+
+    def resolver(artist: str, album: str) -> str | None:
+        resolver_calls.append((artist, album))
+        return None
+
+    export_site(
+        db, tmp_path / "site", weeks=1, playlist_id=None, current_week=week, album_resolver=resolver
+    )
+    payload = json.loads(path.read_text())
+    assert payload["albums"] == preserved
+    assert payload["sources"] == [
+        {"name": "Stereogum", "url": "https://www.stereogum.com"},
+        {"name": "Pitchfork", "url": "https://pitchfork.com"},
+    ]
+    assert resolver_calls == []
+    db.replace_album_queue(week, [])
+    export_site(db, tmp_path / "site", weeks=1, playlist_id=None, current_week=week)
+    assert json.loads(path.read_text())["albums"] == []
+    db.close()
+
+
+def test_current_week_tracks_without_album_snapshot_or_artifact_fails_closed(
+    tmp_path: Path,
+) -> None:
+    db = DB(str(tmp_path / "peel.db"))
+    db.init_schema()
+    _insert_track(
+        db,
+        uri="spotify:track:x",
+        source_id="stereogum_new_music",
+        artist="Artist",
+        title="Track",
+        added_at="2026-06-10T00:00:00+00:00",
+        week="2026-W24",
+    )
+    with pytest.raises(ValueError, match="confirmed album snapshot"):
+        export_site(db, tmp_path / "site", weeks=1, playlist_id=None, current_week="2026-W24")
+    db.close()
+
+
 def test_export_site_writes_idempotent_json_files(tmp_path: Path) -> None:
     db = DB(str(tmp_path / "peel.db"))
     db.init_schema()
@@ -545,6 +606,7 @@ def test_export_site_writes_idempotent_json_files(tmp_path: Path) -> None:
             week=week,
         )
     site_dir = tmp_path / "site"
+    db.replace_album_queue("2026-W24", [])
 
     exported = export_site(
         db,

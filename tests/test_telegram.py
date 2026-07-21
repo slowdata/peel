@@ -118,6 +118,21 @@ class TestFormatMessage:
         assert "Sem tracks novas esta semana" in msg
         assert "💿 Álbuns da semana (1)" in msg
 
+    def test_album_queue_suppresses_raw_album_mentions(self) -> None:
+        msg = _format_message(
+            [],
+            [("source", "Raw Artist", "Raw Album", "https://raw.example")],
+            "test_id",
+            album_recommendations=[
+                ("Queue Artist", "Queue Album", 1, ("source",), "https://listen.example")
+            ],
+        )
+
+        assert "7 Álbuns a Ouvir (1)" in msg
+        assert "Queue Album" in msg
+        assert "Raw Album" not in msg
+        assert "Álbuns da semana" not in msg
+
     def test_format_message_empty_albums(self) -> None:
         """Formata mensagem sem álbuns."""
         tracks = [("source", "Artist", "Track", None)]

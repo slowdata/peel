@@ -157,6 +157,27 @@ Só sources `kind = "track"` podem entrar na playlist. Sources `album`, `context
 
 A playlist de triagem é a fila real para ouvir: todas as tracks novas da run entram primeiro. Só se faltarem lugares até ao cap entram tracks pendentes, sem feedback, de runs anteriores. Nos pendentes, consenso mantém prioridade e o score da source já inclui feedback; repetições da mesma source sofrem uma penalização linear suave — não há quotas nem caps. O Telegram só é enviado depois de Spotify actualizar a triagem e identifica cada faixa como `🆕 nova` ou `↻ pendente`.
 
+### Album queue
+
+A weekly também confirma uma fila independente de até sete álbuns. A primeira
+observação de cada `(artista, álbum, source)` é imutável; polling repetido só
+actualiza a última observação. Menções editoriais novas e consenso entram antes
+de pendentes sem feedback; labels Bandcamp são complementares e singles nunca
+são elegíveis. A mesma snapshot é consumida pela CLI, Telegram e export do site.
+
+```bash
+uv run peel albums                 # fila activa e links de escuta
+uv run peel albums --unrated       # apenas pendentes
+uv run peel albums --open 1        # abre o link do rank 1
+uv run peel albums feedback        # love|like|meh|skip|ban (q não grava)
+uv run peel albums refresh --week 2026-W29 --dry-run
+uv run peel albums refresh --week 2026-W29  # reconstrói explicitamente a snapshot
+uv run peel site export            # reexporta snapshots sem as recalcular
+```
+
+`albums refresh` é o único caminho para substituir deliberadamente uma semana
+já existente; uma re-exportação normal apenas lê links e ordem congelados.
+
 ```bash
 uv run peel triage                 # fila confirmada, na ordem Spotify
 uv run peel triage --unrated       # só tracks activas sem avaliação (--pending é alias)

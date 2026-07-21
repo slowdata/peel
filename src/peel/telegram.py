@@ -182,14 +182,16 @@ def _format_message(
         lines.append("<i>Sem tracks novas esta semana.</i>")
         lines.append("")
 
-    if new_albums:
+    album_picks = album_recommendations or []
+    # A queue canónica é a entrega; raw mentions ficam no relatório/DB para não
+    # duplicar discos no Telegram com uma ordem ou links diferentes.
+    if new_albums and not album_picks:
         lines.append(f"<b>💿 Álbuns da semana ({len(new_albums)})</b>")
         for item in new_albums[:15]:
             lines.append(_format_digest_item(item))
-    else:
+    elif not album_picks:
         lines.append("<i>Sem álbuns novos esta semana.</i>")
 
-    album_picks = album_recommendations or []
     if album_picks:
         lines.append("")
         lines.append(f"<b>🎧 7 Álbuns a Ouvir ({len(album_picks)})</b>")

@@ -30,12 +30,10 @@ _BROWSER_UA = (
 class BandcampLabel(Source):
     """Bandcamp por editora.
 
-    Estratégia: a página ``/music`` da label traz releases newest-first dentro
-    de ``data-client-items``. Parseamos só os primeiros ``max_items`` para evitar
-    backfill infinito de catálogo e deixamos o dedupe acontecer em DB.
-
-    Itens ``type=album`` e ``type=track`` entram ambos como lançamentos de álbum
-    no Peel, porque Bandcamp usa os dois para releases editoriais pequenos.
+    Estratégia: a página ``/music`` traz releases newest-first. Só ``album``
+    (e URLs ``/album/``) é elegível: singles ``/track/`` não são álbuns. O cap
+    é aplicado *depois* do filtro para não devolver menos álbuns por a página
+    começar com singles.
     """
 
     kind = "album"
@@ -65,10 +63,13 @@ class BandcampLabel(Source):
             return []
 
         tracks: list[Track] = []
-        for raw_item in items[: self.max_items]:
+        for raw_item in items:
             track = self._parse_item(raw_item)
-            if track is not None:
-                tracks.append(track)
+            if track is None:
+                continue
+            tracks.append(track)
+            if len(tracks) >= self.max_items:
+                break
         return tracks
 
     def _client_items(self, html: str) -> list[dict[str, object]] | None:
@@ -84,7 +85,7 @@ class BandcampLabel(Source):
 
     def _parse_item(self, item: dict[str, object]) -> Track | None:
         release_type = str(item.get("type", "")).strip().lower()
-        if release_type not in {"album", "track"}:
+        if release_type != "album":
             log.warning(
                 "bandcamp.unsupported_release_type",
                 source_id=self.id,
@@ -95,7 +96,7 @@ class BandcampLabel(Source):
         artist = str(item.get("artist", "")).strip()
         title = str(item.get("title", "")).strip()
         page_url = str(item.get("page_url", "")).strip()
-        if not artist or not title or not page_url:
+        if not artist or not title or not page_url or "/album/" not in page_url:
             log.warning(
                 "bandcamp.item_malformed",
                 source_id=self.id,

@@ -10,7 +10,7 @@ from typer.testing import CliRunner
 
 import peel.cli as cli
 from peel.db import DB, iso_week
-from peel.models import ReviewQueueItem
+from peel.models import AlbumQueueItem, ReviewQueueItem
 
 runner = CliRunner()
 
@@ -70,6 +70,111 @@ def _insert_week_track(
         ),
     )
     db.conn.commit()
+
+
+class TestAlbumsCLI:
+    def _db_with_album_queue(self, path: Path) -> DB:
+        db = DB(str(path))
+        db.init_schema()
+        db.replace_album_queue(
+            "2026-W29",
+            [
+                AlbumQueueItem(
+                    week="2026-W29",
+                    position=1,
+                    artist="Album Artist",
+                    album="Album Name",
+                    artist_key="album artist",
+                    album_key="album name",
+                    source_ids=("source-a",),
+                    source_count=1,
+                    listen_url="https://listen.example/album",
+                    listen_kind="spotify",
+                    editorial_url="https://review.example/album",
+                    is_new=True,
+                )
+            ],
+        )
+        return db
+
+    def test_albums_lists_unrated_and_opens_rank(self, tmp_path: Path, monkeypatch) -> None:
+        db_path = tmp_path / "albums.db"
+        db = self._db_with_album_queue(db_path)
+        db.close()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+        opened = MagicMock()
+        monkeypatch.setattr(cli.webbrowser, "open", opened)
+
+        result = runner.invoke(cli.app, ["albums", "--unrated"])
+        assert result.exit_code == 0
+        assert "Album Artist" in result.output
+        result = runner.invoke(cli.app, ["albums", "--open", "1"])
+        assert result.exit_code == 0
+        opened.assert_called_once_with("https://listen.example/album")
+        assert runner.invoke(cli.app, ["albums", "--open", "2"]).exit_code == 2
+
+    def test_refresh_dry_run_is_side_effect_free_and_skips_spotify(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        db_path = tmp_path / "albums.db"
+        db = self._db_with_album_queue(db_path)
+        db.close()
+        before = db_path.read_bytes()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+        spotify = MagicMock()
+        monkeypatch.setattr(cli, "SpotifyClient", spotify)
+
+        result = runner.invoke(cli.app, ["albums", "refresh", "--week", "2026-W29", "--dry-run"])
+
+        assert result.exit_code == 0
+        assert db_path.read_bytes() == before
+        spotify.assert_not_called()
+
+    def test_refresh_no_eligible_keeps_existing_snapshot(self, tmp_path: Path, monkeypatch) -> None:
+        db_path = tmp_path / "albums.db"
+        db = self._db_with_album_queue(db_path)
+        db.close()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+        result = runner.invoke(cli.app, ["albums", "refresh", "--week", "2026-W29"])
+        assert result.exit_code == 0
+        assert "snapshot existente preservada" in result.output
+        db = DB(str(db_path))
+        assert db.album_queue("2026-W29")[0].album == "Album Name"  # type: ignore[index]
+        db.close()
+
+    def test_refresh_rejects_impossible_iso_week(self, tmp_path: Path, monkeypatch) -> None:
+        monkeypatch.setattr(cli, "settings", _settings(tmp_path / "albums.db"))
+        assert (
+            runner.invoke(
+                cli.app, ["albums", "refresh", "--week", "2025-W53", "--dry-run"]
+            ).exit_code
+            == 2
+        )
+
+    def test_albums_reports_confirmed_empty_queue(self, tmp_path: Path, monkeypatch) -> None:
+        db_path = tmp_path / "albums.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        db.replace_album_queue("2026-W29", [])
+        db.close()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+
+        result = runner.invoke(cli.app, ["albums"])
+
+        assert result.exit_code == 0
+        assert "confirmada mais recente está vazia" in result.output
+
+    def test_albums_feedback_quit_does_not_write(self, tmp_path: Path, monkeypatch) -> None:
+        db_path = tmp_path / "albums.db"
+        db = self._db_with_album_queue(db_path)
+        db.close()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+
+        result = runner.invoke(cli.app, ["albums", "feedback"], input="q\n")
+        assert result.exit_code == 0
+        db = DB(str(db_path))
+        assert db.album_feedback_for_identity("Album Artist", "Album Name") is None
+        db.close()
 
 
 class TestSelectArtistSearchResult:
@@ -643,6 +748,7 @@ class TestCliSite:
         # Semana corrente precisa de pelo menos uma faixa, senão o export
         # (corretamente) salta semanas vazias e não escreve ficheiro.
         db.record_track("spotify:track:cli1", "stereogum_new_music", "Snag", "Unarrest Me", None)
+        db.replace_album_queue(iso_week(datetime.now(UTC)), [])
         db.close()
         site_dir = tmp_path / "peel-sept"
         current_week = iso_week(datetime.now(UTC))
