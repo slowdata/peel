@@ -15,6 +15,7 @@ import structlog
 from peel.albums import AlbumRecommendation, top_album_recommendations
 from peel.db import DB, iso_week
 from peel.matcher import normalize
+from peel.models import AlbumQueueItem
 from peel.scoring import build_source_scores
 
 log = structlog.get_logger()
@@ -77,7 +78,7 @@ class WeeklyReport:
     week: str
     tracks: list[WeeklyTrack]
     albums: list[WeeklyAlbum]
-    recommended_albums: list[AlbumRecommendation]
+    recommended_albums: list[AlbumRecommendation | AlbumQueueItem]
     unmatched: list[tuple[str, str, str, str | None]]
     summaries: list[SourceSummary]
 
@@ -230,8 +231,16 @@ def _load_weekly_albums(db: DB, week: str) -> list[WeeklyAlbum]:
     return albums
 
 
-def _load_recommended_albums(db: DB, week: str) -> list[AlbumRecommendation]:
-    """Carrega a seleção "7 Álbuns a Ouvir" sem poder rebentar o relatório."""
+def _load_recommended_albums(db: DB, week: str) -> list[AlbumRecommendation | AlbumQueueItem]:
+    """Carrega a fila canónica; só recalcula semanas sem snapshot legacy."""
+    try:
+        snapshot = db.album_queue(week)
+    except Exception as e:
+        log.exception("report.album_snapshot_failed", week=week, error=str(e))
+        return []
+    if snapshot is not None:
+        return snapshot
+
     try:
         scores = build_source_scores(db, weeks=4)
         source_quality = {
@@ -242,8 +251,7 @@ def _load_recommended_albums(db: DB, week: str) -> list[AlbumRecommendation]:
         source_quality = {}
 
     try:
-        # DECISÃO: 2 semanas dá pool suficiente para consenso entre críticos sem
-        # transformar a seleção semanal num backlog longo.
+        # Sem snapshot, mantemos o comportamento legacy para relatórios antigos.
         return top_album_recommendations(
             db,
             week,
@@ -342,6 +350,14 @@ def _render_markdown(report: WeeklyReport) -> str:
             artist = _md_escape(album.artist)
             title = _md_escape(album.album)
             line = f"- {artist} — {title} — {album.source_count} fontes"
+            if isinstance(album, AlbumQueueItem):
+                if album.listen_url:
+                    line += f" — {album.listen_url}"
+                lines.append(line)
+                lines.append(f"  - Sources: {', '.join(album.source_ids)}")
+                if album.editorial_url:
+                    lines.append(f"    - Editorial/source: {album.editorial_url}")
+                continue
             if album.link_url:
                 line += f" — {album.link_url}"
             lines.append(line)

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from peel.db import DB
+from peel.models import AlbumQueueItem
 from peel.report import build_weekly_report, generate_weekly_report
 
 
@@ -258,6 +259,87 @@ class TestWeeklyReport:
         ) in report
         assert "Sources: aquarium_drunkard, pitchfork_best_albums" in report
         assert "No Spotify — Fallback Album — 1 fontes — https://guardian/fallback" in report
+        db.close()
+
+    def test_build_weekly_report_uses_canonical_album_snapshot(self, tmp_path: Path) -> None:
+        db = DB(str(tmp_path / "peel.db"))
+        db.init_schema()
+        week = "2026-W30"
+        db.replace_album_queue(
+            week,
+            [
+                AlbumQueueItem(
+                    week=week,
+                    position=1,
+                    artist="Canonical Artist B",
+                    album="Canonical Album B",
+                    artist_key="canonical artist b",
+                    album_key="canonical album b",
+                    source_ids=("source-b", "source-a"),
+                    source_count=2,
+                    listen_url="https://open.spotify.com/search/canonical-b",
+                    listen_kind="search",
+                    editorial_url="https://reviews.example/canonical-b",
+                    is_new=True,
+                ),
+                AlbumQueueItem(
+                    week=week,
+                    position=2,
+                    artist="Canonical Artist A",
+                    album="Canonical Album A",
+                    artist_key="canonical artist a",
+                    album_key="canonical album a",
+                    source_ids=("source-c",),
+                    source_count=1,
+                    listen_url="https://open.spotify.com/album/canonical-a",
+                    listen_kind="spotify",
+                    editorial_url=None,
+                    is_new=False,
+                ),
+            ],
+        )
+
+        report = build_weekly_report(db, week)
+
+        first = report.index("Canonical Artist B — Canonical Album B")
+        second = report.index("Canonical Artist A — Canonical Album A")
+        assert first < second
+        assert "https://open.spotify.com/search/canonical-b" in report
+        assert "Sources: source-b, source-a" in report
+        assert "Editorial/source: https://reviews.example/canonical-b" in report
+        db.close()
+
+    def test_build_weekly_report_preserves_empty_album_snapshot(self, tmp_path: Path) -> None:
+        db = DB(str(tmp_path / "peel.db"))
+        db.init_schema()
+        week = "2026-W30"
+        db.conn.execute(
+            """
+            INSERT INTO album_mentions
+            (artist, album, artist_key, album_key, source_id, source_url,
+             spotify_album_uri, seen_at, added_at_week)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "Dynamic Artist",
+                "Dynamic Album",
+                "dynamic artist",
+                "dynamic album",
+                "source-a",
+                "https://source.example/dynamic",
+                None,
+                "2026-07-24T10:00:00+00:00",
+                week,
+            ),
+        )
+        db.conn.commit()
+        db.replace_album_queue(week, [])
+
+        report = build_weekly_report(db, week)
+        album_section = report.split("## 🎧 7 Álbuns a Ouvir", 1)[1].split("## Unmatched", 1)[0]
+
+        assert "- None" in album_section
+        assert "Dynamic Artist" not in album_section
         db.close()
 
     def test_generate_weekly_report_writes_file(self, tmp_path: Path) -> None:
