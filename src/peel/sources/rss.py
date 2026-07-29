@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 from abc import abstractmethod
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from html import unescape
 from urllib.parse import urlparse
 
@@ -40,6 +40,15 @@ class RSSSource(Source):
     max_entries: int | None = None
     """Limite opcional de entries a considerar em feeds grandes."""
 
+    pagination_url_template: str | None = None
+    """Template opt-in para páginas secundárias, com ``{page}`` e opcionalmente ``{url}``."""
+
+    lookback_days: int | None = None
+    """Janela opcional de antiguidade para fontes RSS paginadas."""
+
+    max_pages: int = 1
+    """Máximo de páginas RSS; o default preserva exactamente um pedido."""
+
     def __init__(self) -> None:
         """Inicializa a fonte (subclasses definem id, name, url)."""
         if not hasattr(self, "id") or not hasattr(self, "name"):
@@ -50,59 +59,186 @@ class RSSSource(Source):
     def fetch(self) -> list[Track]:
         """Parseia o RSS e extrai faixas.
 
-        Retorna lista de Track. Se uma entry falhar parse, loga warning e salta.
-        Se o feed todo falhar (HTTP erro, XML inválido), levanta exceção.
+        Por defeito faz exactamente um pedido. Sources que definem um template
+        paginado podem avançar até ``max_pages`` e limitar itens à sua janela
+        temporal, sem depender da DB.
         """
-        try:
-            if self.request_headers:
-                feed = feedparser.parse(self.url, request_headers=self.request_headers)
-            else:
-                feed = feedparser.parse(self.url)
-        except Exception as e:
-            log.exception(
-                "rss.fetch_failed",
-                source_id=self.id,
-                url=self.url,
-                error=str(e),
-            )
-            raise
+        tracks: list[Track] = []
+        seen_ids: set[str] = set()
+        seen_links: set[str] = set()
+        total_entries = 0
+        considered_entries = 0
+        cutoff = self._now() - timedelta(days=self.lookback_days) if self.lookback_days else None
+        paginated = self.pagination_url_template is not None and self.max_pages > 1
+        page_count = self.max_pages if paginated else 1
 
-        # Valida que o feed foi parseado
-        if feed.bozo and feed.bozo_exception:
-            log.warning(
-                "rss.parse_warning",
-                source_id=self.id,
-                error=str(feed.bozo_exception),
-            )
-
-        entries = feed.entries
-        if self.max_entries is not None:
-            entries = entries[: self.max_entries]
-
-        tracks = []
-        for entry in entries:
+        for page in range(1, page_count + 1):
+            page_url = self._page_url(page)
             try:
-                track = self._parse_entry(entry)
-                if track:
-                    tracks.append(track)
+                feed = self._parse_feed(page_url)
             except Exception as e:
+                if page == 1:
+                    log.exception("rss.fetch_failed", source_id=self.id, url=page_url, error=str(e))
+                    raise
                 log.warning(
-                    "rss.entry_parse_failed",
+                    "rss.pagination_page_failed",
                     source_id=self.id,
-                    entry_title=entry.get("title", "unknown"),
+                    page=page,
+                    url=page_url,
                     error=str(e),
                 )
-                continue
+                log.info(
+                    "rss.pagination_stopped",
+                    source_id=self.id,
+                    page=page,
+                    reason="secondary_page_failed",
+                )
+                break
+
+            if feed.bozo and feed.bozo_exception:
+                log.warning(
+                    "rss.parse_warning",
+                    source_id=self.id,
+                    page=page,
+                    error=str(feed.bozo_exception),
+                )
+
+            page_entries = list(feed.entries)
+            total_entries += len(page_entries)
+            if not page_entries:
+                log.info(
+                    "rss.page_fetched",
+                    source_id=self.id,
+                    page=page,
+                    url=page_url,
+                    entries=0,
+                    deduped_entries=0,
+                    considered_entries=0,
+                )
+                if paginated:
+                    log.info(
+                        "rss.pagination_stopped",
+                        source_id=self.id,
+                        page=page,
+                        reason="empty_page",
+                    )
+                break
+
+            unique_entries: list[dict] = []
+            deduped_entries = 0
+            for entry in page_entries:
+                entry_id, entry_link = self._entry_identifiers(entry)
+                is_duplicate = (entry_id is not None and entry_id in seen_ids) or (
+                    entry_link is not None and entry_link in seen_links
+                )
+                if entry_id is not None:
+                    seen_ids.add(entry_id)
+                if entry_link is not None:
+                    seen_links.add(entry_link)
+                if is_duplicate:
+                    deduped_entries += 1
+                    continue
+                unique_entries.append(entry)
+
+            entries = unique_entries
+            if self.max_entries is not None:
+                entries = entries[: self.max_entries]
+            if cutoff is not None:
+                entries = [
+                    entry
+                    for entry in entries
+                    if (published_at := self._entry_published_at(entry)) is None
+                    or published_at >= cutoff
+                ]
+            considered_entries += len(entries)
+
+            log.info(
+                "rss.page_fetched",
+                source_id=self.id,
+                page=page,
+                url=page_url,
+                entries=len(page_entries),
+                deduped_entries=deduped_entries,
+                considered_entries=len(entries),
+            )
+            for entry in entries:
+                try:
+                    track = self._parse_entry(entry)
+                    if track:
+                        tracks.append(track)
+                except Exception as e:
+                    log.warning(
+                        "rss.entry_parse_failed",
+                        source_id=self.id,
+                        entry_title=entry.get("title", "unknown"),
+                        error=str(e),
+                    )
+
+            if (
+                cutoff is not None
+                and unique_entries
+                and all(
+                    (published_at := self._entry_published_at(entry)) is not None
+                    and published_at < cutoff
+                    for entry in unique_entries
+                )
+            ):
+                log.info(
+                    "rss.pagination_stopped",
+                    source_id=self.id,
+                    page=page,
+                    reason="lookback_exhausted",
+                    lookback_days=self.lookback_days,
+                )
+                break
+
+            if page == page_count and paginated:
+                log.info(
+                    "rss.pagination_stopped",
+                    source_id=self.id,
+                    page=page,
+                    reason="max_pages",
+                )
 
         log.info(
             "rss.fetched",
             source_id=self.id,
-            total_entries=len(feed.entries),
-            considered_entries=len(entries),
+            total_entries=total_entries,
+            considered_entries=considered_entries,
             valid_tracks=len(tracks),
         )
-
         return tracks
+
+    def _parse_feed(self, url: str):
+        if self.request_headers:
+            return feedparser.parse(url, request_headers=self.request_headers)
+        return feedparser.parse(url)
+
+    def _page_url(self, page: int) -> str:
+        if page == 1 or self.pagination_url_template is None:
+            return self.url
+        return self.pagination_url_template.format(url=self.url, page=page)
+
+    def _now(self) -> datetime:
+        """Relógio isolado para tornar o lookback determinístico em testes."""
+        return datetime.now(UTC)
+
+    @staticmethod
+    def _entry_identifiers(entry: dict) -> tuple[str | None, str | None]:
+        """Devolve ID e link independentemente para dedupe entre páginas."""
+        identifier = str(entry.get("id") or entry.get("guid") or "").strip() or None
+        link = str(entry.get("link") or "").strip() or None
+        return identifier, link
+
+    @staticmethod
+    def _entry_published_at(entry: dict) -> datetime | None:
+        parsed_time = entry.get("published_parsed") or entry.get("updated_parsed")
+        if not parsed_time:
+            return None
+        try:
+            return datetime(*parsed_time[:6], tzinfo=UTC)
+        except (TypeError, ValueError):
+            return None
 
     def _parse_entry(self, entry: dict) -> Track | None:
         """Parseia uma entry RSS e devolve Track ou None.
@@ -121,15 +257,8 @@ class RSSSource(Source):
 
         artist, track_title = result
 
-        # Extrai published_at se disponível
-        published_at = None
-        if entry.get("published"):
-            try:
-                parsed_time = entry.published_parsed
-                if parsed_time:
-                    published_at = datetime(*parsed_time[:6])
-            except Exception:
-                pass
+        # Extrai published_at timezone-aware se disponível.
+        published_at = self._entry_published_at(entry)
 
         return Track(
             source_id=self.id,
@@ -501,6 +630,9 @@ def _has_release_news_signal(title: str) -> bool:
             " introduce ",
             " reveals ",
             " reveal ",
+            " unleash ",
+            " unleashes ",
+            " unleashed ",
             " hear ",
             " listen ",
         )
@@ -525,6 +657,22 @@ def _extract_release_news_artist_title(title: str) -> tuple[str, str] | None:
         return None
 
     quoted_patterns = [
+        # Nigel Godrich and Dhani Harrison Form Dragonflies, Release “Slower” Single
+        # Only the newly formed band is the artist, not its founders.
+        (
+            r"^(?:.+?)\s+Form\s+(?P<artist>[^,;:]+),\s+"
+            r"(?:Release|Releases|Released)\s+[\"\u201c](?P<track>[^\"\u201d]+)[\"\u201d]"
+        ),
+        # Protomartyr Announce New Album Hotel Usona, Share “Sounds We Cannot Hear”
+        # Keep the artist bounded by the announcement verb; the later comma
+        # separates album context from the explicitly named release.
+        (
+            r"^(?P<artist>.+?)\s+(?:Announce|Announces|Announced)\s+"
+            r".*?\b(?:Album|LP|EP)\b[^,;:]*[,;]\s*"
+            r"(?:Share|Shares|Shared|Release|Releases|Released|Unveil|Unveils|Unveiled|"
+            r"Unleash|Unleashes|Unleashed)\s+"
+            r"[\"\u201c](?P<track>[^\"\u201d]+)[\"\u201d]"
+        ),
         # Listen/Hear to the New Aphex Twin Song “Example”
         (
             r"^(?:Listen|Hear)\s+to\s+the\s+New\s+(?P<artist>.+?)\s+"
@@ -547,7 +695,7 @@ def _extract_release_news_artist_title(title: str) -> tuple[str, str] | None:
         # The Strokes Share New Single “Falling Out Of Love”: Listen
         (
             r"^(?P<artist>.+?)\s+(?:Share|Shares|Shared|Release|Releases|Released|"
-            r"Drop|Drops|Dropped|Return|Returns|Returned|"
+            r"Unleash|Unleashes|Unleashed|Drop|Drops|Dropped|Return|Returns|Returned|"
             r"Surprise-Release|Surprise-Releases|Surprise-Released)\b.*?"
             r"[\"\u201c](?P<track>[^\"\u201d]+)[\"\u201d]"
         ),
@@ -709,6 +857,39 @@ class LineOfBestFitNews(RSSSource):
         result = _extract_release_news_artist_title(title)
         if result is None:
             log.warning("lineofbestfit.title_no_match", title=title)
+        return result
+
+
+_CONSEQUENCE_NON_RELEASE_TOPICS = re.compile(
+    r"\b(?:interview|obituary|film|cinema|television|listicle|roundup|playlist)\b",
+    re.IGNORECASE,
+)
+
+
+class ConsequenceMusic(RSSSource):
+    """Consequence — Music release news, paginada e estritamente etiquetada."""
+
+    id = "consequence_music"
+    name = "Consequence Music"
+    kind = "track"
+    url = "https://consequence.net/category/music/feed/"
+    pagination_url_template = "{url}?paged={page}"
+    lookback_days = 8
+    max_pages = 16
+
+    def _parse_entry(self, entry: dict) -> Track | None:
+        terms = {str(tag.get("term", "")).strip() for tag in entry.get("tags", [])}
+        if not {"Music", "New Music Releases"}.issubset(terms):
+            return None
+        return super()._parse_entry(entry)
+
+    def _extract_artist_title(self, entry: dict) -> tuple[str, str] | None:
+        title = entry.get("title", "").strip()
+        if _CONSEQUENCE_NON_RELEASE_TOPICS.search(_title_without_quoted_segments(title)):
+            return None
+        result = _extract_release_news_artist_title(title)
+        if result is None:
+            log.warning("consequence_music.title_no_match", title=title)
         return result
 
 

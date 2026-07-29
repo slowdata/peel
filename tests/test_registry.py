@@ -7,10 +7,12 @@ from peel.sources.registry import (
     SourceSpec,
     active_source_specs,
     active_sources,
+    source_homepage,
     source_label,
 )
 from peel.sources.rss import (
     AquariumDrunkard,
+    ConsequenceMusic,
     GorillaVsBear,
     GuardianMusicAlbums,
     KexpInOurHeadphones,
@@ -47,6 +49,7 @@ def test_active_sources_registry_contains_expected_order() -> None:
         StereogumNewMusic.id,
         PitchforkNews.id,
         LineOfBestFitNews.id,
+        ConsequenceMusic.id,
         TheQuietus.id,
         TheQuietusTracksOfMonth.id,
         GorillaVsBear.id,
@@ -74,6 +77,12 @@ def test_active_sources_instantiates_enabled_sources(monkeypatch) -> None:
 
     assert len(sources) == 1
     assert isinstance(sources[0], DummySource)
+
+
+def test_consequence_is_registered_once_with_label_and_homepage() -> None:
+    assert [spec.source_id for spec in ACTIVE_SOURCES].count(ConsequenceMusic.id) == 1
+    assert source_label(ConsequenceMusic.id) == "Consequence"
+    assert source_homepage("Consequence") == "https://consequence.net/category/music/"
 
 
 def test_source_label_returns_short_labels_and_fallback() -> None:

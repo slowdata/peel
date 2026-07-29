@@ -1,11 +1,14 @@
 """Testes para as fontes RSS."""
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from peel.sources.rss import (
     AquariumDrunkard,
+    ConsequenceMusic,
     GorillaVsBear,
     GuardianMusicAlbums,
     KexpInOurHeadphones,
@@ -14,6 +17,7 @@ from peel.sources.rss import (
     PitchforkBestAlbums,
     PitchforkBNT,
     PitchforkNews,
+    RSSSource,
     StereogumNewMusic,
     TheQuietus,
     TheQuietusTracksOfMonth,
@@ -21,6 +25,180 @@ from peel.sources.rss import (
     _split_artist_title_dash,
     _strip_html_tags,
 )
+
+
+class FixtureRSSSource(RSSSource):
+    """RSS mínimo para testar a mecânica genérica sem rede."""
+
+    id = "fixture_rss"
+    name = "Fixture RSS"
+    url = "https://example.test/feed/"
+
+    def _extract_artist_title(self, entry: dict) -> tuple[str, str] | None:
+        artist, separator, title = entry.get("title", "").partition(" — ")
+        if not separator:
+            return None
+        return artist, title
+
+
+class TestRSSPagination:
+    @staticmethod
+    def _feed(entries: list[dict]) -> SimpleNamespace:
+        return SimpleNamespace(entries=entries, bozo=False, bozo_exception=None)
+
+    @staticmethod
+    def _entry(
+        entry_id: str,
+        *,
+        published_at: datetime | None = None,
+        title: str = "Artist — Track",
+    ) -> dict:
+        entry = {"id": entry_id, "link": f"https://example.test/{entry_id}", "title": title}
+        if published_at is not None:
+            entry["published_parsed"] = published_at.timetuple()
+        return entry
+
+    def test_defaults_make_exactly_one_parse_request(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls: list[str] = []
+
+        def parse(url: str, **_kwargs: object) -> SimpleNamespace:
+            calls.append(url)
+            return self._feed([self._entry("one")])
+
+        monkeypatch.setattr("peel.sources.rss.feedparser.parse", parse)
+
+        tracks = FixtureRSSSource().fetch()
+
+        assert calls == ["https://example.test/feed/"]
+        assert [(track.artist, track.title) for track in tracks] == [("Artist", "Track")]
+
+    def test_published_dates_are_timezone_aware(self) -> None:
+        published_at = datetime(2026, 7, 28, tzinfo=UTC)
+
+        track = FixtureRSSSource()._parse_entry(self._entry("one", published_at=published_at))
+
+        assert track is not None
+        assert track.published_at == published_at
+
+    def test_pagination_builds_page_urls_and_dedupes_boundary(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(FixtureRSSSource, "pagination_url_template", "{url}?paged={page}")
+        monkeypatch.setattr(FixtureRSSSource, "max_pages", 4)
+        calls: list[str] = []
+        feeds = [
+            self._feed([self._entry("one"), self._entry("two", title="Other — Second")]),
+            self._feed([self._entry("two", title="Other — Second"), self._entry("three")]),
+            self._feed([]),
+        ]
+
+        def parse(url: str, **_kwargs: object) -> SimpleNamespace:
+            calls.append(url)
+            return feeds.pop(0)
+
+        monkeypatch.setattr("peel.sources.rss.feedparser.parse", parse)
+
+        tracks = FixtureRSSSource().fetch()
+
+        assert calls == [
+            "https://example.test/feed/",
+            "https://example.test/feed/?paged=2",
+            "https://example.test/feed/?paged=3",
+        ]
+        assert [(track.artist, track.title) for track in tracks] == [
+            ("Artist", "Track"),
+            ("Other", "Second"),
+            ("Artist", "Track"),
+        ]
+
+    def test_pagination_dedupes_same_link_when_ids_differ(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(FixtureRSSSource, "pagination_url_template", "{url}?paged={page}")
+        monkeypatch.setattr(FixtureRSSSource, "max_pages", 4)
+        first = self._entry("first")
+        duplicate = self._entry("second", title="Other — Duplicate")
+        duplicate["link"] = first["link"]
+        feeds = [self._feed([first]), self._feed([duplicate]), self._feed([])]
+
+        monkeypatch.setattr(
+            "peel.sources.rss.feedparser.parse", lambda _url, **_kwargs: feeds.pop(0)
+        )
+
+        tracks = FixtureRSSSource().fetch()
+
+        assert [(track.artist, track.title) for track in tracks] == [("Artist", "Track")]
+
+    def test_pagination_stops_when_page_is_outside_lookback(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        now = datetime(2026, 7, 28, tzinfo=UTC)
+        monkeypatch.setattr(FixtureRSSSource, "pagination_url_template", "{url}?paged={page}")
+        monkeypatch.setattr(FixtureRSSSource, "max_pages", 16)
+        monkeypatch.setattr(FixtureRSSSource, "lookback_days", 8)
+        monkeypatch.setattr(FixtureRSSSource, "_now", lambda _self: now)
+        calls: list[str] = []
+
+        def parse(url: str, **_kwargs: object) -> SimpleNamespace:
+            calls.append(url)
+            return self._feed([self._entry("old", published_at=now - timedelta(days=9))])
+
+        monkeypatch.setattr("peel.sources.rss.feedparser.parse", parse)
+
+        assert FixtureRSSSource().fetch() == []
+        assert calls == ["https://example.test/feed/"]
+
+    def test_pagination_stops_on_empty_page(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(FixtureRSSSource, "pagination_url_template", "{url}?paged={page}")
+        monkeypatch.setattr(FixtureRSSSource, "max_pages", 16)
+        calls: list[str] = []
+        feeds = [self._feed([self._entry("one")]), self._feed([])]
+
+        def parse(url: str, **_kwargs: object) -> SimpleNamespace:
+            calls.append(url)
+            return feeds.pop(0)
+
+        monkeypatch.setattr("peel.sources.rss.feedparser.parse", parse)
+
+        assert len(FixtureRSSSource().fetch()) == 1
+        assert len(calls) == 2
+
+    def test_secondary_page_failure_preserves_prior_results(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(FixtureRSSSource, "pagination_url_template", "{url}?paged={page}")
+        monkeypatch.setattr(FixtureRSSSource, "max_pages", 16)
+        calls = 0
+
+        def parse(_url: str, **_kwargs: object) -> SimpleNamespace:
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise OSError("temporary failure")
+            return self._feed([self._entry("one")])
+
+        monkeypatch.setattr("peel.sources.rss.feedparser.parse", parse)
+
+        tracks = FixtureRSSSource().fetch()
+
+        assert calls == 2
+        assert [(track.artist, track.title) for track in tracks] == [("Artist", "Track")]
+
+    def test_pagination_respects_maximum_pages(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(FixtureRSSSource, "pagination_url_template", "{url}?paged={page}")
+        monkeypatch.setattr(FixtureRSSSource, "max_pages", 16)
+        calls: list[str] = []
+
+        def parse(url: str, **_kwargs: object) -> SimpleNamespace:
+            calls.append(url)
+            return self._feed([self._entry(url)])
+
+        monkeypatch.setattr("peel.sources.rss.feedparser.parse", parse)
+
+        FixtureRSSSource().fetch()
+
+        assert len(calls) == 16
+        assert calls[-1] == "https://example.test/feed/?paged=16"
 
 
 class TestSourceKind:
@@ -34,6 +212,14 @@ class TestSourceKind:
     def test_pitchfork_news_kind_is_track(self) -> None:
         source = PitchforkNews()
         assert source.kind == "track"
+
+    def test_consequence_music_configuration(self) -> None:
+        source = ConsequenceMusic()
+        assert source.kind == "track"
+        assert source.url == "https://consequence.net/category/music/feed/"
+        assert source._page_url(2) == "https://consequence.net/category/music/feed/?paged=2"
+        assert source.lookback_days == 8
+        assert source.max_pages == 16
 
     def test_lineofbestfit_news_kind_is_track(self) -> None:
         source = LineOfBestFitNews()
@@ -815,6 +1001,104 @@ class TestLineOfBestFitNewsExtractArtistTitle:
             {"title": "Baby Rose wears her heart on her sleeve on YEARNALISM"}
         )
         assert result is None
+
+
+class TestConsequenceMusic:
+    def test_requires_both_music_release_tags(self) -> None:
+        source = ConsequenceMusic()
+        entry = {
+            "title": "Interpol Unveil New Single “Iron City”: Stream",
+            "link": "https://consequence.net/example/",
+            "tags": [{"term": "Music"}, {"term": "New Music Releases"}],
+        }
+
+        track = source._parse_entry(entry)
+
+        assert track is not None
+        assert (track.artist, track.title) == ("Interpol", "Iron City")
+
+    @pytest.mark.parametrize(
+        "tags",
+        [
+            [{"term": "Music"}],
+            [{"term": "New Music Releases"}],
+            [{"term": "Music"}, {"term": "Music News"}],
+            [],
+        ],
+    )
+    def test_rejects_entries_without_both_required_tags(self, tags: list[dict]) -> None:
+        entry = {
+            "title": "Cage The Elephant Release Single “Beaches in Tennessee”: Stream",
+            "tags": tags,
+        }
+        assert ConsequenceMusic()._parse_entry(entry) is None
+
+    @pytest.mark.parametrize(
+        ("headline", "expected"),
+        [
+            (
+                "Cage The Elephant Release Single “Beaches in Tennessee”: Stream",
+                ("Cage The Elephant", "Beaches in Tennessee"),
+            ),
+            (
+                (
+                    "Nigel Godrich and Dhani Harrison Form Dragonflies, "
+                    "Release “Slower” Single: Stream"
+                ),
+                ("Dragonflies", "Slower"),
+            ),
+            (
+                "Tom Morello Announces First Solo Rock Album, Unleashes “Date Night”: Stream",
+                ("Tom Morello", "Date Night"),
+            ),
+            (
+                (
+                    "Hatebreed Announce New Album Fatal Paradox, "
+                    "Unleash “Kill Count Increase”: Stream"
+                ),
+                ("Hatebreed", "Kill Count Increase"),
+            ),
+            (
+                "Chiodos Unleash “TAPDAT,” First New Song in 12 Years: Stream",
+                ("Chiodos", "TAPDAT"),
+            ),
+            ("Artist Unleashed “Track”: Stream", ("Artist", "Track")),
+            (
+                "Protomartyr Announce New Album Hotel Usona, Share “Sounds We Cannot Hear”: Stream",
+                ("Protomartyr", "Sounds We Cannot Hear"),
+            ),
+            (
+                (
+                    "Sylvan Esso Announce First Self-Released Album Ow ∞, "
+                    "Share “Concrete Glen”: Stream"
+                ),
+                ("Sylvan Esso", "Concrete Glen"),
+            ),
+        ],
+    )
+    def test_extracts_only_artist_and_explicit_track(
+        self, headline: str, expected: tuple[str, str]
+    ) -> None:
+        assert ConsequenceMusic()._extract_artist_title({"title": headline}) == expected
+
+    @pytest.mark.parametrize(
+        "headline",
+        [
+            "Interpol Announce New Album This Mirror Weighs a Ton, Share Two Songs: Stream",
+            "Artist Releases a Cover “Track”: Stream",
+            "Artist Releases a Remix “Track”: Stream",
+            "Artist Releases Live Version “Track”: Stream",
+            "Artist Announces Tour, Shares “Track”: Stream",
+            "Artist Releases Deluxe Reissue “Track”: Stream",
+            (
+                "Ministry Announce Final Album and Farewell Tour, "
+                "Unleash Single “Burned Out”: Stream"
+            ),
+            "An Interview About Artist’s New Release “Track",
+        ],
+    )
+    def test_rejects_album_only_and_noise(self, headline: str) -> None:
+        assert ConsequenceMusic()._extract_artist_title({"title": headline}) is None
 
 
 class TestKexpInOurHeadphonesExtractArtistTitle:

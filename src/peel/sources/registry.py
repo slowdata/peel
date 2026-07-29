@@ -15,6 +15,7 @@ from peel.sources.bandcamp import BandcampLabel
 from peel.sources.base import Source
 from peel.sources.rss import (
     AquariumDrunkard,
+    ConsequenceMusic,
     GorillaVsBear,
     GuardianMusicAlbums,
     KexpInOurHeadphones,
@@ -81,6 +82,7 @@ SOURCE_LABEL_OVERRIDES: dict[str, str] = {
     "pitchfork_best_albums": "Pitchfork",
     "pitchfork_news": "Pitchfork News",
     "lineofbestfit_news": "The Line of Best Fit",
+    "consequence_music": "Consequence",
     "kexp_in_our_headphones": "KEXP",
     "stereogum_new_music": "Stereogum",
     "thequietus": "The Quietus",
@@ -97,6 +99,7 @@ ACTIVE_SOURCES: list[SourceSpec] = [
     SourceSpec(StereogumNewMusic),
     SourceSpec(PitchforkNews),
     SourceSpec(LineOfBestFitNews),
+    SourceSpec(ConsequenceMusic),
     SourceSpec(TheQuietus),
     SourceSpec(TheQuietusTracksOfMonth),
     SourceSpec(GorillaVsBear),
@@ -149,6 +152,7 @@ SOURCE_HOMEPAGE: dict[str, str] = {
     "Pitchfork": "https://pitchfork.com",
     "Pitchfork News": "https://pitchfork.com/news",
     "The Line of Best Fit": "https://www.thelineofbestfit.com/news",
+    "Consequence": "https://consequence.net/category/music/",
     "Stereogum": "https://www.stereogum.com",
     "The Quietus": "https://thequietus.com",
     "Gorilla vs Bear": "https://www.gorillavsbear.net",
