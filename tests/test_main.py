@@ -12,6 +12,7 @@ from peel.db import DB, iso_week
 from peel.main import (
     ReviewCandidate,
     _album_digest_items,
+    _album_queue_snapshot_items,
     _filter_fresh_source_items,
     _load_review_candidate_metadata,
     _retry_unmatched,
@@ -32,11 +33,13 @@ from peel.sources.rss import (
     KexpInOurHeadphones,
     LineOfBestFitNews,
     NprNewMusicFridayStarting5,
+    PitchforkAlbumReviews,
     PitchforkBestAlbums,
     PitchforkBNT,
     PitchforkNews,
     StereogumNewMusic,
     TheQuietus,
+    TheQuietusFeedbacker,
     TheQuietusTracksOfMonth,
 )
 
@@ -45,6 +48,8 @@ from peel.sources.rss import (
 def _disable_network_album_sources(monkeypatch: pytest.MonkeyPatch) -> None:
     """Evita rede nos testes de main; o registry valida que as sources estão activas."""
     monkeypatch.setattr(PitchforkBestAlbums, "fetch", lambda self: [])
+    monkeypatch.setattr(PitchforkAlbumReviews, "fetch", lambda self: [])
+    monkeypatch.setattr(TheQuietusFeedbacker, "fetch", lambda self: [])
     monkeypatch.setattr(PitchforkNews, "fetch", lambda self: [])
     monkeypatch.setattr(LineOfBestFitNews, "fetch", lambda self: [])
     monkeypatch.setattr(ConsequenceMusic, "fetch", lambda self: [])
@@ -127,6 +132,62 @@ def test_album_digest_items_use_listen_url_and_source_url() -> None:
     assert items[0][5] == "https://guardian/review"
     assert items[1][4] == "https://artist.bandcamp.com/album/x"
     assert items[1][5] == "https://artist.bandcamp.com/album/x"
+
+
+def test_album_snapshot_skips_unplayable_and_backfills_direct_links() -> None:
+    recommendations = [
+        AlbumRecommendation(
+            artist="Spotify Artist",
+            album="Spotify Album",
+            source_count=1,
+            sources=("guardian_music_albums",),
+            source_urls=(("guardian_music_albums", "https://guardian/review"),),
+            spotify_album_uri="spotify:album:direct",
+            latest_seen_at="2026-08-08T10:00:00+00:00",
+            best_avg_rating=0.0,
+            best_score=0.0,
+            artist_key="spotify artist",
+            album_key="spotify album",
+        ),
+        AlbumRecommendation(
+            artist="Dead Artist",
+            album="Dead Album",
+            source_count=1,
+            sources=("thequietus",),
+            source_urls=(("thequietus", "https://review.example/dead"),),
+            spotify_album_uri=None,
+            latest_seen_at="2026-08-08T09:00:00+00:00",
+            best_avg_rating=0.0,
+            best_score=0.0,
+            artist_key="dead artist",
+            album_key="dead album",
+        ),
+        AlbumRecommendation(
+            artist="Bandcamp Artist",
+            album="Bandcamp Album",
+            source_count=1,
+            sources=("bandcamp_label",),
+            source_urls=(("bandcamp_label", "https://artist.bandcamp.com/album/direct"),),
+            spotify_album_uri=None,
+            latest_seen_at="2026-08-08T08:00:00+00:00",
+            best_avg_rating=0.0,
+            best_score=0.0,
+            artist_key="bandcamp artist",
+            album_key="bandcamp album",
+        ),
+    ]
+
+    items = _album_queue_snapshot_items(
+        "2026-W32",
+        [(item, True) for item in recommendations],
+        album_resolver=lambda _artist, _album: None,
+    )
+
+    assert [(item.position, item.artist, item.listen_kind) for item in items] == [
+        (1, "Spotify Artist", "spotify"),
+        (2, "Bandcamp Artist", "bandcamp"),
+    ]
+    assert all(item.listen_kind != "search" for item in items)
 
 
 def _album_queue_item(week: str, position: int, album: str) -> AlbumQueueItem:

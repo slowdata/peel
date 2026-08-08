@@ -520,6 +520,63 @@ class PitchforkBestAlbums(RSSSource):
         return slug.replace("-", " ").title()
 
 
+_PITCHFORK_NON_CURRENT_RE = re.compile(
+    r"\b(?:reissue|reissued|remaster(?:ed)?|deluxe|expanded|anniversary|archival|archive|"
+    r"retrospective|box set)\b",
+    re.IGNORECASE,
+)
+
+
+def _canonical_feed_link(value: str) -> str:
+    try:
+        parsed = urlparse(value)
+    except ValueError:
+        return value.rstrip("/")
+    return parsed._replace(query="", fragment="").geturl().rstrip("/")
+
+
+class PitchforkAlbumReviews(PitchforkBestAlbums):
+    """Current regular Pitchfork album reviews, excluding BNA and archives.
+
+    Best New Albums remains a stronger independent source.  Fetching its small
+    feed first lets this source remove same-publication overlap rather than
+    manufacturing consensus.
+    """
+
+    id = "pitchfork_album_reviews"
+    name = "Pitchfork Album Reviews"
+    url = "https://pitchfork.com/feed/reviews/albums/rss"
+    best_url = "https://pitchfork.com/feed/reviews/best/albums/rss"
+    lookback_days = 8
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._best_links: set[str] = set()
+
+    def fetch(self) -> list[Track]:
+        best_feed = self._parse_feed(self.best_url)
+        if not best_feed.entries:
+            raise RuntimeError("Pitchfork BNA feed empty; refusing duplicate reviews")
+        self._best_links = {
+            _canonical_feed_link(str(entry.get("link", "")))
+            for entry in best_feed.entries
+            if entry.get("link")
+        }
+        return super().fetch()
+
+    def _extract_artist_title(self, entry: dict) -> tuple[str, str] | None:
+        link = str(entry.get("link", "")).strip()
+        if not link or _canonical_feed_link(link) in self._best_links:
+            return None
+        context = " ".join(
+            str(entry.get(field, "")) for field in ("title", "summary", "description", "author")
+        )
+        context = _strip_html_tags(context)
+        if "each sunday" in context.lower() or _PITCHFORK_NON_CURRENT_RE.search(context):
+            return None
+        return super()._extract_artist_title(entry)
+
+
 class GuardianMusicAlbums(RSSSource):
     """The Guardian Music — album reviews.
 
@@ -1170,12 +1227,16 @@ class AquariumDrunkard(Source):
             # Decisão: manter o álbum mesmo sem link. O link é útil no digest,
             # mas `Track.source_url` é opcional e a curadoria continua válida.
             log.warning("aquariumdrunkard.read_more_missing", title=raw_title)
+        if self._is_archival_item(item):
+            log.info("aquariumdrunkard.archival_skipped", title=raw_title)
+            return None
 
         return Track(
             source_id=self.id,
             artist=artist,
             title=album_title,
             source_url=source_url,
+            published_at=self._published_at_from_url(source_url),
             raw_title=raw_title,
             spotify_album_uri=self._spotify_album_uri(item),
         )
@@ -1198,6 +1259,38 @@ class AquariumDrunkard(Source):
             if href and "read more" in text:
                 return href
         return None
+
+    def _published_at_from_url(self, source_url: str | None) -> datetime | None:
+        if not source_url:
+            return None
+        try:
+            path = urlparse(source_url).path
+        except ValueError:
+            return None
+        match = re.search(r"/(?P<year>\d{4})/(?P<month>\d{2})/(?P<day>\d{2})/", path)
+        if match is None:
+            return None
+        try:
+            return datetime(
+                int(match.group("year")),
+                int(match.group("month")),
+                int(match.group("day")),
+                tzinfo=UTC,
+            )
+        except ValueError:
+            return None
+
+    def _is_archival_item(self, item: Node) -> bool:
+        description = item.css_first("div.description")
+        text = description.text(separator=" ", strip=True) if description else ""
+        return bool(
+            re.search(
+                r"\b(?:originally released|reissue|archival|archive release|"
+                r"anniversary|expanded edition|lost album)\b",
+                text,
+                flags=re.IGNORECASE,
+            )
+        )
 
     def _spotify_album_uri(self, item: Node) -> str | None:
         link = item.css_first("a.spotify-link")
@@ -1449,6 +1542,131 @@ class TheQuietusTracksOfMonth(Source):
         if not artists or not title:
             return None
         return ", ".join(artists), title
+
+
+_QUIETUS_MONTHS = {
+    "january": 1,
+    "february": 2,
+    "march": 3,
+    "april": 4,
+    "may": 5,
+    "june": 6,
+    "july": 7,
+    "august": 8,
+    "september": 9,
+    "october": 10,
+    "november": 11,
+    "december": 12,
+}
+
+
+class TheQuietusFeedbacker(Source):
+    """Strict album extraction from the latest Quietus Feedbacker/Rock column."""
+
+    id = "thequietus_feedbacker"
+    name = "The Quietus — Feedbacker"
+    kind = "album"
+    listing_url = "https://thequietus.com/columns/quietus-reviews/rock/"
+    request_headers = {"User-Agent": _BROWSER_UA}
+    max_age_days = 8
+
+    def fetch(self) -> list[Track]:
+        listing = httpx.get(
+            self.listing_url,
+            headers=self.request_headers,
+            follow_redirects=True,
+            timeout=20,
+        )
+        listing.raise_for_status()
+        article_url = self._latest_article_url(listing.text)
+        if article_url is None:
+            log.warning("quietus_feedbacker.article_not_found", url=self.listing_url)
+            return []
+        article = httpx.get(
+            article_url,
+            headers=self.request_headers,
+            follow_redirects=True,
+            timeout=20,
+        )
+        article.raise_for_status()
+        published_at = self._published_at(article.text)
+        if published_at is None:
+            log.warning("quietus_feedbacker.date_not_found", url=article_url)
+            return []
+        if published_at < self._now() - timedelta(days=self.max_age_days):
+            return []
+        return self._parse_article_html(article.text, article_url, published_at)
+
+    def _now(self) -> datetime:
+        return datetime.now(UTC)
+
+    def _latest_article_url(self, html: str) -> str | None:
+        parser = HTMLParser(html)
+        for link in parser.css("a"):
+            href = link.attributes.get("href", "").strip()
+            text = re.sub(r"\s+", " ", link.text(strip=True)).strip().lower()
+            try:
+                parsed = urlparse(href)
+            except ValueError:
+                continue
+            if (
+                parsed.hostname == "thequietus.com"
+                and parsed.path.startswith("/quietus-reviews/rock/")
+                and text.startswith("feedbacker:")
+            ):
+                return href
+        return None
+
+    def _published_at(self, html: str) -> datetime | None:
+        parser = HTMLParser(html)
+        node = parser.css_first('time[itemprop="datePublished"]')
+        value = node.attributes.get("datetime", "") if node else ""
+        match = re.search(
+            r"(?P<day>\d{1,2})\s+(?P<month>[A-Za-z]+),\s+(?P<year>\d{4})",
+            value,
+        )
+        if match is None:
+            return None
+        month = _QUIETUS_MONTHS.get(match.group("month").lower())
+        if month is None:
+            return None
+        try:
+            return datetime(int(match.group("year")), month, int(match.group("day")), tzinfo=UTC)
+        except ValueError:
+            return None
+
+    def _parse_article_html(
+        self,
+        html: str,
+        source_url: str,
+        published_at: datetime,
+    ) -> list[Track]:
+        parser = HTMLParser(html)
+        albums: list[Track] = []
+        seen: set[tuple[str, str]] = set()
+        for heading in parser.css("h2"):
+            artist_node = heading.css_first("a")
+            album_node = heading.css_first("em")
+            label_node = heading.css_first("span.label")
+            if artist_node is None or album_node is None or label_node is None:
+                continue
+            artist = re.sub(r"\s+", " ", artist_node.text(strip=True)).strip()
+            album = re.sub(r"\s+", " ", album_node.text(strip=True)).strip()
+            key = (artist.casefold(), album.casefold())
+            if not artist or not album or key in seen or _PITCHFORK_NON_CURRENT_RE.search(album):
+                continue
+            seen.add(key)
+            albums.append(
+                Track(
+                    source_id=self.id,
+                    artist=artist,
+                    title=album,
+                    source_url=source_url,
+                    published_at=published_at,
+                    raw_title=f"{artist} — {album}",
+                )
+            )
+        return albums
 
 
 class TheQuietus(RSSSource):

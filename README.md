@@ -196,7 +196,17 @@ usam esse snapshot canónico; semanas ainda não finalizadas mantêm o ranking e
 Os comandos humanos escondem logs internos por defeito; para diagnóstico local,
 usa `uv run peel --verbose triage` (a weekly mantém logs JSON completos para CI).
 
-Fontes `album` activas incluem Guardian album reviews e The Quietus album reviews. Entram em `Albums / Context`, relatório e Telegram, mas não vão para Spotify matching/playlist. NPR New Music Friday — The Starting 5 e KEXP — In Our Headphones são fontes `track`: entram no matching/playlist como novidades curadas.
+Fontes `album` activas incluem Guardian, reviews Pitchfork (Best New e regulares sem overlap), The Quietus, Feedbacker/Rock, Aquarium Drunkard e labels Bandcamp. Entram em `Albums / Context`, relatório e Telegram, mas não vão para Spotify matching/playlist. Reissues/arquivo explícitos e itens editoriais antigos são excluídos da fila actual. NPR New Music Friday — The Starting 5 e KEXP — In Our Headphones são fontes `track`: entram no matching/playlist como novidades curadas.
+
+Uma recuperação corrente pode actualizar apenas estas sources e pré-visualizar a fila, sem tracks, playlists ou Telegram:
+
+```bash
+uv run peel albums refresh --week 2026-W32 --fetch --dry-run
+```
+
+A fila final aceita apenas links directos Spotify/Bandcamp. Em feedback de álbuns,
+`unavailable` significa que não foi possível ouvir e não conta como juízo musical
+sobre a source.
 
 `tracks_found` é calculado a partir dos dados persistidos: matches + unmatched. O comando também mostra telemetria real de `source_runs` (`Runs`, `Fetched/Fresh`, `Proc`, `Stale/Cap/Err`) para distinguir qualidade de fonte, backlog, caps e falhas.
 
@@ -214,11 +224,27 @@ Uso típico: criar manualmente uma playlist privada vazia no Spotify, copiar o I
 
 ### Sync
 
+A weekly corre no GitHub, mas os comandos interactivos usam a DB local. Antes de
+`feedback`, `triage`, `albums`, `report`, `finalize` e `site export`, o Peel compara
+e sincroniza automaticamente **apenas** `data/peel.db`; alterações de código no
+checkout não bloqueiam o estado. Se existirem feedback local e estado remoto novo,
+o Peel pára sem sobrescrever nenhum dos dois.
+
 ```bash
-uv run peel sync status
-uv run peel sync pull
-uv run peel sync push
+uv run peel sync status # mostra Git e estado canónico separadamente
+uv run peel sync pull   # actualiza apenas a DB, com backup atómico
+uv run peel sync push   # envia feedback/relatórios e marca a DB sincronizada
 ```
+
+Para manutenção deliberadamente sem rede:
+
+```bash
+uv run peel --offline albums
+PEEL_OFFLINE=1 uv run peel report --week 2026-W32
+```
+
+`--offline` não torna uma DB antiga correcta: relatórios desde W29 exigem a
+snapshot canónica e falham em vez de recalcular uma fila divergente.
 
 ### Roadmap (v2+)
 

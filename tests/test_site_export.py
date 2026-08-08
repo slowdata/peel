@@ -516,6 +516,7 @@ def test_build_site_week_payload_exports_album_recommendations(tmp_path: Path) -
 def test_build_site_week_payload_empty_week_is_valid(tmp_path: Path) -> None:
     db = DB(str(tmp_path / "peel.db"))
     db.init_schema()
+    db.replace_album_queue("2026-W30", [])
 
     payload = build_site_week_payload(db, "2026-W30", None, source_quality={})
 
@@ -530,6 +531,16 @@ def test_build_site_week_payload_empty_week_is_valid(tmp_path: Path) -> None:
         "albums": [],
         "sources": [],
     }
+
+
+def test_canonical_site_payload_without_album_snapshot_fails_closed(tmp_path: Path) -> None:
+    db = DB(str(tmp_path / "peel.db"))
+    db.init_schema()
+
+    with pytest.raises(ValueError, match="Sem snapshot canónica.*2026-W32"):
+        build_site_week_payload(db, "2026-W32", None, source_quality={})
+
+    db.close()
 
 
 def test_export_preserves_published_albums_without_snapshot_and_snapshot_supersedes(

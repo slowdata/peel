@@ -39,6 +39,11 @@ FEEDBACK_RATINGS: dict[str, int] = {
     "skip": -1,
     "ban": -2,
 }
+ALBUM_FEEDBACK_RATINGS: dict[str, int] = {
+    **FEEDBACK_RATINGS,
+    # Availability is delivery metadata, not a musical judgement.
+    "unavailable": 0,
+}
 
 WindowTrackRow = tuple[str, str, str, str, str]
 SourceQuality = tuple[float, float]  # (avg_rating, score)
@@ -1453,8 +1458,8 @@ class DB:
         self, artist: str, album: str, label: str, comment: str | None = None
     ) -> None:
         normalized = label.strip().lower()
-        if normalized not in FEEDBACK_RATINGS:
-            allowed = ", ".join(sorted(FEEDBACK_RATINGS))
+        if normalized not in ALBUM_FEEDBACK_RATINGS:
+            allowed = ", ".join(sorted(ALBUM_FEEDBACK_RATINGS))
             raise ValueError(f"invalid feedback label: {label!r}. Allowed: {allowed}")
         self.conn.execute(
             """
@@ -1467,7 +1472,7 @@ class DB:
             (
                 normalize(artist),
                 normalize(album),
-                FEEDBACK_RATINGS[normalized],
+                ALBUM_FEEDBACK_RATINGS[normalized],
                 normalized,
                 comment,
                 datetime.now(UTC).isoformat(),

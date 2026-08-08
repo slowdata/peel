@@ -14,12 +14,14 @@ from peel.sources.rss import (
     KexpInOurHeadphones,
     LineOfBestFitNews,
     NprNewMusicFridayStarting5,
+    PitchforkAlbumReviews,
     PitchforkBestAlbums,
     PitchforkBNT,
     PitchforkNews,
     RSSSource,
     StereogumNewMusic,
     TheQuietus,
+    TheQuietusFeedbacker,
     TheQuietusTracksOfMonth,
     _slugify_pitchfork,
     _split_artist_title_dash,
@@ -486,6 +488,68 @@ class TestPitchforkBestAlbumsFetchFixture:
         assert "ratboys-singin-to-an-empty-chair" in t2.source_url
 
 
+class TestPitchforkAlbumReviews:
+    @staticmethod
+    def _feed(entries: list[dict]) -> SimpleNamespace:
+        return SimpleNamespace(entries=entries, bozo=False, bozo_exception=None)
+
+    def test_regular_reviews_exclude_bna_archives_and_reissues(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        now = datetime(2026, 8, 8, 12, tzinfo=UTC)
+        picture = {
+            "id": "picture",
+            "title": "Uuuuuuuu",
+            "link": "https://pitchfork.com/reviews/albums/picture-uuuuuuuu/",
+            "published_parsed": datetime(2026, 8, 7, tzinfo=UTC).timetuple(),
+        }
+        florida = {
+            "id": "florida",
+            "title": "Florida Water Blues",
+            "link": "https://pitchfork.com/reviews/albums/twisted-teens-florida-water-blues/",
+            "summary": "The duo's current album is a set of garage-rock gems.",
+            "published_parsed": datetime(2026, 8, 6, tzinfo=UTC).timetuple(),
+        }
+        sunday = {
+            "id": "sunday",
+            "title": "Pork Soda",
+            "link": "https://pitchfork.com/reviews/primus-pork-soda/",
+            "summary": "Each Sunday, Pitchfork takes an in-depth look at an album from the past.",
+            "published_parsed": datetime(2026, 8, 6, tzinfo=UTC).timetuple(),
+        }
+        deluxe = {
+            "id": "deluxe",
+            "title": "Old Album (Deluxe Edition)",
+            "link": "https://pitchfork.com/reviews/albums/artist-old-album-deluxe-edition/",
+            "published_parsed": datetime(2026, 8, 5, tzinfo=UTC).timetuple(),
+        }
+        source = PitchforkAlbumReviews()
+        monkeypatch.setattr(source, "_now", lambda: now)
+        monkeypatch.setattr(
+            source,
+            "_parse_feed",
+            lambda url: (
+                self._feed([picture])
+                if url == source.best_url
+                else self._feed([picture, florida, sunday, deluxe])
+            ),
+        )
+
+        tracks = source.fetch()
+
+        assert [(track.artist, track.title) for track in tracks] == [
+            ("Twisted Teens", "Florida Water Blues")
+        ]
+        assert tracks[0].source_id == "pitchfork_album_reviews"
+
+    def test_empty_bna_feed_fails_closed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        source = PitchforkAlbumReviews()
+        monkeypatch.setattr(source, "_parse_feed", lambda url: self._feed([]))
+
+        with pytest.raises(RuntimeError, match="BNA feed empty"):
+            source.fetch()
+
+
 class TestAquariumDrunkard:
     """Testa a source Aquarium Drunkard — On The Turntable."""
 
@@ -541,6 +605,20 @@ class TestAquariumDrunkard:
         )
         assert wax_machine.raw_title == "Wax Machine :: The Sky Unfurls, The Dance Goes On"
         assert wax_machine.spotify_album_uri == "spotify:album:1WaxMachineAlbum"
+        assert wax_machine.published_at == datetime(2026, 5, 29, tzinfo=UTC)
+
+    def test_archival_description_is_rejected(self) -> None:
+        html = """
+        <div class="turntable-items"><ul class="on_the_turntable_content">
+          <li class="album"><div class="album-content"><h3>Old Artist :: Old Album</h3></div>
+            <div class="description">Originally released in 1975.
+              <a href="https://aquariumdrunkard.com/2026/08/01/old/">Read More</a>
+            </div>
+          </li>
+        </ul></div>
+        """
+
+        assert AquariumDrunkard()._parse_homepage_html(html) == []
 
     def test_missing_read_more_keeps_album_without_source_url(self, fixture_html: str) -> None:
         source = AquariumDrunkard()
@@ -1228,6 +1306,72 @@ class TestHelpers:
 
     def test_split_artist_title_no_dash(self) -> None:
         assert _split_artist_title_dash("Just a narrative title") is None
+
+
+class TestTheQuietusFeedbacker:
+    @pytest.fixture
+    def listing_html(self) -> str:
+        path = Path(__file__).parent / "fixtures" / "quietus_feedbacker_listing.html"
+        return path.read_text(encoding="utf-8")
+
+    @pytest.fixture
+    def article_html(self) -> str:
+        path = Path(__file__).parent / "fixtures" / "quietus_feedbacker_article.html"
+        return path.read_text(encoding="utf-8")
+
+    def test_fetch_extracts_strict_current_album(
+        self,
+        listing_html: str,
+        article_html: str,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        class Response:
+            def __init__(self, text: str) -> None:
+                self.text = text
+
+            def raise_for_status(self) -> None:
+                return None
+
+        source = TheQuietusFeedbacker()
+        monkeypatch.setattr(source, "_now", lambda: datetime(2026, 8, 8, tzinfo=UTC))
+        monkeypatch.setattr(
+            "peel.sources.rss.httpx.get",
+            lambda url, **kwargs: Response(
+                listing_html if url == source.listing_url else article_html
+            ),
+        )
+
+        tracks = source.fetch()
+
+        assert [(track.artist, track.title) for track in tracks] == [
+            ("Earth Tongue", "Dungeon Vision")
+        ]
+        assert tracks[0].published_at == datetime(2026, 8, 7, tzinfo=UTC)
+        assert tracks[0].source_id == "thequietus_feedbacker"
+
+    def test_old_column_is_not_bootstrapped_as_fresh(
+        self,
+        listing_html: str,
+        article_html: str,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        class Response:
+            def __init__(self, text: str) -> None:
+                self.text = text
+
+            def raise_for_status(self) -> None:
+                return None
+
+        source = TheQuietusFeedbacker()
+        monkeypatch.setattr(source, "_now", lambda: datetime(2026, 9, 1, tzinfo=UTC))
+        monkeypatch.setattr(
+            "peel.sources.rss.httpx.get",
+            lambda url, **kwargs: Response(
+                listing_html if url == source.listing_url else article_html
+            ),
+        )
+
+        assert source.fetch() == []
 
 
 class TestTheQuietusExtractArtistTitle:

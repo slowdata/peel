@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from peel.db import DB
 from peel.models import AlbumQueueItem
 from peel.report import build_weekly_report, generate_weekly_report
@@ -340,6 +342,36 @@ class TestWeeklyReport:
 
         assert "- None" in album_section
         assert "Dynamic Artist" not in album_section
+        db.close()
+
+    def test_current_canonical_week_without_snapshot_fails_without_file(
+        self, tmp_path: Path
+    ) -> None:
+        db = DB(str(tmp_path / "peel.db"))
+        db.init_schema()
+        db.conn.execute(
+            """
+            INSERT INTO tracks
+            (spotify_uri, source_id, artist, title, source_url, added_at, added_at_week)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "spotify:track:w31",
+                "source-a",
+                "Old Artist",
+                "Old Track",
+                None,
+                "2026-08-01T10:00:00+00:00",
+                "2026-W31",
+            ),
+        )
+        db.conn.commit()
+        output_dir = tmp_path / "reports"
+
+        with pytest.raises(ValueError, match="Sem snapshot canónica.*2026-W32"):
+            generate_weekly_report(db, week="2026-W32", output_dir=output_dir)
+
+        assert not (output_dir / "2026-W32.md").exists()
         db.close()
 
     def test_generate_weekly_report_writes_file(self, tmp_path: Path) -> None:

@@ -20,11 +20,13 @@ import tempfile
 import time
 import tomllib
 import webbrowser
+from collections.abc import Mapping
 from contextlib import redirect_stdout
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import urlparse
 
 import typer
 from rich.console import Console
@@ -32,11 +34,18 @@ from rich.panel import Panel
 from rich.table import Table
 
 from peel.affinity import build_affinity_profile
-from peel.albums import select_album_queue
+from peel.album_discovery import AlbumDiscoveryError, discover_album_mentions
+from peel.albums import CANONICAL_ALBUM_QUEUE_SINCE, select_album_queue
 from peel.config import settings
-from peel.db import DB, FEEDBACK_RATINGS, iso_week
+from peel.db import ALBUM_FEEDBACK_RATINGS, DB, FEEDBACK_RATINGS, iso_week
 from peel.doctor_sources import inspect_registered_sources
-from peel.main import _album_queue_snapshot_items, build_triage_items, configure_logging
+from peel.main import (
+    MAX_ALBUM_QUEUE_ITEMS,
+    MAX_ALBUM_RESOLUTION_CANDIDATES,
+    _album_queue_snapshot_items,
+    build_triage_items,
+    configure_logging,
+)
 from peel.main import run as run_pipeline
 from peel.matcher import normalize
 from peel.models import ReviewQueueItem
@@ -54,8 +63,21 @@ from peel.scoring import SourceScore, build_source_scores
 from peel.site_export import export_site, make_album_resolver
 from peel.sources.registry import source_label
 from peel.spotify_client import SpotifyClient, SpotifyReauthRequired
+from peel.state_sync import (
+    STATE_CLONE_URL,
+    STATE_REPOSITORY,
+    LocalStateConflict,
+    StateSyncError,
+    git_blob_sha,
+    latest_state_week,
+    mark_local_state_synced,
+    merge_remote_state_for_push,
+    state_has_local_changes,
+    sync_remote_state,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_OFFLINE_MODE = False
 
 
 def _configure_stdin_decode_errors() -> None:
@@ -100,8 +122,14 @@ def cli_callback(
         bool,
         typer.Option("--verbose", help="Mostra logs estruturados locais para diagnóstico"),
     ] = False,
+    offline: Annotated[
+        bool,
+        typer.Option("--offline", help="Não consulta o estado canónico remoto"),
+    ] = False,
 ) -> None:
-    """Configura logging para a CLI sem alterar o modo da pipeline."""
+    """Configura logging e o modo de estado para a CLI local."""
+    global _OFFLINE_MODE  # noqa: PLW0603 - Typer callback owns this process-wide option
+    _OFFLINE_MODE = offline or _env_truthy("PEEL_OFFLINE")
     configure_logging(verbose=verbose, pipeline=ctx.invoked_subcommand == "run")
 
 
@@ -168,6 +196,7 @@ def finalize(
     ] = True,
 ) -> None:
     """Publica a semana: keepers (love/like) da triagem → playlist Weekly + export do site."""
+    _auto_sync_state("finalize")
     target_week = _normalize_week_option(week) if week else iso_week(datetime.now(UTC))
     snapshot_playlist_id = canonical_playlist_id(settings.peel_playlist_id)
     db = DB(str(_resolve_path(settings.db_path)))
@@ -330,6 +359,7 @@ def feedback(
             typer.echo(f"Erro: {exc}", err=True)
             raise typer.Exit(code=2) from exc
 
+    _auto_sync_state("feedback")
     db_path = _resolve_path(settings.db_path)
     db = DB(str(db_path))
     try:
@@ -447,6 +477,43 @@ def _run_history_feedback_session(db: DB, *, week: str | None, limit: int) -> No
         console.print("Corre uv run peel sync push.")
 
 
+def _spotify_app_uri(url: str) -> str | None:
+    """Convert a Spotify web URL to a URI understood by the desktop app."""
+    if url.startswith("spotify:"):
+        return url
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return None
+    if (parsed.hostname or "").lower() != "open.spotify.com":
+        return None
+    parts = parsed.path.strip("/").split("/", 1)
+    if len(parts) != 2 or not parts[1]:
+        return None
+    kind, value = parts
+    if kind not in {"album", "search"}:
+        return None
+    return f"spotify:{kind}:{value}"
+
+
+def _open_listen_url(url: str) -> None:
+    """Prefer the installed Spotify app and keep the browser as fallback."""
+    spotify_uri = _spotify_app_uri(url)
+    spotify = shutil.which("spotify")
+    if spotify_uri and spotify:
+        try:
+            subprocess.Popen(  # noqa: S603 - executable resolved locally with which()
+                [spotify, f"--uri={spotify_uri}"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            return
+        except OSError:
+            pass
+    webbrowser.open(url)
+
+
 @albums_app.callback(invoke_without_command=True)
 def albums(
     ctx: typer.Context,
@@ -460,6 +527,7 @@ def albums(
     """Mostra a fila persistida; não recalcula recomendações."""
     if ctx.invoked_subcommand is not None:
         return
+    _auto_sync_state("albums")
     db = DB(str(_resolve_path(settings.db_path)))
     try:
         db.init_schema()
@@ -482,7 +550,7 @@ def albums(
             if not chosen.listen_url:
                 console.print(f"Sem link de escuta para {chosen.artist} — {chosen.album}.")
                 return
-            webbrowser.open(chosen.listen_url)
+            _open_listen_url(chosen.listen_url)
             return
         if not shown:
             console.print("Sem álbuns activos por avaliar.")
@@ -513,6 +581,10 @@ def albums(
 def albums_refresh(
     week: Annotated[str, typer.Option("--week", help="Semana ISO a reconstruir")],
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Mostra sem escrever")] = False,
+    fetch_sources: Annotated[
+        bool,
+        typer.Option("--fetch", help="Actualiza apenas as sources de álbuns antes do ranking"),
+    ] = False,
 ) -> None:
     """Reconstrói explicitamente uma snapshot sem weekly ou Telegram.
 
@@ -520,6 +592,12 @@ def albums_refresh(
     de publicar; uma re-exportação normal, pelo contrário, apenas a lê.
     """
     target_week = _normalize_week_option(week)
+    current_week = iso_week(datetime.now(UTC))
+    if fetch_sources and target_week != current_week:
+        raise typer.BadParameter(
+            "--fetch só é permitido para a semana actual; preserva point-in-time histórico."
+        )
+    _auto_sync_state("albums refresh")
     real_path = _resolve_path(settings.db_path)
     temp_path: str | None = None
     if dry_run:
@@ -532,6 +610,15 @@ def albums_refresh(
     db = DB(str(db_path))
     try:
         db.init_schema()
+        if fetch_sources:
+            try:
+                discovery = discover_album_mentions(db)
+            except AlbumDiscoveryError as exc:
+                raise typer.BadParameter(str(exc), param_hint="--fetch") from exc
+            console.print(
+                f"Album sources: {discovery.sources}; fetched: {discovery.fetched}; "
+                f"fresh: {discovery.fresh}; new: {discovery.new_albums}."
+            )
         # Sunday is inside the target ISO week; using Monday would exclude
         # practically the entire target week from the same quality window the
         # weekly pipeline uses.
@@ -542,7 +629,12 @@ def albums_refresh(
             score.source_id: (score.avg_rating or 0.0, score.score)
             for score in build_source_scores(db, weeks=4, reference_dt=reference)
         }
-        selected = select_album_queue(db, target_week, limit=7, source_quality=quality)
+        selected = select_album_queue(
+            db,
+            target_week,
+            limit=MAX_ALBUM_RESOLUTION_CANDIDATES,
+            source_quality=quality,
+        )
         if not selected and db.album_queue(target_week) is not None:
             console.print("Sem álbuns elegíveis; snapshot existente preservada.")
             return
@@ -552,7 +644,18 @@ def albums_refresh(
                 resolver = make_album_resolver(SpotifyClient())
             except SpotifyReauthRequired as exc:
                 _abort_spotify_reauth(exc)
-        items = _album_queue_snapshot_items(target_week, selected, resolver)
+        existing = db.album_queue(target_week) or []
+        listen_cache = {
+            (item.artist_key, item.album_key): (item.listen_url, item.listen_kind)
+            for item in existing
+            if item.listen_url and item.listen_kind in {"spotify", "bandcamp"}
+        }
+        items = _album_queue_snapshot_items(
+            target_week,
+            selected,
+            resolver,
+            cached_listen_urls=listen_cache,
+        )
         table = Table(title=f"Peel — Álbuns {target_week}")
         table.add_column("#", justify="right")
         table.add_column("Artist", style="bold")
@@ -561,6 +664,11 @@ def albums_refresh(
         for item in items:
             table.add_row(str(item.position), item.artist, item.album, item.listen_url or "")
         console.print(table)
+        if len(items) < MAX_ALBUM_QUEUE_ITEMS:
+            console.print(
+                f"Fila incompleta: {len(items)}/{MAX_ALBUM_QUEUE_ITEMS}; "
+                "os restantes candidatos não têm link directo confirmado."
+            )
         if dry_run:
             console.print("Dry run: snapshot não escrita.")
             return
@@ -577,6 +685,7 @@ def albums_refresh(
 @albums_app.command("feedback")
 def albums_feedback() -> None:
     """Avalia álbuns pendentes da fila activa (q não grava o actual)."""
+    _auto_sync_state("albums feedback")
     db = DB(str(_resolve_path(settings.db_path)))
     try:
         db.init_schema()
@@ -594,7 +703,7 @@ def albums_feedback() -> None:
             console.print(f"[{index}/{len(pending)}] {item.artist} — {item.album}")
             if item.listen_url:
                 console.print(item.listen_url)
-            rating = _prompt_rating(default="like")
+            rating = _prompt_rating(default="like", ratings=ALBUM_FEEDBACK_RATINGS)
             if rating in {"q", "quit", "exit"}:
                 break
             db.upsert_album_feedback(item.artist, item.album, rating, _prompt_comment(default=""))
@@ -633,6 +742,7 @@ def triage(
     if ctx.invoked_subcommand is not None:
         return
 
+    _auto_sync_state("triage")
     playlist_id = settings.peel_review_playlist_id or settings.peel_playlist_id
     db = DB(str(_resolve_path(settings.db_path)))
     try:
@@ -680,6 +790,7 @@ def triage_feedback(
     limit: Annotated[int, typer.Option("--limit", min=1, help="Máximo de tracks")] = 28,
 ) -> None:
     """Alias de compatibilidade para ``peel feedback``."""
+    _auto_sync_state("triage feedback")
     db = DB(str(_resolve_path(settings.db_path)))
     try:
         db.init_schema()
@@ -695,6 +806,7 @@ def triage_bootstrap() -> None:
     Útil uma vez após instalar esta funcionalidade; futuras weeklys gravam a
     snapshot automaticamente depois do replace Spotify bem-sucedido.
     """
+    _auto_sync_state("triage bootstrap")
     playlist_id = settings.peel_review_playlist_id or settings.peel_playlist_id
     try:
         client = SpotifyClient()
@@ -742,6 +854,7 @@ def report(
     ] = False,
 ) -> None:
     """Gera o relatório semanal em Markdown."""
+    _auto_sync_state("report")
     db = DB(str(_resolve_path(settings.db_path)))
     try:
         db.init_schema()
@@ -1017,6 +1130,7 @@ def site_export(
     ] = True,
 ) -> None:
     """Exporta JSON semanal para o site Astro peel-sept."""
+    _auto_sync_state("site export")
     album_resolver = None
     if resolve_albums:
         try:
@@ -1169,12 +1283,44 @@ def _select_artist_search_result(artist: str, result: dict) -> dict | None:
     return None
 
 
+def _env_truthy(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _canonical_state_path() -> Path:
+    return _project_path("data/peel.db").resolve()
+
+
+def _uses_canonical_state() -> bool:
+    return _resolve_path(settings.db_path).resolve() == _canonical_state_path()
+
+
+def _auto_sync_state(command: str) -> None:
+    """Refresh interactive state without merging or touching source code."""
+    if _OFFLINE_MODE or _env_truthy("GITHUB_ACTIONS") or not _uses_canonical_state():
+        return
+    try:
+        result = sync_remote_state(_canonical_state_path(), PROJECT_ROOT)
+    except StateSyncError as exc:
+        console.print(f"Estado canónico indisponível para `{command}`: {exc}")
+        raise typer.Exit(code=1) from exc
+    if result.status == "updated":
+        before = result.previous_week or "sem estado"
+        after = result.local_week or "sem semana"
+        console.print(f"Estado sincronizado: {before} → {after}.")
+
+
 @sync_app.command("status")
 def sync_status() -> None:
-    """Mostra estado do git local e do upstream."""
+    """Mostra separadamente o estado canónico e o checkout de código."""
     state = _git_sync_state()
+    db_path = _canonical_state_path()
+    try:
+        local_changes = state_has_local_changes(db_path)
+    except StateSyncError:
+        local_changes = None
 
-    table = Table(title="Git sync")
+    table = Table(title="Git + canonical state sync")
     table.add_column("Field", style="bold")
     table.add_column("Value")
     table.add_row("Branch", state.branch)
@@ -1182,7 +1328,12 @@ def sync_status() -> None:
     table.add_row("Dirty", _yes_no(state.dirty))
     table.add_row("Ahead", str(state.ahead))
     table.add_row("Behind", str(state.behind))
-    table.add_row("data/peel.db changed", _yes_no(state.peel_db_changed))
+    table.add_row("data/peel.db changed vs Git", _yes_no(state.peel_db_changed))
+    table.add_row("Canonical week", latest_state_week(db_path) or "-")
+    table.add_row(
+        "State changed since sync",
+        "unknown" if local_changes is None else _yes_no(local_changes),
+    )
     table.add_row(
         "Dirty paths",
         ", ".join(state.dirty_paths) if state.dirty_paths else "-",
@@ -1192,61 +1343,48 @@ def sync_status() -> None:
 
 @sync_app.command("pull")
 def sync_pull() -> None:
-    """Faz pull seguro do upstream."""
-    state = _git_sync_state()
-    if state.dirty:
-        console.print("Working tree dirty; aborting pull.")
-        raise typer.Exit(code=1)
-
-    result = _run_git(["pull", "--ff-only"])
-    if result.returncode != 0:
-        _print_git_error(result)
-        raise typer.Exit(code=result.returncode or 1)
-
-    console.print("Pull completed.")
+    """Sincroniza apenas a DB canónica; nunca faz merge do código."""
+    try:
+        result = sync_remote_state(_canonical_state_path(), PROJECT_ROOT)
+    except StateSyncError as exc:
+        console.print(str(exc))
+        raise typer.Exit(code=1) from exc
+    if result.status == "updated":
+        console.print(
+            f"State pull completed: {result.previous_week or '-'} → "
+            f"{result.local_week or '-'}; backup: {result.backup_path}."
+        )
+    elif result.status == "local_changes":
+        console.print("Estado remoto inalterado; a DB local contém alterações por enviar.")
+    else:
+        console.print(f"Estado já actual ({result.local_week or '-'}).")
 
 
 @sync_app.command("push")
 def sync_push() -> None:
-    """Faz commit + push do estado local."""
-    staged_paths = _git_staged_paths()
-    forbidden_paths = [path for path in staged_paths if not _sync_path_allowed(path)]
-    if forbidden_paths:
-        console.print("Staged files outside Peel sync scope:")
-        for path in forbidden_paths:
-            console.print(f"- {path}")
-        raise typer.Exit(code=1)
+    """Publica estado sobre o main remoto sem integrar código no checkout local."""
+    db_path = _canonical_state_path()
+    try:
+        # Detecta primeiro o conflito real: feedback local + weekly remota nova.
+        try:
+            sync_result = sync_remote_state(db_path, PROJECT_ROOT)
+        except LocalStateConflict:
+            sync_result = merge_remote_state_for_push(db_path)
+            console.print("Feedback local integrado sobre o estado remoto mais recente.")
+        report_paths = _regenerate_state_reports(db_path)
+        if not sync_result.remote_blob_sha:
+            raise StateSyncError("Estado remoto sem SHA para push seguro.")
+        changed = _push_state_checkout(
+            db_path,
+            report_paths,
+            expected_remote_blob_sha=sync_result.remote_blob_sha,
+        )
+        mark_local_state_synced(db_path)
+    except StateSyncError as exc:
+        console.print(str(exc))
+        raise typer.Exit(code=1) from exc
 
-    state = _git_sync_state()
-
-    paths = [_project_path("data/peel.db")]
-    reports_dir = _project_path("data/reports")
-    if reports_dir.exists():
-        paths.append(reports_dir)
-
-    add_result = _run_git(["add", *[str(path.relative_to(PROJECT_ROOT)) for path in paths]])
-    if add_result.returncode != 0:
-        _print_git_error(add_result)
-        raise typer.Exit(code=add_result.returncode or 1)
-
-    diff_result = _run_git(["diff", "--cached", "--quiet"])
-    has_staged_changes = diff_result.returncode != 0
-    if not has_staged_changes and state.ahead == 0:
-        console.print("Nothing to push.")
-        return
-
-    if has_staged_changes:
-        commit_result = _run_git(["commit", "-m", "chore: update peel local feedback/state"])
-        if commit_result.returncode != 0:
-            _print_git_error(commit_result)
-            raise typer.Exit(code=commit_result.returncode or 1)
-
-    push_result = _run_git(["push"])
-    if push_result.returncode != 0:
-        _print_git_error(push_result)
-        raise typer.Exit(code=push_result.returncode or 1)
-
-    console.print("Push completed.")
+    console.print("Push completed." if changed else "Nothing to push.")
 
 
 @doctor_app.callback(invoke_without_command=True)
@@ -1608,8 +1746,12 @@ def _print_feedback_prompt(
     console.print(table)
 
 
-def _prompt_rating(default: str) -> str:
-    allowed = ", ".join(sorted(FEEDBACK_RATINGS))
+def _prompt_rating(
+    default: str,
+    ratings: Mapping[str, int] | None = None,
+) -> str:
+    ratings = ratings or FEEDBACK_RATINGS
+    allowed = ", ".join(sorted(ratings))
     while True:
         try:
             value = typer.prompt(f"Rating [{allowed} / q]", default=default).strip().lower()
@@ -1619,7 +1761,7 @@ def _prompt_rating(default: str) -> str:
             continue
         if value in {"q", "quit", "exit"}:
             return value
-        if value in FEEDBACK_RATINGS:
+        if value in ratings:
             return value
         console.print(f"Rating inválida: {value}")
 
@@ -1748,6 +1890,148 @@ def _project_path(value: str) -> Path:
     return PROJECT_ROOT / value
 
 
+def _regenerate_state_reports(db_path: Path) -> list[Path]:
+    """Regenerate only latest/feedback-affected reports from the merged DB."""
+    reports_dir = _project_path("data/reports")
+    db = DB(str(db_path))
+    try:
+        db.init_schema()
+        weeks = {week for week in [latest_state_week(db_path)] if week}
+        weeks.update(
+            str(row[0])
+            for row in db.conn.execute(
+                """
+                SELECT DISTINCT t.added_at_week
+                FROM tracks t JOIN feedback f ON f.spotify_uri = t.spotify_uri
+                WHERE t.added_at_week IS NOT NULL
+                """
+            )
+        )
+        weeks.update(
+            str(row[0])
+            for row in db.conn.execute(
+                """
+                SELECT DISTINCT q.week
+                FROM album_queue_items q JOIN album_feedback f
+                  ON f.artist_key = q.artist_key AND f.album_key = q.album_key
+                """
+            )
+        )
+        # Legacy reports have no frozen album snapshot; regenerating them with
+        # today's feedback would change historical recommendations.
+        weeks = {week for week in weeks if week >= CANONICAL_ALBUM_QUEUE_SINCE}
+        paths: list[Path] = []
+        for week in sorted(weeks):
+            try:
+                paths.append(generate_weekly_report(db, week=week, output_dir=reports_dir))
+            except ValueError as exc:
+                console.print(f"Report {week} não regenerado: {exc}")
+        return paths
+    finally:
+        db.close()
+
+
+def _push_state_checkout(
+    db_path: Path,
+    report_paths: list[Path],
+    *,
+    expected_remote_blob_sha: str,
+) -> bool:
+    """Commit state from a temporary latest-main checkout, never local code."""
+    origin_result = _run_git(["remote", "get-url", "--push", "origin"])
+    if origin_result.returncode != 0:
+        raise StateSyncError(_git_result_message(origin_result))
+    push_url = origin_result.stdout.strip()
+    if not push_url:
+        raise StateSyncError("Git origin sem push URL.")
+    _assert_state_push_target(push_url)
+
+    with tempfile.TemporaryDirectory(prefix="peel-state-push-") as raw_dir:
+        checkout = Path(raw_dir) / "repo"
+        clone = _run_git_in(
+            [
+                "clone",
+                "--quiet",
+                "--depth",
+                "1",
+                "--branch",
+                "main",
+                STATE_CLONE_URL,
+                str(checkout),
+            ],
+            PROJECT_ROOT,
+        )
+        if clone.returncode != 0:
+            raise StateSyncError(_git_result_message(clone))
+
+        target_data = checkout / "data"
+        target_data.mkdir(parents=True, exist_ok=True)
+        cloned_db = target_data / "peel.db"
+        if not cloned_db.exists() or git_blob_sha(cloned_db) != expected_remote_blob_sha:
+            raise StateSyncError(
+                "O estado remoto avançou durante o push; nada foi enviado. "
+                "Repete `uv run peel sync push` para refazer o merge."
+            )
+        shutil.copy2(db_path, cloned_db)
+        target_reports = target_data / "reports"
+        target_reports.mkdir(parents=True, exist_ok=True)
+        for report_path in report_paths:
+            shutil.copy2(report_path, target_reports / report_path.name)
+
+        for args in (
+            ["config", "user.name", "peel-local"],
+            ["config", "user.email", "peel-local@users.noreply.github.com"],
+            ["remote", "set-url", "--push", "origin", push_url],
+            ["add", "data/peel.db", "data/reports"],
+        ):
+            result = _run_git_in(args, checkout)
+            if result.returncode != 0:
+                raise StateSyncError(_git_result_message(result))
+
+        diff = _run_git_in(["diff", "--cached", "--quiet"], checkout)
+        if diff.returncode == 0:
+            return False
+        if diff.returncode != 1:
+            raise StateSyncError(_git_result_message(diff))
+        commit = _run_git_in(["commit", "-m", "chore: update peel local feedback/state"], checkout)
+        if commit.returncode != 0:
+            raise StateSyncError(_git_result_message(commit))
+        push = _run_git_in(["push", "origin", "HEAD:main"], checkout)
+        if push.returncode != 0:
+            raise StateSyncError(_git_result_message(push))
+    return True
+
+
+def _assert_state_push_target(push_url: str) -> None:
+    if push_url.startswith("git@github.com:"):
+        repository = push_url.split(":", 1)[1]
+    else:
+        try:
+            parsed = urlparse(push_url)
+        except ValueError as exc:
+            raise StateSyncError(f"Push URL inválido: {push_url}") from exc
+        if parsed.hostname != "github.com":
+            raise StateSyncError("Push de estado recusado: origin não aponta para GitHub.")
+        repository = parsed.path.lstrip("/")
+    if repository.removesuffix(".git") != STATE_REPOSITORY:
+        raise StateSyncError(
+            f"Push de estado recusado: origin não corresponde a {STATE_REPOSITORY}."
+        )
+
+
+def _run_git_in(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _git_result_message(result: subprocess.CompletedProcess[str]) -> str:
+    return (result.stderr or result.stdout or "git command failed").strip()
+
+
 def _run_git(args: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["git", *args],
@@ -1760,18 +2044,6 @@ def _run_git(args: list[str]) -> subprocess.CompletedProcess[str]:
 def _print_git_error(result: subprocess.CompletedProcess[str]) -> None:
     message = (result.stderr or result.stdout or "git command failed").strip()
     console.print(message)
-
-
-def _git_staged_paths() -> list[str]:
-    result = _run_git(["diff", "--cached", "--name-only"])
-    if result.returncode != 0:
-        _print_git_error(result)
-        raise typer.Exit(code=result.returncode or 1)
-    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
-
-
-def _sync_path_allowed(path: str) -> bool:
-    return path == "data/peel.db" or path == "data/reports" or path.startswith("data/reports/")
 
 
 def _git_sync_state() -> GitSyncState:

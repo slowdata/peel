@@ -4,6 +4,7 @@ from pathlib import Path
 
 from peel.albums import (
     AlbumMention,
+    _album_feedback_quality,
     is_album_url,
     rank_album_recommendations,
     select_album_queue,
@@ -229,6 +230,92 @@ def test_diversity_prefers_editorial_then_allows_label_after_repeat_penalty(tmp_
     # soft repeat penalty lets the label win; it is not a source quota/cap.
     assert [item.artist for item, _ in selected] == ["Editorial First", "Label", "Editorial Repeat"]
     db.close()
+
+
+def test_two_feeds_from_same_publication_are_not_consensus() -> None:
+    rows = [
+        _mention(
+            "Same Artist",
+            "Same Album",
+            "pitchfork_best_albums",
+            "2026-08-08T10:00:00+00:00",
+            source_url="https://pitchfork.com/review",
+        ),
+        _mention(
+            "Same Artist",
+            "Same Album",
+            "pitchfork_album_reviews",
+            "2026-08-08T11:00:00+00:00",
+            source_url="https://pitchfork.com/review",
+        ),
+        _mention(
+            "Same Artist",
+            "Same Album",
+            "guardian_music_albums",
+            "2026-08-08T12:00:00+00:00",
+            source_url="https://guardian.example/review",
+        ),
+    ]
+
+    item = rank_album_recommendations(rows, limit=1)[0]
+
+    assert item.sources == (
+        "guardian_music_albums",
+        "pitchfork_album_reviews",
+        "pitchfork_best_albums",
+    )
+    assert item.source_count == 2
+
+
+def test_unavailable_feedback_is_not_musical_source_quality(tmp_path: Path) -> None:
+    db = DB(str(tmp_path / "peel.db"))
+    db.init_schema()
+    db._record_album_mention(
+        artist="Unavailable Artist",
+        album="Unavailable Album",
+        source_id="source-a",
+        source_url="https://review.example/album",
+        spotify_album_uri=None,
+        seen_at="2026-08-08T10:00:00+00:00",
+        added_at_week="2026-W32",
+    )
+    db.conn.commit()
+    db.upsert_album_feedback(
+        "Unavailable Artist", "Unavailable Album", "unavailable", "not streaming"
+    )
+
+    quality = _album_feedback_quality(db, {"source-a": (1.0, 2.0)})
+
+    assert db.album_feedback_for_identity("Unavailable Artist", "Unavailable Album") == (
+        0,
+        "unavailable",
+        "not streaming",
+    )
+    assert quality["source-a"] == (1.0, 2.0)
+    db.close()
+
+
+def test_explicit_reissue_title_is_not_queue_eligible() -> None:
+    rows = [
+        _mention(
+            "Museum Of Love",
+            "Museum Of Love (10th Anniversary Expanded Edition)",
+            "bandcamp_dfa",
+            "2026-08-08T10:00:00+00:00",
+            source_url="https://museumoflove.bandcamp.com/album/museum-of-love",
+        ),
+        _mention(
+            "Current Artist",
+            "Current Album",
+            "bandcamp_label",
+            "2026-08-08T11:00:00+00:00",
+            source_url="https://current.bandcamp.com/album/current-album",
+        ),
+    ]
+
+    ranked = rank_album_recommendations(rows, limit=7)
+
+    assert [(item.artist, item.album) for item in ranked] == [("Current Artist", "Current Album")]
 
 
 def test_spotify_album_url_passes_through_non_uri_values() -> None:

@@ -73,7 +73,11 @@ def _insert_week_track(
 
 
 class TestAlbumsCLI:
-    def _db_with_album_queue(self, path: Path) -> DB:
+    def _db_with_album_queue(
+        self,
+        path: Path,
+        listen_url: str = "https://listen.example/album",
+    ) -> DB:
         db = DB(str(path))
         db.init_schema()
         db.replace_album_queue(
@@ -88,7 +92,7 @@ class TestAlbumsCLI:
                     album_key="album name",
                     source_ids=("source-a",),
                     source_count=1,
-                    listen_url="https://listen.example/album",
+                    listen_url=listen_url,
                     listen_kind="spotify",
                     editorial_url="https://review.example/album",
                     is_new=True,
@@ -113,6 +117,36 @@ class TestAlbumsCLI:
         opened.assert_called_once_with("https://listen.example/album")
         assert runner.invoke(cli.app, ["albums", "--open", "2"]).exit_code == 2
 
+    def test_albums_open_uses_installed_spotify_app(self, tmp_path: Path, monkeypatch) -> None:
+        db_path = tmp_path / "albums.db"
+        db = self._db_with_album_queue(
+            db_path,
+            listen_url="https://open.spotify.com/album/abc123?si=tracking",
+        )
+        db.close()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+        monkeypatch.setattr(cli.shutil, "which", lambda command: "/usr/bin/spotify")
+        launched = MagicMock()
+        opened = MagicMock()
+        monkeypatch.setattr(cli.subprocess, "Popen", launched)
+        monkeypatch.setattr(cli.webbrowser, "open", opened)
+
+        result = runner.invoke(cli.app, ["albums", "--open", "1"])
+
+        assert result.exit_code == 0
+        assert launched.call_args.args[0] == [
+            "/usr/bin/spotify",
+            "--uri=spotify:album:abc123",
+        ]
+        opened.assert_not_called()
+
+    def test_spotify_app_uri_supports_search_and_rejects_other_hosts(self) -> None:
+        assert (
+            cli._spotify_app_uri("https://open.spotify.com/search/Picture%20Uuuuuuuu")
+            == "spotify:search:Picture%20Uuuuuuuu"
+        )
+        assert cli._spotify_app_uri("https://example.com/album/abc123") is None
+
     def test_refresh_dry_run_is_side_effect_free_and_skips_spotify(
         self, tmp_path: Path, monkeypatch
     ) -> None:
@@ -127,6 +161,41 @@ class TestAlbumsCLI:
         result = runner.invoke(cli.app, ["albums", "refresh", "--week", "2026-W29", "--dry-run"])
 
         assert result.exit_code == 0
+        assert db_path.read_bytes() == before
+        spotify.assert_not_called()
+
+    def test_refresh_fetch_dry_run_discovers_only_in_temp_db(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        db_path = tmp_path / "albums.db"
+        db = self._db_with_album_queue(db_path)
+        db.close()
+        before = db_path.read_bytes()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+        spotify = MagicMock()
+        monkeypatch.setattr(cli, "SpotifyClient", spotify)
+
+        def discover(temp_db: DB):
+            temp_db.record_album(
+                "Fetched Artist",
+                "Fetched Album",
+                "bandcamp_fixture",
+                "https://fixture.bandcamp.com/album/fetched",
+            )
+            return SimpleNamespace(sources=1, fetched=1, fresh=1, new_albums=1)
+
+        monkeypatch.setattr(cli, "discover_album_mentions", discover)
+        current_week = iso_week(datetime.now(UTC))
+
+        result = runner.invoke(
+            cli.app,
+            ["albums", "refresh", "--week", current_week, "--fetch", "--dry-run"],
+        )
+
+        assert result.exit_code == 0
+        assert "Fetched Artist" in result.output
+        assert "Fila incompleta: 1/7" in result.output
+        assert "Dry run" in result.output
         assert db_path.read_bytes() == before
         spotify.assert_not_called()
 

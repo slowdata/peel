@@ -18,11 +18,13 @@ from peel.sources.rss import (
     KexpInOurHeadphones,
     LineOfBestFitNews,
     NprNewMusicFridayStarting5,
+    PitchforkAlbumReviews,
     PitchforkBestAlbums,
     PitchforkBNT,
     PitchforkNews,
     StereogumNewMusic,
     TheQuietus,
+    TheQuietusFeedbacker,
     TheQuietusTracksOfMonth,
 )
 
@@ -51,12 +53,14 @@ def test_active_sources_registry_contains_expected_order() -> None:
         LineOfBestFitNews.id,
         ConsequenceMusic.id,
         TheQuietus.id,
+        TheQuietusFeedbacker.id,
         TheQuietusTracksOfMonth.id,
         GorillaVsBear.id,
         KexpInOurHeadphones.id,
         GuardianMusicAlbums.id,
         NprNewMusicFridayStarting5.id,
         PitchforkBestAlbums.id,
+        PitchforkAlbumReviews.id,
         AquariumDrunkard.id,
         "bandcamp_dfa",
         "bandcamp_sacred_bones",
@@ -88,6 +92,8 @@ def test_consequence_is_registered_once_with_label_and_homepage() -> None:
 def test_source_label_returns_short_labels_and_fallback() -> None:
     assert source_label("npr_new_music_friday_starting5") == "NPR"
     assert source_label("pitchfork_best_albums") == "Pitchfork"
+    assert source_label("pitchfork_album_reviews") == "Pitchfork"
+    assert source_label("thequietus_feedbacker") == "The Quietus"
     assert source_label("custom_source") == "Custom Source"
 
 

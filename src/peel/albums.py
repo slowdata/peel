@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -9,6 +10,8 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from peel.db import SourceQuality
+
+CANONICAL_ALBUM_QUEUE_SINCE = "2026-W29"
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -158,6 +161,7 @@ def _album_feedback_quality(
         FROM album_mentions m
         JOIN album_feedback f
           ON f.artist_key = m.artist_key AND f.album_key = m.album_key
+        WHERE f.label != 'unavailable'
         GROUP BY m.source_id
         """
     ).fetchall()
@@ -180,7 +184,7 @@ def rank_album_recommendations(
     quality = source_quality or {}
     buckets: dict[tuple[str, str], _AlbumBucket] = {}
     for row in rows:
-        if not is_album_url(row.source_url):
+        if not is_album_url(row.source_url) or is_archival_album_title(row.album):
             continue
         key = (row.artist_key, row.album_key)
         buckets.setdefault(key, _AlbumBucket(row.artist, row.album, *key)).add(row, quality)
@@ -201,11 +205,34 @@ def spotify_album_url(spotify_album_uri: str) -> str:
 EDITORIAL_ALBUM_SOURCES = {
     "guardian_music_albums",
     "thequietus",
+    "thequietus_feedbacker",
     "aquarium_drunkard",
     "pitchfork_best_albums",
+    "pitchfork_album_reviews",
 }
 LABEL_SOURCE_PREFIX = "bandcamp_"
 SOURCE_REPEAT_PENALTY = 2.0
+_SOURCE_FAMILIES = {
+    "pitchfork_best_albums": "pitchfork",
+    "pitchfork_album_reviews": "pitchfork",
+    "thequietus": "thequietus",
+    "thequietus_feedbacker": "thequietus",
+}
+_ARCHIVAL_TITLE_RE = re.compile(
+    r"(?:\b(?:deluxe|expanded|remaster(?:ed)?|reissue|anniversary|archive|archival)\b|"
+    r"\b\d{1,3}(?:st|nd|rd|th)\s+anniversary\b)",
+    re.IGNORECASE,
+)
+
+
+def is_archival_album_title(title: str) -> bool:
+    """Reject explicit reissue/archive editions from the current-release queue."""
+    return bool(_ARCHIVAL_TITLE_RE.search(title))
+
+
+def _source_family(source_id: str) -> str:
+    """Publication-level identity prevents two feeds from faking consensus."""
+    return _SOURCE_FAMILIES.get(source_id, source_id)
 
 
 def _source_tier(source_id: str) -> int:
@@ -320,10 +347,11 @@ class _AlbumBucket:
                 ),
             )
         )
+        source_count = len({_source_family(source) for source in sources})
         return AlbumRecommendation(
             self.artist,
             self.album,
-            len(sources),
+            source_count,
             sources,
             tuple((source, self.source_urls.get(source)) for source in sources),
             self.spotify_album_uri,

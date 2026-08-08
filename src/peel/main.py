@@ -23,6 +23,7 @@ from collections import Counter
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from urllib.parse import urlparse
 
 import structlog
 
@@ -65,6 +66,9 @@ def configure_logging(*, verbose: bool = False, pipeline: bool = False) -> None:
 
 
 log = structlog.get_logger()
+
+MAX_ALBUM_QUEUE_ITEMS = 7
+MAX_ALBUM_RESOLUTION_CANDIDATES = 14
 
 
 @dataclass(frozen=True, slots=True)
@@ -543,14 +547,20 @@ def run(dry_run: bool = False) -> None:
             selected_albums = select_album_queue(
                 db,
                 current_week,
-                limit=7,
+                limit=MAX_ALBUM_RESOLUTION_CANDIDATES,
                 source_quality=source_quality,
             )
-            # No máximo sete lookups Spotify, apenas para picks que serão
-            # entregues; o snapshot conserva o resultado para re-exports.
+            # Resolve uma pool limitada para poder substituir candidatos sem
+            # link directo; nunca escala para todo o universo de menções.
             album_queue_items = _album_queue_snapshot_items(
                 current_week, selected_albums, album_resolver
             )
+            if len(album_queue_items) < MAX_ALBUM_QUEUE_ITEMS:
+                log.warning(
+                    "albums.queue_underfilled",
+                    count=len(album_queue_items),
+                    target=MAX_ALBUM_QUEUE_ITEMS,
+                )
             album_queue_ready = True
         except Exception as e:
             log.exception("albums.recommendations_failed", error=str(e))
@@ -1037,35 +1047,47 @@ def _album_queue_snapshot_items(
     week: str,
     selected: list[tuple[AlbumRecommendation, bool]],
     album_resolver: Callable[[str, str], str | None] | None,
+    *,
+    cached_listen_urls: Mapping[tuple[str, str], tuple[str, str]] | None = None,
+    limit: int = MAX_ALBUM_QUEUE_ITEMS,
 ) -> list[AlbumQueueItem]:
-    """Resolve links once, for the chosen queue only, then freeze them."""
+    """Freeze up to seven directly playable picks, backfilling bounded candidates."""
     snapshots: list[AlbumQueueItem] = []
-    for position, (item, is_new) in enumerate(selected, start=1):
+    cache = cached_listen_urls or {}
+    for item, is_new in selected:
+        if len(snapshots) >= limit:
+            break
         urls = tuple(url for _, url in item.source_urls)
         listen_url: str | None = None
         listen_kind: str | None = None
         if item.spotify_album_uri:
             listen_url, listen_kind = spotify_album_url(item.spotify_album_uri), "spotify"
-        elif album_resolver:
+        if not listen_url:
+            listen_url = first_album_url(urls)
+            if listen_url:
+                listen_kind = "bandcamp"
+        if not listen_url:
+            cached = cache.get((item.artist_key, item.album_key))
+            if cached and _is_direct_album_listen_url(cached[0]):
+                listen_url, listen_kind = cached
+        if not listen_url and album_resolver:
             try:
-                listen_url = album_resolver(item.artist, item.album)
+                resolved = album_resolver(item.artist, item.album)
             except Exception as exc:  # noqa: BLE001 - queue remains usable offline
                 log.warning(
                     "albums.resolver_failed", artist=item.artist, album=item.album, error=str(exc)
                 )
-            if listen_url:
-                listen_kind = "spotify"
+            else:
+                if resolved and _is_direct_album_listen_url(resolved):
+                    listen_url, listen_kind = resolved, "spotify"
         if not listen_url:
-            listen_url = first_album_url(urls)
-            if listen_url and "bandcamp.com" in listen_url:
-                listen_kind = "bandcamp"
-        if not listen_url:
-            listen_url, listen_kind = spotify_album_search_url(item.artist, item.album), "search"
+            log.info("albums.unplayable_skipped", artist=item.artist, album=item.album)
+            continue
         editorial_url = _first_album_source_url(urls)
         snapshots.append(
             AlbumQueueItem(
                 week=week,
-                position=position,
+                position=len(snapshots) + 1,
                 artist=item.artist,
                 album=item.album,
                 artist_key=item.artist_key,
@@ -1079,6 +1101,17 @@ def _album_queue_snapshot_items(
             )
         )
     return snapshots
+
+
+def _is_direct_album_listen_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    host = (parsed.hostname or "").lower()
+    return (host == "open.spotify.com" and parsed.path.startswith("/album/")) or (
+        host.endswith("bandcamp.com") and "/album/" in parsed.path
+    )
 
 
 def _album_queue_digest_items(items: list[AlbumQueueItem]) -> list[AlbumPickItem]:

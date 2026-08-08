@@ -17,7 +17,12 @@ from urllib.parse import quote
 
 import structlog
 
-from peel.albums import AlbumRecommendation, spotify_album_url, top_album_recommendations
+from peel.albums import (
+    CANONICAL_ALBUM_QUEUE_SINCE,
+    AlbumRecommendation,
+    spotify_album_url,
+    top_album_recommendations,
+)
 from peel.db import DB, FEEDBACK_RATINGS, SourceQuality, iso_week, rank_window_uris
 from peel.matcher import normalize, score
 from peel.models import AlbumQueueItem
@@ -350,6 +355,8 @@ def _export_albums(
     snapshot = db.album_queue(week)
     if snapshot is not None:
         return [_snapshot_album_to_json(item) for item in snapshot]
+    if week >= CANONICAL_ALBUM_QUEUE_SINCE:
+        raise ValueError(f"Sem snapshot canónica de álbuns para {week}; export do site cancelado.")
     # Sem snapshot só há fallback para semanas históricas. Não é usado para
     # semanas entregues pela pipeline actual, onde ordem/links ficam congelados.
     recommendations = top_album_recommendations(

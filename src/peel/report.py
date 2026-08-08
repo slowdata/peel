@@ -12,7 +12,11 @@ from pathlib import Path
 
 import structlog
 
-from peel.albums import AlbumRecommendation, top_album_recommendations
+from peel.albums import (
+    CANONICAL_ALBUM_QUEUE_SINCE,
+    AlbumRecommendation,
+    top_album_recommendations,
+)
 from peel.db import DB, iso_week
 from peel.matcher import normalize
 from peel.models import AlbumQueueItem
@@ -240,6 +244,11 @@ def _load_recommended_albums(db: DB, week: str) -> list[AlbumRecommendation | Al
         return []
     if snapshot is not None:
         return snapshot
+    if week >= CANONICAL_ALBUM_QUEUE_SINCE:
+        raise ValueError(
+            f"Sem snapshot canónica de álbuns para {week}; "
+            "sincroniza a DB ou corre `peel albums refresh` explicitamente."
+        )
 
     try:
         scores = build_source_scores(db, weeks=4)
