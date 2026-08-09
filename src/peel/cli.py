@@ -58,7 +58,7 @@ from peel.release_radar import (
     release_radar_snapshot_payload,
     tracks_from_snapshot,
 )
-from peel.report import generate_weekly_report
+from peel.report import generate_weekly_html_report, generate_weekly_report
 from peel.scoring import SourceScore, build_source_scores
 from peel.site_export import export_site, make_album_resolver
 from peel.sources.registry import source_label
@@ -848,9 +848,13 @@ def report(
         Path | None,
         typer.Option(help="Directório de saída"),
     ] = None,
+    html_output: Annotated[
+        bool,
+        typer.Option("--html", help="Gera também uma preview HTML local"),
+    ] = False,
     open_report: Annotated[
         bool,
-        typer.Option("--open", help="Abre o relatório no browser"),
+        typer.Option("--open", help="Gera e abre a preview HTML no browser"),
     ] = False,
 ) -> None:
     """Gera o relatório semanal em Markdown."""
@@ -864,8 +868,11 @@ def report(
         except ValueError as exc:
             raise typer.BadParameter(str(exc), param_hint="--week") from exc
         console.print(f"Report written: {path}")
-        if open_report:
-            webbrowser.open(path.resolve().as_uri())
+        if html_output or open_report:
+            html_path = generate_weekly_html_report(db, week=week, output_dir=target_dir)
+            console.print(f"HTML preview written: {html_path}")
+            if open_report:
+                webbrowser.open(html_path.resolve().as_uri())
     finally:
         db.close()
 

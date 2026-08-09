@@ -222,6 +222,18 @@ uv run peel playlist fill-week 2026-W22 --playlist-id <spotify_playlist_id> --dr
 
 Uso típico: criar manualmente uma playlist privada vazia no Spotify, copiar o ID e preencher com uma semana antiga para ouvir/avaliar.
 
+### Relatório local
+
+O Markdown continua a ser o artefacto canónico e versionado. Para uma leitura
+mais agradável, `--html` cria uma página autónoma em `data/reports/.html/`, com a
+paleta visual do Peel; `--open` gera essa preview e abre-a no browser.
+
+```bash
+uv run peel report --week 2026-W32
+uv run peel report --week 2026-W32 --html
+uv run peel report --week 2026-W32 --open
+```
+
 ### Sync
 
 A weekly corre no GitHub, mas os comandos interactivos usam a DB local. Antes de

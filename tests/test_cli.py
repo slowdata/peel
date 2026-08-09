@@ -807,6 +807,37 @@ class TestCliReport:
         assert result.exit_code == 0
         assert "Report written" in result.stdout
         assert (output_dir / "2026-W18.md").exists()
+        assert not (output_dir / ".html").exists()
+
+    def test_report_open_generates_and_opens_html_preview(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        db_path = tmp_path / "peel.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        db.close()
+        output_dir = tmp_path / "reports"
+        opened: list[str] = []
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+        monkeypatch.setattr(cli.webbrowser, "open", lambda uri: opened.append(uri))
+
+        result = runner.invoke(
+            cli.app,
+            [
+                "report",
+                "--week",
+                "2026-W18",
+                "--output-dir",
+                str(output_dir),
+                "--open",
+            ],
+        )
+
+        html_path = output_dir / ".html" / "2026-W18.html"
+        assert result.exit_code == 0
+        assert "HTML preview written" in result.stdout
+        assert html_path.exists()
+        assert opened == [html_path.resolve().as_uri()]
 
 
 class TestCliSite:

@@ -8,7 +8,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from html import escape
 from pathlib import Path
+from urllib.parse import urlparse
 
 import structlog
 
@@ -21,6 +23,7 @@ from peel.db import DB, iso_week
 from peel.matcher import normalize
 from peel.models import AlbumQueueItem
 from peel.scoring import build_source_scores
+from peel.sources.registry import source_label
 
 log = structlog.get_logger()
 
@@ -103,8 +106,33 @@ def generate_weekly_report(
     return path
 
 
+def generate_weekly_html_report(
+    db: DB,
+    week: str | None = None,
+    output_dir: Path | None = None,
+) -> Path:
+    """Gera uma preview HTML autónoma, separada dos artefactos versionados."""
+    resolved_week = _normalize_week(week or iso_week(datetime.now(UTC)))
+    target_dir = (output_dir or REPORTS_DIR) / ".html"
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    report = _load_weekly_report(db, resolved_week)
+    path = target_dir / f"{resolved_week}.html"
+    path.write_text(_render_html(report), encoding="utf-8")
+    return path
+
+
 def build_weekly_report(db: DB, week: str) -> str:
     """Constrói o relatório Markdown para uma semana ISO."""
+    return _render_markdown(_load_weekly_report(db, week))
+
+
+def build_weekly_html_report(db: DB, week: str) -> str:
+    """Constrói uma página HTML autónoma para uma semana ISO."""
+    return _render_html(_load_weekly_report(db, week))
+
+
+def _load_weekly_report(db: DB, week: str) -> WeeklyReport:
     week = _normalize_week(week)
     tracks = _load_weekly_tracks(db, week)
     albums = _load_weekly_albums(db, week)
@@ -112,7 +140,7 @@ def build_weekly_report(db: DB, week: str) -> str:
     unmatched = _load_weekly_unmatched(db, week)
     summaries = _build_source_summaries(tracks, unmatched)
 
-    report = WeeklyReport(
+    return WeeklyReport(
         week=week,
         tracks=tracks,
         albums=albums,
@@ -120,7 +148,6 @@ def build_weekly_report(db: DB, week: str) -> str:
         unmatched=unmatched,
         summaries=summaries,
     )
-    return _render_markdown(report)
 
 
 def _load_weekly_tracks(db: DB, week: str) -> list[WeeklyTrack]:
@@ -400,6 +427,392 @@ def _render_markdown(report: WeeklyReport) -> str:
         lines.append("| — | 0 | 0 | 0 | 0 | — |")
 
     return "\n".join(lines) + "\n"
+
+
+_HTML_STYLE = """
+:root {
+  color-scheme: dark;
+  --bg: #0a0a0a;
+  --fg: #f3f1ee;
+  --muted: #8d8a86;
+  --faint: #5a5854;
+  --line: #211f1d;
+  --hover: #131211;
+  --accent: #e2895a;
+}
+* { box-sizing: border-box; }
+html { background: var(--bg); -webkit-font-smoothing: antialiased; }
+body {
+  margin: 0;
+  padding: 0 28px 72px;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  line-height: 1.55;
+}
+a { color: inherit; text-underline-offset: 3px; }
+a:hover, a:focus-visible { color: var(--accent); outline: none; }
+.wrap { width: min(100%, 980px); margin: 0 auto; }
+.mono {
+  color: var(--faint);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+header { padding: 54px 0 48px; border-bottom: 1px solid var(--line); }
+.eyebrow { margin: 0 0 12px; }
+h1, h2, h3 { font-family: Georgia, 'Times New Roman', serif; font-weight: 500; }
+h1 { margin: 0; font-size: clamp(44px, 9vw, 76px); line-height: .98; letter-spacing: -2px; }
+h1 em { color: var(--accent); font-style: italic; }
+.lede { max-width: 560px; margin: 18px 0 0; color: var(--muted); }
+.metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 30px; }
+.metric { padding: 14px; border: 1px solid var(--line); border-radius: 8px; }
+.metric strong { display: block; font-family: Georgia, serif; font-size: 25px; font-weight: 500; }
+section { margin-top: 66px; }
+.sec-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 20px;
+  margin-bottom: 16px;
+}
+h2 { margin: 0; font-size: 29px; letter-spacing: -.4px; }
+.count { color: var(--faint); }
+.album-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.album {
+  display: grid;
+  grid-template-columns: 25px 1fr;
+  grid-template-rows: 1fr auto;
+  min-height: 150px;
+  gap: 8px;
+  padding: 14px;
+  border: 1px dashed var(--line);
+  border-radius: 9px;
+}
+.album.consensus { border-color: color-mix(in srgb, var(--accent), var(--line) 45%); }
+.album .number, .track .number {
+  color: var(--faint);
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+}
+.album h3 { margin: 0 0 5px; font-size: 18px; line-height: 1.15; }
+.album .artist, .album .meta { margin: 0; color: var(--muted); font-size: 12px; }
+.actions { grid-column: 2; display: flex; flex-wrap: wrap; gap: 10px; align-self: end; }
+.action {
+  color: var(--faint);
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: .8px;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+.action.listen { color: var(--accent); }
+.tracks { border-bottom: 1px solid var(--line); }
+.track {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 18px 0;
+  border-top: 1px solid var(--line);
+}
+.track-title { margin: 0; font-size: 15px; font-weight: 600; }
+.track-artist, .sources { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+.sources a { color: var(--muted); }
+.rating {
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--faint);
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: .6px;
+  text-transform: uppercase;
+}
+.rating.love, .rating.like { border-color: var(--accent); color: var(--accent); }
+details { border-top: 1px solid var(--line); }
+details:last-child { border-bottom: 1px solid var(--line); }
+summary { padding: 17px 0; cursor: pointer; color: var(--muted); }
+.detail-list { margin: 0 0 20px; padding: 0; list-style: none; }
+.detail-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  padding: 8px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.detail-list a { color: var(--faint); }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th, td {
+  padding: 11px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+  white-space: nowrap;
+}
+th:first-child, td:first-child { padding-left: 0; text-align: left; }
+th {
+  color: var(--faint);
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: .7px;
+  text-transform: uppercase;
+}
+.empty { padding: 22px; border: 1px dashed var(--line); border-radius: 8px; color: var(--faint); }
+footer {
+  margin-top: 64px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  color: var(--faint);
+}
+@media (max-width: 720px) {
+  body { padding-inline: 18px; }
+  .metrics { grid-template-columns: repeat(2, 1fr); }
+  .album-grid { grid-template-columns: 1fr; }
+  .track { grid-template-columns: 28px minmax(0, 1fr); }
+  .track .rating { grid-column: 2; justify-self: start; }
+}
+"""
+
+
+def _render_html(report: WeeklyReport) -> str:
+    album_cards = "\n".join(
+        _render_html_album(index, album)
+        for index, album in enumerate(report.recommended_albums, start=1)
+    )
+    track_rows = "\n".join(
+        _render_html_track(index, track) for index, track in enumerate(report.tracks, start=1)
+    )
+    album_context = "\n".join(_render_html_context(album) for album in report.albums)
+    unmatched = "\n".join(_render_html_unmatched(item) for item in report.unmatched)
+    summaries = "\n".join(_render_html_summary(item) for item in report.summaries)
+    summary_rows = summaries or (
+        "<tr><td>—</td><td>0</td><td>0</td><td>0</td><td>0</td><td>—</td></tr>"
+    )
+    week = escape(report.week)
+
+    return f"""<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Peel — {week}</title>
+  <style>{_HTML_STYLE}</style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <p class="eyebrow mono">Peel / relatório semanal</p>
+      <h1>Semana <em>{week}</em></h1>
+      <p class="lede">
+        Estado local da descoberta editorial: fila canónica, contexto,
+        falhas de matching e saúde das fontes.
+      </p>
+      <div class="metrics">
+        {_html_metric(len(report.tracks), "faixas")}
+        {_html_metric(len(report.recommended_albums), "álbuns")}
+        {_html_metric(len(report.unmatched), "sem match")}
+        {_html_metric(len(report.summaries), "fontes")}
+      </div>
+    </header>
+
+    <section>
+      {_html_section_heading("7 Álbuns a Ouvir", len(report.recommended_albums))}
+      <div class="album-grid">{album_cards or _html_empty("Sem álbuns confirmados.")}</div>
+    </section>
+
+    <section>
+      {_html_section_heading("Faixas", len(report.tracks))}
+      <div class="tracks">{track_rows or _html_empty("Sem faixas nesta semana.")}</div>
+    </section>
+
+    <section>
+      {_html_section_heading("Auditoria", len(report.albums) + len(report.unmatched))}
+      <details>
+        <summary>Contexto editorial · {len(report.albums)} menções</summary>
+        <ul class="detail-list">{album_context or "<li>Sem menções de álbuns.</li>"}</ul>
+      </details>
+      <details>
+        <summary>Sem match · {len(report.unmatched)} entradas</summary>
+        <ul class="detail-list">{unmatched or "<li>Sem falhas de matching.</li>"}</ul>
+      </details>
+    </section>
+
+    <section>
+      {_html_section_heading("Resumo por fonte", len(report.summaries))}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Fonte</th><th>Faixas</th><th>Novas</th>
+              <th>Consenso</th><th>Sem match</th><th>Rating</th>
+            </tr>
+          </thead>
+          <tbody>{summary_rows}</tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="mono">Preview local · gerada a partir do estado canónico SQLite</footer>
+  </main>
+</body>
+</html>
+"""
+
+
+def _html_metric(value: int, label: str) -> str:
+    return f'<div class="metric"><strong>{value}</strong><span class="mono">{label}</span></div>'
+
+
+def _html_section_heading(title: str, count: int) -> str:
+    return (
+        '<div class="sec-head">'
+        f"<h2>{escape(title)}</h2>"
+        f'<span class="count mono">{count:02d}</span>'
+        "</div>"
+    )
+
+
+def _html_empty(message: str) -> str:
+    return f'<p class="empty">{escape(message)}</p>'
+
+
+def _render_html_album(position: int, album: AlbumRecommendation | AlbumQueueItem) -> str:
+    sources, listen_url, editorial_url = _album_html_links(album)
+    labels = ", ".join(source_label(source) for source in sources)
+    consensus = " consensus" if album.source_count > 1 else ""
+    source_word = "fontes" if album.source_count != 1 else "fonte"
+    actions = _html_action(listen_url, _listen_label(listen_url), "listen")
+    if editorial_url and editorial_url != listen_url:
+        actions += _html_action(editorial_url, "Review")
+    return f"""
+<article class="album{consensus}">
+  <span class="number">{position:02d}</span>
+  <div>
+    <p class="artist">{escape(album.artist)}</p>
+    <h3>{escape(album.album)}</h3>
+    <p class="meta">{escape(labels)} · {album.source_count} {source_word}</p>
+  </div>
+  <div class="actions">{actions or '<span class="action">Sem link</span>'}</div>
+</article>"""
+
+
+def _album_html_links(
+    album: AlbumRecommendation | AlbumQueueItem,
+) -> tuple[tuple[str, ...], str | None, str | None]:
+    if isinstance(album, AlbumQueueItem):
+        return album.source_ids, album.listen_url, album.editorial_url
+    editorial = next(
+        (url for _, url in album.source_urls if url and url != album.link_url),
+        None,
+    )
+    return album.sources, album.link_url, editorial
+
+
+def _render_html_track(position: int, track: WeeklyTrack) -> str:
+    source_links = ", ".join(
+        _html_link(source_url, source_label(source_id))
+        if source_url
+        else escape(source_label(source_id))
+        for source_id, source_url in track.sources
+    )
+    rating = track.feedback[1] if track.feedback else "pendente"
+    spotify_url = _spotify_track_url(track.spotify_uri)
+    title = _html_link(spotify_url, track.title) if spotify_url else escape(track.title)
+    return f"""
+<article class="track">
+  <span class="number">{position:02d}</span>
+  <div>
+    <p class="track-title">{title}</p>
+    <p class="track-artist">{escape(track.artist)} · <span class="sources">{source_links}</span></p>
+  </div>
+  <span class="rating {escape(rating)}">{escape(rating)}</span>
+</article>"""
+
+
+def _render_html_context(album: WeeklyAlbum) -> str:
+    label = f"{album.artist} — {album.album}"
+    source = source_label(album.source_id)
+    return (
+        f"<li><span>{escape(label)}</span>"
+        f"{_html_link(album.source_url, source) if album.source_url else escape(source)}</li>"
+    )
+
+
+def _render_html_unmatched(item: tuple[str, str, str, str | None]) -> str:
+    source_id, artist, title, source_url = item
+    label = f"{artist} — {title}"
+    source = source_label(source_id)
+    return (
+        f"<li><span>{escape(label)}</span>"
+        f"{_html_link(source_url, source) if source_url else escape(source)}</li>"
+    )
+
+
+def _render_html_summary(summary: SourceSummary) -> str:
+    return (
+        f"<tr><td>{escape(source_label(summary.source_id))}</td>"
+        f"<td>{summary.tracks}</td><td>{summary.new}</td>"
+        f"<td>{summary.consensus}</td><td>{summary.unmatched}</td>"
+        f"<td>{escape(summary.avg_rating)}</td></tr>"
+    )
+
+
+def _html_action(url: str | None, label: str, extra_class: str = "") -> str:
+    if not _safe_http_url(url):
+        return ""
+    classes = "action" + (f" {extra_class}" if extra_class else "")
+    return (
+        f'<a class="{classes}" href="{escape(str(url), quote=True)}" '
+        f'target="_blank" rel="noreferrer">{escape(label)}</a>'
+    )
+
+
+def _html_link(url: str | None, label: str) -> str:
+    if not _safe_http_url(url):
+        return escape(label)
+    return (
+        f'<a href="{escape(str(url), quote=True)}" target="_blank" '
+        f'rel="noreferrer">{escape(label)}</a>'
+    )
+
+
+def _safe_http_url(url: str | None) -> bool:
+    if not url:
+        return False
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _spotify_track_url(uri: str) -> str | None:
+    prefix = "spotify:track:"
+    if not uri.startswith(prefix):
+        return None
+    track_id = uri.removeprefix(prefix)
+    if not track_id.isalnum():
+        return None
+    return f"https://open.spotify.com/track/{track_id}"
+
+
+def _listen_label(url: str | None) -> str:
+    if not url:
+        return "Ouvir"
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except ValueError:
+        return "Ouvir"
+    if host.endswith("spotify.com"):
+        return "Spotify"
+    if host.endswith("bandcamp.com"):
+        return "Bandcamp"
+    return "Ouvir"
 
 
 def _week_bounds(week: str) -> tuple[datetime, datetime]:

@@ -6,7 +6,12 @@ import pytest
 
 from peel.db import DB
 from peel.models import AlbumQueueItem
-from peel.report import build_weekly_report, generate_weekly_report
+from peel.report import (
+    build_weekly_html_report,
+    build_weekly_report,
+    generate_weekly_html_report,
+    generate_weekly_report,
+)
 
 
 class TestWeeklyReport:
@@ -404,6 +409,65 @@ class TestWeeklyReport:
         assert path.exists()
         content = path.read_text(encoding="utf-8")
         assert "# Peel 2026-W18" in content
+        db.close()
+
+    def test_html_report_is_standalone_safe_and_uses_peel_palette(self, tmp_path: Path) -> None:
+        db = DB(str(tmp_path / "peel.db"))
+        db.init_schema()
+        week = "2026-W18"
+        db.conn.execute(
+            """
+            INSERT INTO tracks
+            (spotify_uri, source_id, artist, title, source_url, added_at, added_at_week)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "spotify:track:abc123",
+                "source-a",
+                "Artist <A>",
+                "Track & One",
+                "javascript:alert(1)",
+                "2026-05-01T10:00:00+00:00",
+                week,
+            ),
+        )
+        db.conn.commit()
+        db.replace_album_queue(
+            week,
+            [
+                AlbumQueueItem(
+                    week=week,
+                    position=1,
+                    artist="Album Artist",
+                    album="Album & Name",
+                    artist_key="album artist",
+                    album_key="album name",
+                    source_ids=("source-a", "source-b"),
+                    source_count=2,
+                    listen_url="https://open.spotify.com/album/album123",
+                    listen_kind="spotify",
+                    editorial_url="https://reviews.example/album",
+                    is_new=True,
+                )
+            ],
+        )
+
+        html = build_weekly_html_report(db, week)
+
+        assert html.startswith("<!doctype html>")
+        assert "--accent: #e2895a" in html
+        assert "Artist &lt;A&gt;" in html
+        assert "Track &amp; One" in html
+        assert "https://open.spotify.com/track/abc123" in html
+        assert "Album &amp; Name" in html
+        assert 'class="album consensus"' in html
+        assert 'href="javascript:alert(1)"' not in html
+        assert "Resumo por fonte" in html
+
+        output_dir = tmp_path / "reports"
+        path = generate_weekly_html_report(db, week="2026-w18", output_dir=output_dir)
+        assert path == output_dir / ".html" / "2026-W18.html"
+        assert path.read_text(encoding="utf-8") == html
         db.close()
 
     def test_generate_weekly_report_accepts_lowercase_week(self, tmp_path: Path) -> None:

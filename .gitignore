@@ -9,4 +9,6 @@ dist/
 # Estado/backup local do sync canónico; a DB continua committed propositadamente.
 data/.peel-state.json
 data/.peel-backups/
+# Previews locais autónomas; o Markdown continua a ser o artefacto versionado.
+data/reports/.html/
 # Nota: data/peel.db é committed propositadamente (estado entre runs)
