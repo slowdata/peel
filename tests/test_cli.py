@@ -140,6 +140,68 @@ class TestAlbumsCLI:
         opened.assert_called_once_with("https://listen.example/album")
         assert runner.invoke(cli.app, ["albums", "--open", "2"]).exit_code == 2
 
+    def test_albums_week_lists_and_opens_only_historical_snapshot(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        db_path = tmp_path / "albums.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        db.replace_album_queue(
+            "2026-W32",
+            [_album_queue_item("2026-W32", "Historic Artist", "Historic Album")],
+        )
+        db.replace_album_queue(
+            "2026-W33",
+            [_album_queue_item("2026-W33", "Active Artist", "Active Album")],
+        )
+        db.close()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+        opened = MagicMock()
+        monkeypatch.setattr(cli.webbrowser, "open", opened)
+
+        listed = runner.invoke(cli.app, ["albums", "--week", "2026-W32"])
+
+        assert listed.exit_code == 0
+        assert "Álbuns (2026-W32)" in listed.output
+        assert "Historic Artist" in listed.output
+        assert "Active Artist" not in listed.output
+
+        opened_result = runner.invoke(
+            cli.app,
+            ["albums", "--week", "2026-W32", "--open", "1"],
+        )
+
+        assert opened_result.exit_code == 0
+        opened.assert_called_once_with("https://listen.example/2026-W32/1")
+
+    def test_albums_week_missing_snapshot_never_falls_back_to_active(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        db_path = tmp_path / "albums.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        db.replace_album_queue(
+            "2026-W33",
+            [_album_queue_item("2026-W33", "Active Artist", "Active Album")],
+        )
+        db.close()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+
+        result = runner.invoke(cli.app, ["albums", "--week", "2026-W32"])
+
+        assert result.exit_code == 2
+        assert "Sem snapshot canónica de álbuns para 2026-W32" in result.output
+        assert "Active Artist" not in result.output
+
+    def test_albums_week_before_subcommand_is_rejected(self) -> None:
+        result = runner.invoke(
+            cli.app,
+            ["albums", "--week", "2026-W32", "feedback"],
+        )
+
+        assert result.exit_code == 2
+        assert "Coloca --week depois do subcomando" in result.output
+
     def test_albums_open_uses_installed_spotify_app(self, tmp_path: Path, monkeypatch) -> None:
         db_path = tmp_path / "albums.db"
         db = self._db_with_album_queue(

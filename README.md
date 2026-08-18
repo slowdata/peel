@@ -167,10 +167,11 @@ são elegíveis. A mesma snapshot é consumida pela CLI, Telegram e export do si
 
 ```bash
 uv run peel albums                 # fila activa e links de escuta
-uv run peel albums --unrated       # apenas pendentes
-uv run peel albums --open 1        # abre o link do rank 1
+uv run peel albums --unrated       # apenas pendentes da fila activa
+uv run peel albums --week 2026-W32 # lista uma snapshot histórica explícita
+uv run peel albums --week 2026-W32 --open 1  # abre um rank histórico
 uv run peel albums feedback        # fila activa; love|like|meh|skip|ban|unavailable
-uv run peel albums feedback --week 2026-W32  # snapshot histórica explícita
+uv run peel albums feedback --week 2026-W32  # avalia a snapshot histórica
 uv run peel albums refresh --week 2026-W29 --dry-run
 uv run peel albums refresh --week 2026-W29  # reconstrói explicitamente a snapshot
 uv run peel site export            # reexporta snapshots sem as recalcular

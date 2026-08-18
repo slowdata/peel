@@ -523,21 +523,46 @@ def albums(
     open_rank: Annotated[
         int | None, typer.Option("--open", min=1, help="Abre link de escuta do rank")
     ] = None,
+    week: Annotated[
+        str | None,
+        typer.Option("--week", help="Semana ISO; por defeito usa a fila activa"),
+    ] = None,
 ) -> None:
-    """Mostra a fila persistida; não recalcula recomendações."""
+    """Mostra a fila persistida activa ou uma snapshot semanal explícita."""
     if ctx.invoked_subcommand is not None:
+        if week is not None:
+            raise typer.BadParameter(
+                "Coloca --week depois do subcomando, por exemplo "
+                "`albums feedback --week 2026-W32`.",
+                param_hint="--week",
+            )
         return
+
+    target_week = _normalize_week_option(week) if week is not None else None
     _auto_sync_state("albums")
     db = DB(str(_resolve_path(settings.db_path)))
     try:
         db.init_schema()
-        items = db.latest_album_queue()
-        if items is None:
-            console.print("Sem fila de álbuns confirmada. Aguarda a próxima weekly.")
-            return
-        if not items:
-            console.print("A fila de álbuns confirmada mais recente está vazia.")
-            return
+        if target_week is not None:
+            items = db.album_queue(target_week)
+            if items is None:
+                raise typer.BadParameter(
+                    f"Sem snapshot canónica de álbuns para {target_week}.",
+                    param_hint="--week",
+                )
+            if not items:
+                console.print(f"A snapshot de álbuns {target_week} está vazia.")
+                return
+        else:
+            items = db.latest_album_queue()
+            if items is None:
+                console.print("Sem fila de álbuns confirmada. Aguarda a próxima weekly.")
+                return
+            if not items:
+                console.print("A fila de álbuns confirmada mais recente está vazia.")
+                return
+            target_week = items[0].week
+
         shown = [
             item
             for item in items
@@ -546,16 +571,16 @@ def albums(
         if open_rank is not None:
             chosen = next((item for item in items if item.position == open_rank), None)
             if not chosen:
-                raise typer.BadParameter(f"Não existe rank {open_rank} na fila activa.")
+                raise typer.BadParameter(f"Não existe rank {open_rank} na fila {target_week}.")
             if not chosen.listen_url:
                 console.print(f"Sem link de escuta para {chosen.artist} — {chosen.album}.")
                 return
             _open_listen_url(chosen.listen_url)
             return
         if not shown:
-            console.print("Sem álbuns activos por avaliar.")
+            console.print(f"Sem álbuns {target_week} por avaliar.")
             return
-        table = Table(title=f"Peel — Álbuns ({shown[0].week})")
+        table = Table(title=f"Peel — Álbuns ({target_week})")
         table.add_column("#", justify="right")
         table.add_column("Estado")
         table.add_column("Artist", style="bold")
