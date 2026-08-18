@@ -856,20 +856,51 @@ def report(
         bool,
         typer.Option("--open", help="Gera e abre a preview HTML no browser"),
     ] = False,
+    refresh_report: Annotated[
+        bool,
+        typer.Option(
+            "--refresh",
+            help="Substitui explicitamente um Markdown histórico existente",
+        ),
+    ] = False,
 ) -> None:
-    """Gera o relatório semanal em Markdown."""
+    """Gera o relatório semanal sem reescrever snapshots históricos por defeito."""
     _auto_sync_state("report")
-    db = DB(str(_resolve_path(settings.db_path)))
+    db_path = _resolve_path(settings.db_path)
+    target_week = _normalize_week_option(week) if week else iso_week(datetime.now(UTC))
+    target_dir = output_dir or PROJECT_ROOT / "data" / "reports"
+    markdown_path = target_dir / f"{target_week}.md"
+    canonical_week = latest_state_week(db_path)
+    preserve_historical = (
+        markdown_path.exists()
+        and canonical_week is not None
+        and target_week < canonical_week
+        and not refresh_report
+    )
+
+    db = DB(str(db_path))
     try:
         db.init_schema()
-        target_dir = output_dir or PROJECT_ROOT / "data" / "reports"
-        try:
-            path = generate_weekly_report(db, week=week, output_dir=target_dir)
-        except ValueError as exc:
-            raise typer.BadParameter(str(exc), param_hint="--week") from exc
-        console.print(f"Report written: {path}")
+        if preserve_historical:
+            console.print(
+                f"Report preserved: {markdown_path} (histórico; usa --refresh para substituir)."
+            )
+        else:
+            try:
+                markdown_path = generate_weekly_report(
+                    db,
+                    week=target_week,
+                    output_dir=target_dir,
+                )
+            except ValueError as exc:
+                raise typer.BadParameter(str(exc), param_hint="--week") from exc
+            console.print(f"Report written: {markdown_path}")
         if html_output or open_report:
-            html_path = generate_weekly_html_report(db, week=week, output_dir=target_dir)
+            html_path = generate_weekly_html_report(
+                db,
+                week=target_week,
+                output_dir=target_dir,
+            )
             console.print(f"HTML preview written: {html_path}")
             if open_report:
                 webbrowser.open(html_path.resolve().as_uri())
@@ -1898,42 +1929,20 @@ def _project_path(value: str) -> Path:
 
 
 def _regenerate_state_reports(db_path: Path) -> list[Path]:
-    """Regenerate only latest/feedback-affected reports from the merged DB."""
+    """Regenerate only the latest report; older Markdown snapshots are immutable."""
+    week = latest_state_week(db_path)
+    if week is None or week < CANONICAL_ALBUM_QUEUE_SINCE:
+        return []
+
     reports_dir = _project_path("data/reports")
     db = DB(str(db_path))
     try:
         db.init_schema()
-        weeks = {week for week in [latest_state_week(db_path)] if week}
-        weeks.update(
-            str(row[0])
-            for row in db.conn.execute(
-                """
-                SELECT DISTINCT t.added_at_week
-                FROM tracks t JOIN feedback f ON f.spotify_uri = t.spotify_uri
-                WHERE t.added_at_week IS NOT NULL
-                """
-            )
-        )
-        weeks.update(
-            str(row[0])
-            for row in db.conn.execute(
-                """
-                SELECT DISTINCT q.week
-                FROM album_queue_items q JOIN album_feedback f
-                  ON f.artist_key = q.artist_key AND f.album_key = q.album_key
-                """
-            )
-        )
-        # Legacy reports have no frozen album snapshot; regenerating them with
-        # today's feedback would change historical recommendations.
-        weeks = {week for week in weeks if week >= CANONICAL_ALBUM_QUEUE_SINCE}
-        paths: list[Path] = []
-        for week in sorted(weeks):
-            try:
-                paths.append(generate_weekly_report(db, week=week, output_dir=reports_dir))
-            except ValueError as exc:
-                console.print(f"Report {week} não regenerado: {exc}")
-        return paths
+        try:
+            return [generate_weekly_report(db, week=week, output_dir=reports_dir)]
+        except ValueError as exc:
+            console.print(f"Report {week} não regenerado: {exc}")
+            return []
     finally:
         db.close()
 

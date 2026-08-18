@@ -809,6 +809,55 @@ class TestCliReport:
         assert (output_dir / "2026-W18.md").exists()
         assert not (output_dir / ".html").exists()
 
+    def test_report_preserves_historical_markdown_unless_refresh_is_explicit(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        db_path = tmp_path / "peel.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        for week in ("2026-W18", "2026-W19"):
+            db.conn.execute(
+                """
+                INSERT INTO tracks
+                (spotify_uri, source_id, artist, title, source_url, added_at, added_at_week)
+                VALUES (?, 'source-a', 'Artist', 'Track', NULL, ?, ?)
+                """,
+                (f"spotify:track:{week}", "2026-05-01T10:00:00+00:00", week),
+            )
+        db.conn.commit()
+        db.close()
+
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+        output_dir = tmp_path / "reports"
+        output_dir.mkdir()
+        historical_path = output_dir / "2026-W18.md"
+        historical_path.write_text("frozen historical report\n", encoding="utf-8")
+
+        preserved = runner.invoke(
+            cli.app,
+            ["report", "--week", "2026-W18", "--output-dir", str(output_dir)],
+        )
+
+        assert preserved.exit_code == 0
+        assert "Report preserved" in preserved.stdout
+        assert historical_path.read_text(encoding="utf-8") == "frozen historical report\n"
+
+        refreshed = runner.invoke(
+            cli.app,
+            [
+                "report",
+                "--week",
+                "2026-W18",
+                "--output-dir",
+                str(output_dir),
+                "--refresh",
+            ],
+        )
+
+        assert refreshed.exit_code == 0
+        assert "Report written" in refreshed.stdout
+        assert historical_path.read_text(encoding="utf-8").startswith("# Peel 2026-W18\n")
+
     def test_report_open_generates_and_opens_html_preview(
         self, tmp_path: Path, monkeypatch
     ) -> None:

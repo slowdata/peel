@@ -224,14 +224,20 @@ Uso típico: criar manualmente uma playlist privada vazia no Spotify, copiar o I
 
 ### Relatório local
 
-O Markdown continua a ser o artefacto canónico e versionado. Para uma leitura
-mais agradável, `--html` cria uma página autónoma em `data/reports/.html/`, com a
-paleta visual do Peel; `--open` gera essa preview e abre-a no browser.
+O Markdown continua a ser o artefacto canónico e versionado. Depois de avançar
+para uma semana nova, relatórios Markdown existentes ficam congelados: consultar
+ou abrir uma semana histórica não os reescreve. `--refresh` é a única forma de
+substituir deliberadamente esse snapshot histórico.
+
+Para uma leitura mais agradável, `--html` cria uma página autónoma em
+`data/reports/.html/`, com a paleta visual do Peel; `--open` gera essa preview e
+abre-a no browser. A preview é local e pode sempre ser regenerada.
 
 ```bash
 uv run peel report --week 2026-W32
 uv run peel report --week 2026-W32 --html
 uv run peel report --week 2026-W32 --open
+uv run peel report --week 2026-W32 --refresh  # substituição histórica explícita
 ```
 
 ### Sync

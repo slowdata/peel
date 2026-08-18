@@ -123,14 +123,19 @@ class TestSyncPull:
 
 
 class TestStateReports:
-    def test_push_regenerates_canonical_feedback_weeks_not_legacy(
+    def test_push_regenerates_only_latest_report_and_preserves_history(
         self, monkeypatch, tmp_path: Path
     ) -> None:
         db_path = tmp_path / "data" / "peel.db"
         db_path.parent.mkdir(parents=True)
+        reports_dir = tmp_path / "data" / "reports"
+        reports_dir.mkdir(parents=True)
+        historical_path = reports_dir / "2026-W31.md"
+        historical_path.write_text("frozen historical report\n", encoding="utf-8")
+
         db = DB(str(db_path))
         db.init_schema()
-        for week in ("2026-W18", "2026-W32"):
+        for week in ("2026-W31", "2026-W32"):
             db.conn.execute(
                 """
                 INSERT INTO tracks
@@ -140,14 +145,14 @@ class TestStateReports:
                 (f"spotify:track:{week}", "2026-08-08T10:00:00+00:00", week),
             )
             db.upsert_feedback(f"spotify:track:{week}", "like", None)
-        db.replace_album_queue("2026-W32", [])
+            db.replace_album_queue(week, [])
         db.close()
         monkeypatch.setattr(cli, "PROJECT_ROOT", tmp_path)
 
         paths = cli._regenerate_state_reports(db_path)
 
         assert [path.name for path in paths] == ["2026-W32.md"]
-        assert not (tmp_path / "data" / "reports" / "2026-W18.md").exists()
+        assert historical_path.read_text(encoding="utf-8") == "frozen historical report\n"
 
 
 class TestTemporaryStatePush:
