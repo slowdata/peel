@@ -45,6 +45,29 @@ def _queue_item(
     )
 
 
+def _album_queue_item(
+    week: str,
+    artist: str,
+    album: str,
+    *,
+    position: int = 1,
+) -> AlbumQueueItem:
+    return AlbumQueueItem(
+        week=week,
+        position=position,
+        artist=artist,
+        album=album,
+        artist_key=artist.lower(),
+        album_key=album.lower(),
+        source_ids=("source-a",),
+        source_count=1,
+        listen_url=f"https://listen.example/{week}/{position}",
+        listen_kind="spotify",
+        editorial_url=None,
+        is_new=True,
+    )
+
+
 def _insert_week_track(
     db: DB,
     spotify_uri: str,
@@ -244,6 +267,109 @@ class TestAlbumsCLI:
         db = DB(str(db_path))
         assert db.album_feedback_for_identity("Album Artist", "Album Name") is None
         db.close()
+
+    def test_albums_feedback_defaults_to_latest_queue(self, tmp_path: Path, monkeypatch) -> None:
+        db_path = tmp_path / "albums.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        db.replace_album_queue(
+            "2026-W32",
+            [_album_queue_item("2026-W32", "Historic Artist", "Historic Album")],
+        )
+        db.replace_album_queue(
+            "2026-W33",
+            [_album_queue_item("2026-W33", "Active Artist", "Active Album")],
+        )
+        db.close()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+
+        result = runner.invoke(cli.app, ["albums", "feedback"], input="q\n")
+
+        assert result.exit_code == 0
+        assert "Feedback de álbuns: 2026-W33" in result.output
+        assert "Active Artist" in result.output
+        assert "Historic Artist" not in result.output
+
+    def test_albums_feedback_week_rates_only_explicit_historical_queue(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        db_path = tmp_path / "albums.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        db.replace_album_queue(
+            "2026-W32",
+            [_album_queue_item("2026-W32", "Historic Artist", "Historic Album")],
+        )
+        db.replace_album_queue(
+            "2026-W33",
+            [_album_queue_item("2026-W33", "Active Artist", "Active Album")],
+        )
+        db.close()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+
+        result = runner.invoke(
+            cli.app,
+            ["albums", "feedback", "--week", "2026-W32"],
+            input="love\nhistorical favourite\n",
+        )
+
+        assert result.exit_code == 0
+        assert "Feedback de álbuns: 2026-W32" in result.output
+        assert "Historic Artist" in result.output
+        assert "Active Artist" not in result.output
+        db = DB(str(db_path))
+        assert db.album_feedback_for_identity("Historic Artist", "Historic Album") == (
+            2,
+            "love",
+            "historical favourite",
+        )
+        assert db.album_feedback_for_identity("Active Artist", "Active Album") is None
+        db.close()
+
+    def test_albums_feedback_missing_week_never_falls_back_to_active_queue(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        db_path = tmp_path / "albums.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        db.replace_album_queue(
+            "2026-W33",
+            [_album_queue_item("2026-W33", "Active Artist", "Active Album")],
+        )
+        db.close()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+
+        result = runner.invoke(
+            cli.app,
+            ["albums", "feedback", "--week", "2026-W32"],
+        )
+
+        assert result.exit_code == 2
+        assert "Sem snapshot canónica de álbuns para 2026-W32" in result.output
+        assert "Active Artist" not in result.output
+
+    def test_albums_feedback_reports_explicit_empty_snapshot(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        db_path = tmp_path / "albums.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        db.replace_album_queue("2026-W32", [])
+        db.replace_album_queue(
+            "2026-W33",
+            [_album_queue_item("2026-W33", "Active Artist", "Active Album")],
+        )
+        db.close()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+
+        result = runner.invoke(
+            cli.app,
+            ["albums", "feedback", "--week", "2026-W32"],
+        )
+
+        assert result.exit_code == 0
+        assert "snapshot de álbuns 2026-W32 está vazia" in result.output
+        assert "Active Artist" not in result.output
 
 
 class TestSelectArtistSearchResult:

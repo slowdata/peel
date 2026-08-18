@@ -169,7 +169,8 @@ são elegíveis. A mesma snapshot é consumida pela CLI, Telegram e export do si
 uv run peel albums                 # fila activa e links de escuta
 uv run peel albums --unrated       # apenas pendentes
 uv run peel albums --open 1        # abre o link do rank 1
-uv run peel albums feedback        # love|like|meh|skip|ban (q não grava)
+uv run peel albums feedback        # fila activa; love|like|meh|skip|ban|unavailable
+uv run peel albums feedback --week 2026-W32  # snapshot histórica explícita
 uv run peel albums refresh --week 2026-W29 --dry-run
 uv run peel albums refresh --week 2026-W29  # reconstrói explicitamente a snapshot
 uv run peel site export            # reexporta snapshots sem as recalcular
@@ -204,9 +205,10 @@ Uma recuperação corrente pode actualizar apenas estas sources e pré-visualiza
 uv run peel albums refresh --week 2026-W32 --fetch --dry-run
 ```
 
-A fila final aceita apenas links directos Spotify/Bandcamp. Em feedback de álbuns,
-`unavailable` significa que não foi possível ouvir e não conta como juízo musical
-sobre a source.
+A fila final aceita apenas links directos Spotify/Bandcamp. O feedback usa sempre
+a fila activa, excepto quando `--week` escolhe explicitamente uma snapshot histórica;
+nunca faz fallback silencioso para outra semana. `unavailable` significa que não
+foi possível ouvir e não conta como juízo musical sobre a source.
 
 `tracks_found` é calculado a partir dos dados persistidos: matches + unmatched. O comando também mostra telemetria real de `source_runs` (`Runs`, `Fetched/Fresh`, `Proc`, `Stale/Cap/Err`) para distinguir qualidade de fonte, backlog, caps e falhas.
 

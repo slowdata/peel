@@ -683,21 +683,51 @@ def albums_refresh(
 
 
 @albums_app.command("feedback")
-def albums_feedback() -> None:
-    """Avalia álbuns pendentes da fila activa (q não grava o actual)."""
+def albums_feedback(
+    week: Annotated[
+        str | None,
+        typer.Option(
+            "--week",
+            help="Semana ISO histórica; por defeito usa a fila activa",
+        ),
+    ] = None,
+) -> None:
+    """Avalia álbuns pendentes da fila activa ou de uma semana explícita."""
+    target_week = _normalize_week_option(week) if week is not None else None
     _auto_sync_state("albums feedback")
     db = DB(str(_resolve_path(settings.db_path)))
     try:
         db.init_schema()
-        items = db.latest_album_queue() or []
+        if target_week is not None:
+            items = db.album_queue(target_week)
+            if items is None:
+                raise typer.BadParameter(
+                    f"Sem snapshot canónica de álbuns para {target_week}.",
+                    param_hint="--week",
+                )
+            if not items:
+                console.print(f"A snapshot de álbuns {target_week} está vazia.")
+                return
+        else:
+            items = db.latest_album_queue()
+            if items is None:
+                console.print("Sem fila de álbuns confirmada. Aguarda a próxima weekly.")
+                return
+            if not items:
+                console.print("A fila de álbuns confirmada mais recente está vazia.")
+                return
+            target_week = items[0].week
+
         pending = [
             item
             for item in items
             if db.album_feedback_for_identity(item.artist, item.album) is None
         ]
         if not pending:
-            console.print("Fila de álbuns completa: todos os álbuns foram avaliados.")
+            console.print(f"Fila de álbuns {target_week} completa: todos foram avaliados.")
             return
+
+        console.print(f"Feedback de álbuns: {target_week}")
         saved = 0
         for index, item in enumerate(pending, start=1):
             console.print(f"[{index}/{len(pending)}] {item.artist} — {item.album}")
@@ -713,9 +743,9 @@ def albums_feedback() -> None:
             db.album_feedback_for_identity(item.artist, item.album) is None for item in items
         )
         if remaining:
-            console.print(f"Sessão terminada. Faltam {remaining} álbuns por avaliar.")
+            console.print(f"Sessão {target_week} terminada. Faltam {remaining} álbuns por avaliar.")
         else:
-            console.print("Fila de álbuns completa: todos os álbuns foram avaliados.")
+            console.print(f"Fila de álbuns {target_week} completa: todos foram avaliados.")
         if saved:
             console.print("Corre uv run peel sync push.")
     finally:
