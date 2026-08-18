@@ -1054,6 +1054,76 @@ class TestLineOfBestFitNewsExtractArtistTitle:
         )
         assert result == ("Carmen Villain", "Entre Nosotros")
 
+    def test_producer_lp_and_share_track_without_comma(self) -> None:
+        source = LineOfBestFitNews()
+        result = source._extract_artist_title(
+            {
+                "title": (
+                    "Twin Temple announce Shooter Jennings-produced LP Doomed Lovers "
+                    "and share “Haunt Me”"
+                ),
+                "summary": (
+                    "Satanic Doo Wop duo Twin Temple have announced their third record "
+                    "and shared new single “Haunt Me”."
+                ),
+            }
+        )
+        assert result == ("Twin Temple", "Haunt Me")
+
+    @pytest.mark.parametrize(
+        ("headline", "expected"),
+        [
+            (
+                "Orville Peck details new LP Mule, shares “Too Little, Too Late”",
+                ("Orville Peck", "Too Little, Too Late"),
+            ),
+            (
+                "Gabriella Cilmi confirms first album in 13 years, shares new single "
+                "“YRU Hanging Around”",
+                ("Gabriella Cilmi", "YRU Hanging Around"),
+            ),
+        ],
+    )
+    def test_album_context_verb_is_not_part_of_artist(
+        self,
+        headline: str,
+        expected: tuple[str, str],
+    ) -> None:
+        assert LineOfBestFitNews()._extract_artist_title({"title": headline}) == expected
+
+    def test_signing_clause_is_not_part_of_artist(self) -> None:
+        source = LineOfBestFitNews()
+        result = source._extract_artist_title(
+            {"title": ("Y U QT sign to Ninja Tune and share new single, “Call My Name”")}
+        )
+        assert result == ("Y U QT", "Call My Name")
+
+    def test_summary_removes_editorial_descriptor_from_artist(self) -> None:
+        source = LineOfBestFitNews()
+        result = source._extract_artist_title(
+            {
+                "title": (
+                    "London duo Lover1k sign to Underplay Recordings and share new single, "
+                    '"On My Own"'
+                ),
+                "summary": (
+                    '<img alt="Lover1k press shot" src="cover.jpg"> '
+                    'Lover1k have announced their signing and shared new track "On My Own".'
+                ),
+            }
+        )
+        assert result == ("Lover1k", "On My Own")
+
+    def test_summary_cannot_shorten_a_clean_artist_name(self) -> None:
+        source = LineOfBestFitNews()
+        result = source._extract_artist_title(
+            {
+                "title": 'The Linda Lindas share new single "Too Many Things"',
+                "summary": 'Linda Lindas have released new track "Too Many Things".',
+            }
+        )
+        assert result == ("The Linda Lindas", "Too Many Things")
+
     def test_newcomers_are_back_with_single(self) -> None:
         source = LineOfBestFitNews()
         result = source._extract_artist_title(
@@ -1070,6 +1140,17 @@ class TestLineOfBestFitNewsExtractArtistTitle:
         source = LineOfBestFitNews()
         result = source._extract_artist_title(
             {"title": "Carmen Villain announces new LP, “Memoria”"}
+        )
+        assert result is None
+
+    def test_signing_and_album_announcement_is_ignored(self) -> None:
+        source = LineOfBestFitNews()
+        result = source._extract_artist_title(
+            {
+                "title": (
+                    "Lowertown sign to Summer Shade and announce new album, Ugly Duckling Union"
+                )
+            }
         )
         assert result is None
 

@@ -720,14 +720,28 @@ def _extract_release_news_artist_title(title: str) -> tuple[str, str] | None:
             r"^(?:.+?)\s+Form\s+(?P<artist>[^,;:]+),\s+"
             r"(?:Release|Releases|Released)\s+[\"\u201c](?P<track>[^\"\u201d]+)[\"\u201d]"
         ),
-        # Protomartyr Announce New Album Hotel Usona, Share “Sounds We Cannot Hear”
-        # Keep the artist bounded by the announcement verb; the later comma
-        # separates album context from the explicitly named release.
+        # Y U QT Sign to Ninja Tune and Share New Single “Call My Name”
+        # Bound the artist before signing context instead of treating the whole
+        # clause before "share" as its name.
         (
-            r"^(?P<artist>.+?)\s+(?:Announce|Announces|Announced)\s+"
-            r".*?\b(?:Album|LP|EP)\b[^,;:]*[,;]\s*"
+            r"^(?P<artist>.+?)\s+(?:Sign|Signs|Signed)\s+to\b.*?\band\s+"
+            r"(?:Share|Shares|Shared|Release|Releases|Released|Unveil|Unveils|Unveiled)"
+            r"\b.*?[\"\u201c](?P<track>[^\"\u201d]+)[\"\u201d]"
+        ),
+        # Protomartyr Announce New Album Hotel Usona, Share “Sounds We Cannot Hear”
+        # Twin Temple Announce LP Doomed Lovers and Share “Haunt Me”
+        # Keep the artist bounded by the announcement verb; comma, semicolon and
+        # "and" all separate album context from the named release.
+        (
+            r"^(?P<artist>.+?)\s+(?:Announce|Announces|Announced|"
+            r"Confirm|Confirms|Confirmed|Detail|Details|Detailed|"
+            r"Reveal|Reveals|Revealed|Unveil|Unveils|Unveiled)\s+"
+            r".*?\b(?:Album|LP|EP)\b[^,;:]*(?:[,;]\s*|\s+and\s+)"
             r"(?:Share|Shares|Shared|Release|Releases|Released|Unveil|Unveils|Unveiled|"
-            r"Unleash|Unleashes|Unleashed)\s+"
+            r"Unleash|Unleashes|Unleashed)\b"
+            r"(?:\s+(?:(?:their|a|the)\s+)?"
+            r"(?:(?:brand-new|new|lead|latest|title|debut)\s+)*"
+            r"(?:song|single|track))?,?\s+"
             r"[\"\u201c](?P<track>[^\"\u201d]+)[\"\u201d]"
         ),
         # Listen/Hear to the New Aphex Twin Song “Example”
@@ -898,6 +912,57 @@ class PitchforkNews(RSSSource):
         return result
 
 
+_LINEOFBESTFIT_ARTIST_PROSE = re.compile(
+    r"\b(?:duo|trio|quartet|band|outfit|collective|artist|singer-songwriter|"
+    r"newcomers?|sign(?:s|ed)?|announce(?:s|d)?|confirm(?:s|ed)?|"
+    r"reveal(?:s|ed)?|detail(?:s|ed)?)\b",
+    re.IGNORECASE,
+)
+
+
+def _lineofbestfit_summary_artist(
+    entry: dict,
+    headline_artist: str,
+    track: str,
+) -> str:
+    """Prefer a shorter feed-summary subject when it clarifies headline prose."""
+    summary = _clean_news_title(str(entry.get("summary", "")))
+    if not summary:
+        return headline_artist
+
+    match = re.match(
+        r"^(?P<artist>.+?)\s+(?:has|have)\s+"
+        r"(?:announced|released|shared|returned|unveiled|revealed|confirmed|signed|introduced)\b",
+        summary,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return headline_artist
+
+    summary_artist = _clean_news_artist(match.group("artist"))
+    headline_key = _fold_news_text(headline_artist)
+    summary_key = _fold_news_text(summary_artist)
+    track_key = _fold_news_text(track)
+    full_summary_key = _fold_news_text(summary)
+    if not summary_key or not track_key or not _contains_news_phrase(full_summary_key, track_key):
+        return headline_artist
+    if (
+        len(summary_key) < len(headline_key)
+        and _LINEOFBESTFIT_ARTIST_PROSE.search(headline_artist)
+        and _contains_news_phrase(headline_key, summary_key)
+    ):
+        return summary_artist
+    return headline_artist
+
+
+def _fold_news_text(value: str) -> str:
+    return " ".join(re.findall(r"\w+", value.casefold()))
+
+
+def _contains_news_phrase(text: str, phrase: str) -> bool:
+    return f" {phrase} " in f" {text} "
+
+
 class LineOfBestFitNews(RSSSource):
     """The Line of Best Fit — news de novos singles.
 
@@ -914,7 +979,9 @@ class LineOfBestFitNews(RSSSource):
         result = _extract_release_news_artist_title(title)
         if result is None:
             log.warning("lineofbestfit.title_no_match", title=title)
-        return result
+            return None
+        artist, track = result
+        return _lineofbestfit_summary_artist(entry, artist, track), track
 
 
 _CONSEQUENCE_NON_RELEASE_TOPICS = re.compile(
