@@ -27,7 +27,10 @@ from peel.site_export import build_site_week_payload
 from peel.sources.bandcamp import BandcampLabel
 from peel.sources.rss import (
     AquariumDrunkard,
+    ClashAlbumReviews,
+    ClashFirstTake,
     ConsequenceMusic,
+    DIYAlbumReviews,
     GorillaVsBear,
     GuardianMusicAlbums,
     KexpInOurHeadphones,
@@ -55,6 +58,9 @@ def _disable_network_album_sources(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ConsequenceMusic, "fetch", lambda self: [])
     monkeypatch.setattr(KexpInOurHeadphones, "fetch", lambda self: [])
     monkeypatch.setattr(AquariumDrunkard, "fetch", lambda self: [])
+    monkeypatch.setattr(DIYAlbumReviews, "fetch", lambda self: [])
+    monkeypatch.setattr(ClashAlbumReviews, "fetch", lambda self: [])
+    monkeypatch.setattr(ClashFirstTake, "fetch", lambda self: [])
     monkeypatch.setattr(BandcampLabel, "fetch", lambda self: [])
 
 

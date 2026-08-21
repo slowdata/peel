@@ -260,7 +260,7 @@ class TestWeeklyReport:
 
         report = build_weekly_report(db, week)
 
-        assert "## 🎧 7 Álbuns a Ouvir" in report
+        assert "## 🎧 Álbuns a Ouvir" in report
         assert (
             "Wax Machine — The Sky Unfurls — 2 fontes — https://open.spotify.com/album/abc123"
         ) in report
@@ -343,7 +343,7 @@ class TestWeeklyReport:
         db.replace_album_queue(week, [])
 
         report = build_weekly_report(db, week)
-        album_section = report.split("## 🎧 7 Álbuns a Ouvir", 1)[1].split("## Unmatched", 1)[0]
+        album_section = report.split("## 🎧 Álbuns a Ouvir", 1)[1].split("## Unmatched", 1)[0]
 
         assert "- None" in album_section
         assert "Dynamic Artist" not in album_section

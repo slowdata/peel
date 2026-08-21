@@ -54,7 +54,7 @@ def send_digest(
         new_albums: Lista de (source_id, artist, album, url) dos álbuns novos
         playlist_id: ID da playlist Spotify
         external_entries: Items com link externo que não entraram no Spotify
-        album_recommendations: Seleção semanal "7 Álbuns a Ouvir"
+        album_recommendations: fila privada semanal de álbuns para ouvir
     """
     if not settings.telegram_bot_token or not settings.telegram_chat_id:
         log.info("telegram.skipped", reason="credentials_missing")
@@ -154,7 +154,7 @@ def _format_message(
         new_albums: Lista de (source_id, artist, album, url)
         playlist_id: ID da playlist Spotify
         external_entries: Items com link externo que não entraram no Spotify
-        album_recommendations: Seleção semanal "7 Álbuns a Ouvir"
+        album_recommendations: fila privada semanal de álbuns para ouvir
 
     Returns:
         Mensagem formatada em HTML para Telegram
@@ -194,8 +194,8 @@ def _format_message(
 
     if album_picks:
         lines.append("")
-        lines.append(f"<b>🎧 7 Álbuns a Ouvir ({len(album_picks)})</b>")
-        for item in album_picks[:7]:
+        lines.append(f"<b>🎧 Álbuns a Ouvir ({len(album_picks)})</b>")
+        for item in album_picks:
             lines.append(_format_album_pick(item))
 
     external_items = external_entries or []

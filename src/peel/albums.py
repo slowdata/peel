@@ -204,6 +204,8 @@ def spotify_album_url(spotify_album_uri: str) -> str:
 
 EDITORIAL_ALBUM_SOURCES = {
     "guardian_music_albums",
+    "diy_album_reviews",
+    "clash_album_reviews",
     "thequietus",
     "thequietus_feedbacker",
     "aquarium_drunkard",
@@ -217,6 +219,8 @@ _SOURCE_FAMILIES = {
     "pitchfork_album_reviews": "pitchfork",
     "thequietus": "thequietus",
     "thequietus_feedbacker": "thequietus",
+    "diy_album_reviews": "diy",
+    "clash_album_reviews": "clash",
 }
 _ARCHIVAL_TITLE_RE = re.compile(
     r"(?:\b(?:deluxe|expanded|remaster(?:ed)?|reissue|anniversary|archive|archival)\b|"
@@ -263,21 +267,24 @@ def _softly_diverse(
     limit: int,
     already: list[AlbumRecommendation] | None = None,
 ) -> list[AlbumRecommendation]:
-    """Diminishing returns by representative source without excluding any source."""
+    """Diminishing returns by publication family without excluding any source."""
     if limit <= 0:
         return []
     remaining = list(candidates)
     selected: list[AlbumRecommendation] = []
-    counts = Counter(item.sources[0] for item in (already or []) if item.sources)
+    counts = Counter(
+        _source_family(item.sources[0]) for item in (already or []) if item.sources
+    )
     while remaining and len(selected) < limit:
 
         def key(item: AlbumRecommendation) -> tuple[float, float, int, float, str, str]:
             source = item.sources[0] if item.sources else ""
+            family = _source_family(source)
             # One scalar means feedback quality and repeat penalty genuinely
             # compete. Avg rating is already reflected in score and is never a
             # lexicographic tier that makes diversity unreachable.
             combined = item.best_score + item.best_avg_rating
-            adjusted = combined - (SOURCE_REPEAT_PENALTY * counts[source])
+            adjusted = combined - (SOURCE_REPEAT_PENALTY * counts[family])
             fresh_at = item.newest_source_at or item.latest_seen_at
             return (
                 -item.source_count,
@@ -292,7 +299,7 @@ def _softly_diverse(
         remaining.remove(chosen)
         selected.append(chosen)
         if chosen.sources:
-            counts[chosen.sources[0]] += 1
+            counts[_source_family(chosen.sources[0])] += 1
     return selected
 
 

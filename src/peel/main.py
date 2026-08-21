@@ -67,8 +67,10 @@ def configure_logging(*, verbose: bool = False, pipeline: bool = False) -> None:
 
 log = structlog.get_logger()
 
-MAX_ALBUM_QUEUE_ITEMS = 7
-MAX_ALBUM_RESOLUTION_CANDIDATES = 14
+# A fila privada pode ser maior do que a edição pública de sete álbuns. A pool
+# de resolução é limitada mas larga o suficiente para substituir links mortos.
+MAX_ALBUM_QUEUE_ITEMS = settings.peel_max_albums_to_review
+MAX_ALBUM_RESOLUTION_CANDIDATES = max(14, MAX_ALBUM_QUEUE_ITEMS * 2)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1051,7 +1053,7 @@ def _album_queue_snapshot_items(
     cached_listen_urls: Mapping[tuple[str, str], tuple[str, str]] | None = None,
     limit: int = MAX_ALBUM_QUEUE_ITEMS,
 ) -> list[AlbumQueueItem]:
-    """Freeze up to seven directly playable picks, backfilling bounded candidates."""
+    """Freeze a bounded listening queue, backfilling directly playable picks."""
     snapshots: list[AlbumQueueItem] = []
     cache = cached_listen_urls or {}
     for item, is_new in selected:
@@ -1115,7 +1117,7 @@ def _is_direct_album_listen_url(url: str) -> bool:
 
 
 def _album_queue_digest_items(items: list[AlbumQueueItem]) -> list[AlbumPickItem]:
-    """Telegram consumes the same persisted-order values as CLI/site."""
+    """Telegram consumes the full private queue in its persisted order."""
     return [
         (
             item.artist,

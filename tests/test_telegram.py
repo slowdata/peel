@@ -128,7 +128,7 @@ class TestFormatMessage:
             ],
         )
 
-        assert "7 Álbuns a Ouvir (1)" in msg
+        assert "Álbuns a Ouvir (1)" in msg
         assert "Queue Album" in msg
         assert "Raw Album" not in msg
         assert "Álbuns da semana" not in msg
@@ -262,7 +262,7 @@ class TestFormatMessage:
         assert "Artist B — Single <i>(Source B)</i>" in msg
 
     def test_format_message_renders_album_recommendations(self) -> None:
-        """7 Álbuns a Ouvir mostra consenso e link preferido."""
+        """A fila de álbuns mostra consenso e link preferido."""
         msg = _format_message(
             [],
             [],
@@ -285,11 +285,28 @@ class TestFormatMessage:
             ],
         )
 
-        assert "🎧 7 Álbuns a Ouvir (2)" in msg
+        assert "🎧 Álbuns a Ouvir (2)" in msg
         assert "⭐ " in msg
         assert "2 fontes: Aquarium Drunkard, Pitchfork" in msg
         assert '<a href="https://open.spotify.com/album/abc123">Wax Machine' in msg
         assert '<a href="https://guardian/fallback">No Spotify' in msg
+
+    def test_format_message_renders_full_private_album_queue(self) -> None:
+        picks = [
+            (
+                f"Artist {index}",
+                f"Album {index}",
+                1,
+                ("guardian_music_albums",),
+                f"https://open.spotify.com/album/{index}",
+            )
+            for index in range(1, 12)
+        ]
+
+        msg = _format_message([], [], "test_id", album_recommendations=picks)
+
+        assert "🎧 Álbuns a Ouvir (11)" in msg
+        assert "Album 11" in msg
 
     def test_format_message_renders_album_source_link(self) -> None:
         """Álbuns podem ter link primário para ouvir e link secundário para fonte."""

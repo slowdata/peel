@@ -577,6 +577,114 @@ class PitchforkAlbumReviews(PitchforkBestAlbums):
         return super()._extract_artist_title(entry)
 
 
+class DIYAlbumReviews(RSSSource):
+    """DIY — críticas de álbuns, filtradas do feed geral.
+
+    O feed mistura notícias e features, mas identifica reviews de álbum com
+    URL ``/review/album/`` e a tag ``Album Reviews``. Exigir ambos mantém a
+    source num único pedido e evita transformar cobertura geral em álbuns.
+    """
+
+    id = "diy_album_reviews"
+    name = "DIY — Album Reviews"
+    url = "https://diymag.com/feed"
+    kind = "album"
+    lookback_days = 8
+
+    def _parse_entry(self, entry: dict) -> Track | None:
+        link = str(entry.get("link", "")).strip()
+        try:
+            path = urlparse(link).path
+        except ValueError:
+            return None
+        terms = {
+            str(tag.get("term", "")).strip().casefold() for tag in entry.get("tags", [])
+        }
+        if not path.startswith("/review/album/") or "album reviews" not in terms:
+            return None
+        return super()._parse_entry(entry)
+
+    def _extract_artist_title(self, entry: dict) -> tuple[str, str] | None:
+        title = _strip_html_tags(unescape(str(entry.get("title", "")))).strip()
+        return _split_artist_title_dash(title)
+
+
+class ClashAlbumReviews(RSSSource):
+    """Clash — críticas de álbuns do feed dedicado de reviews.
+
+    A secção também publica ``First Take`` sobre faixas. Esses posts e outros
+    prefixos explicitamente não-album são rejeitados antes do parse conservador
+    ``Artist – Album``.
+    """
+
+    id = "clash_album_reviews"
+    name = "Clash — Album Reviews"
+    url = "https://www.clashmusic.com/reviews/feed/"
+    kind = "album"
+    lookback_days = 8
+    _NON_ALBUM_PREFIXES = (
+        "first take:",
+        "film review:",
+        "live report:",
+        "live review:",
+    )
+
+    def _parse_entry(self, entry: dict) -> Track | None:
+        link = str(entry.get("link", "")).strip()
+        try:
+            path = urlparse(link).path
+        except ValueError:
+            return None
+        title = _strip_html_tags(unescape(str(entry.get("title", "")))).strip()
+        if not path.startswith("/reviews/") or title.casefold().startswith(
+            self._NON_ALBUM_PREFIXES
+        ):
+            return None
+        return super()._parse_entry(entry)
+
+    def _extract_artist_title(self, entry: dict) -> tuple[str, str] | None:
+        title = _strip_html_tags(unescape(str(entry.get("title", "")))).strip()
+        return _split_artist_title_dash(title)
+
+
+class ClashFirstTake(RSSSource):
+    """Clash — ``First Take`` de faixas novas no feed de reviews.
+
+    Estes artigos são sinal editorial de track, não álbuns. Mantê-los numa
+    source própria impede que o parser de álbuns invente um LP com o nome da
+    faixa sem perder descobertas como Fontaines D.C. — ``Marianne``.
+    """
+
+    id = "clash_first_take"
+    name = "Clash — First Take"
+    url = "https://www.clashmusic.com/reviews/feed/"
+    kind = "track"
+    lookback_days = 8
+
+    def _parse_entry(self, entry: dict) -> Track | None:
+        link = str(entry.get("link", "")).strip()
+        try:
+            path = urlparse(link).path
+        except ValueError:
+            return None
+        title = _strip_html_tags(unescape(str(entry.get("title", "")))).strip()
+        if not path.startswith("/reviews/") or not title.casefold().startswith(
+            "first take:"
+        ):
+            return None
+        return super()._parse_entry(entry)
+
+    def _extract_artist_title(self, entry: dict) -> tuple[str, str] | None:
+        title = _strip_html_tags(unescape(str(entry.get("title", "")))).strip()
+        title = re.sub(r"^First\s+Take:\s*", "", title, flags=re.IGNORECASE)
+        parsed = _split_artist_title_dash(title)
+        if parsed is None:
+            return None
+        artist, track = parsed
+        track = track.strip().strip("\"'\u2018\u2019\u201c\u201d").strip()
+        return (artist, track) if artist and track else None
+
+
 class GuardianMusicAlbums(RSSSource):
     """The Guardian Music — album reviews.
 

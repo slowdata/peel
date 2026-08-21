@@ -35,6 +35,7 @@ log = structlog.get_logger()
 # Resolve (artist, album) -> URL Spotify do álbum, ou None se não houver match.
 AlbumResolver = Callable[[str, str], str | None]
 AlbumSpotifyMatch = Literal["direct", "resolved", "search"]
+MAX_PUBLISHED_ALBUMS = 7
 
 
 def make_album_resolver(sp: Any, threshold: int = 85) -> AlbumResolver:
@@ -354,7 +355,11 @@ def _export_albums(
 ) -> list[dict[str, Any]]:
     snapshot = db.album_queue(week)
     if snapshot is not None:
-        return [_snapshot_album_to_json(item) for item in snapshot]
+        # A snapshot privada é a fila de escuta. A edição pública Sept mantém
+        # o seu contrato editorial de, no máximo, sete álbuns na mesma ordem.
+        return [
+            _snapshot_album_to_json(item) for item in snapshot[:MAX_PUBLISHED_ALBUMS]
+        ]
     if week >= CANONICAL_ALBUM_QUEUE_SINCE:
         raise ValueError(f"Sem snapshot canónica de álbuns para {week}; export do site cancelado.")
     # Sem snapshot só há fallback para semanas históricas. Não é usado para

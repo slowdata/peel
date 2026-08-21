@@ -2,9 +2,9 @@ name: weekly peel run
 
 on:
   schedule:
-    # Sábado às 10:00 UTC — apanha as picks de sexta à noite e dá margem
-    # para os críticos/blogs publicarem sem esperarmos até domingo.
-    - cron: "0 10 * * 6"
+    # Sexta às 18:00 UTC — lançamentos já disponíveis, ciclo editorial UK
+    # praticamente completo e boa parte do dia editorial norte-americano.
+    - cron: "0 18 * * 5"
   # Dispatch manual para testes durante desenvolvimento
   workflow_dispatch:
 

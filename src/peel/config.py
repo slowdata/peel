@@ -10,7 +10,7 @@ não há .env — usa as Secrets injectadas como variáveis de env. Em dev, .env
 pelo git, portanto secrets locais ficam privados.
 """
 
-from pydantic import Field, computed_field
+from pydantic import Field, computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -48,6 +48,14 @@ class Settings(BaseSettings):
         default=30,
         alias="PEEL_MAX_SOURCE_ITEM_AGE_DAYS",
     )
+    # Fila privada para ouvir e avaliar. Pode ser maior que os sete álbuns
+    # publicados, mas fica abaixo de 20 para continuar humanamente manejável.
+    peel_max_albums_to_review: int = Field(
+        default=11,
+        ge=1,
+        le=19,
+        alias="PEEL_MAX_ALBUMS_TO_REVIEW",
+    )
     # Janela (dias) em que tentamos re-matchear tracks que falharam no Spotify.
     # Motivo: blogs frequentemente publicam antes do release global de sexta, ou
     # o track chega ao Spotify dias/semanas depois. 30 dias cobre ambos sem
@@ -58,6 +66,13 @@ class Settings(BaseSettings):
         default=0.75,
         alias="PEEL_AFFINITY_BADGE_THRESHOLD",
     )
+
+    @field_validator("peel_max_albums_to_review")
+    @classmethod
+    def _album_review_limit_must_be_odd(cls, value: int) -> int:
+        if value % 2 == 0:
+            raise ValueError("PEEL_MAX_ALBUMS_TO_REVIEW must be odd")
+        return value
 
     # Telegram opcional
     telegram_bot_token: str | None = Field(default=None, alias="TELEGRAM_BOT_TOKEN")

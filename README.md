@@ -60,7 +60,7 @@ Sem algoritmos, sem bolhas — apenas bom gosto humano, entregue.
 
 ## Automated Weekly Run
 
-O projeto corre automaticamente ao sábado (10:00 UTC) via [GitHub Actions](/.github/workflows/weekly.yml).
+O projeto corre automaticamente à sexta-feira (18:00 UTC) via [GitHub Actions](/.github/workflows/weekly.yml).
 
 Para dispatch manual (testes):
 ```bash
@@ -150,6 +150,7 @@ uv run peel affinity backfill-genres --source musicbrainz --limit 20 --sleep 1.5
 ```bash
 PEEL_MAX_TRACKS_PER_SOURCE=8
 PEEL_MAX_TRACKS_PER_RUN=28
+PEEL_MAX_ALBUMS_TO_REVIEW=11
 PEEL_MAX_SOURCE_ITEM_AGE_DAYS=30
 ```
 
@@ -159,11 +160,16 @@ A playlist de triagem é a fila real para ouvir: todas as tracks novas da run en
 
 ### Album queue
 
-A weekly também confirma uma fila independente de até sete álbuns. A primeira
+A weekly confirma uma fila privada independente de até 11 álbuns por defeito
+(`PEEL_MAX_ALBUMS_TO_REVIEW`, limite configurável ímpar e máximo 19) para ouvir
+e avaliar. A primeira
 observação de cada `(artista, álbum, source)` é imutável; polling repetido só
 actualiza a última observação. Menções editoriais novas e consenso entram antes
 de pendentes sem feedback; labels Bandcamp são complementares e singles nunca
-são elegíveis. A mesma snapshot é consumida pela CLI, Telegram e export do site.
+são elegíveis. Os artigos `First Take` da Clash são encaminhados separadamente
+para a triagem de faixas. CLI, Telegram e relatório local mostram a snapshot
+completa; a edição pública Sept preserva a mesma ordem, limitada aos primeiros
+sete álbuns.
 
 ```bash
 uv run peel albums                 # fila activa e links de escuta
@@ -198,7 +204,7 @@ usam esse snapshot canónico; semanas ainda não finalizadas mantêm o ranking e
 Os comandos humanos escondem logs internos por defeito; para diagnóstico local,
 usa `uv run peel --verbose triage` (a weekly mantém logs JSON completos para CI).
 
-Fontes `album` activas incluem Guardian, reviews Pitchfork (Best New e regulares sem overlap), The Quietus, Feedbacker/Rock, Aquarium Drunkard e labels Bandcamp. Entram em `Albums / Context`, relatório e Telegram, mas não vão para Spotify matching/playlist. Reissues/arquivo explícitos e itens editoriais antigos são excluídos da fila actual. NPR New Music Friday — The Starting 5 e KEXP — In Our Headphones são fontes `track`: entram no matching/playlist como novidades curadas.
+Fontes `album` activas incluem Guardian, DIY, Clash, reviews Pitchfork (Best New e regulares sem overlap), The Quietus, Feedbacker/Rock, Aquarium Drunkard e labels Bandcamp. Entram em `Albums / Context`, relatório e Telegram, mas não vão para Spotify matching/playlist. Reissues/arquivo explícitos e itens editoriais antigos são excluídos da fila actual. NPR New Music Friday — The Starting 5 e KEXP — In Our Headphones são fontes `track`: entram no matching/playlist como novidades curadas.
 
 Uma recuperação corrente pode actualizar apenas estas sources e pré-visualizar a fila, sem tracks, playlists ou Telegram:
 

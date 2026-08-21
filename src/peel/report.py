@@ -380,7 +380,7 @@ def _render_markdown(report: WeeklyReport) -> str:
     else:
         lines.append("- None")
 
-    lines.append("\n## 🎧 7 Álbuns a Ouvir")
+    lines.append("\n## 🎧 Álbuns a Ouvir")
     if report.recommended_albums:
         for album in report.recommended_albums:
             artist = _md_escape(album.artist)
@@ -621,7 +621,7 @@ def _render_html(report: WeeklyReport) -> str:
     </header>
 
     <section>
-      {_html_section_heading("7 Álbuns a Ouvir", len(report.recommended_albums))}
+      {_html_section_heading("Álbuns a Ouvir", len(report.recommended_albums))}
       <div class="album-grid">{album_cards or _html_empty("Sem álbuns confirmados.")}</div>
     </section>
 

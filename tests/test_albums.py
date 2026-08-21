@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from peel.albums import (
     AlbumMention,
     _album_feedback_quality,
@@ -229,6 +231,40 @@ def test_diversity_prefers_editorial_then_allows_label_after_repeat_penalty(tmp_
     # Equal candidates start with the editorial source. Once represented, its
     # soft repeat penalty lets the label win; it is not a source quota/cap.
     assert [item.artist for item, _ in selected] == ["Editorial First", "Label", "Editorial Repeat"]
+    db.close()
+
+
+def test_diversity_repeat_penalty_counts_publication_family(tmp_path: Path) -> None:
+    db = DB(str(tmp_path / "peel.db"))
+    db.init_schema()
+    for artist, album, source, seen_at in (
+        ("Pitchfork First", "One", "pitchfork_best_albums", "2026-08-08T12:00:00+00:00"),
+        (
+            "Pitchfork Second",
+            "Two",
+            "pitchfork_album_reviews",
+            "2026-08-08T11:00:00+00:00",
+        ),
+        ("Guardian", "Three", "guardian_music_albums", "2026-08-08T10:00:00+00:00"),
+    ):
+        db._record_album_mention(
+            artist=artist,
+            album=album,
+            source_id=source,
+            source_url="https://review.example/album",
+            spotify_album_uri=None,
+            seen_at=seen_at,
+            added_at_week="2026-W32",
+        )
+    db.conn.commit()
+
+    selected = select_album_queue(db, "2026-W32", limit=3)
+
+    assert [item.artist for item, _ in selected] == [
+        "Pitchfork First",
+        "Guardian",
+        "Pitchfork Second",
+    ]
     db.close()
 
 
@@ -492,6 +528,43 @@ def test_future_album_observation_cannot_enter_historical_selection(tmp_path: Pa
     )
     db.conn.commit()
     assert select_album_queue(db, "2026-W29") == []
+    db.close()
+
+
+def test_private_album_queue_can_exceed_public_seven(tmp_path: Path) -> None:
+    db = DB(str(tmp_path / "peel.db"))
+    db.init_schema()
+    week = "2026-W34"
+
+    def queue(count: int) -> list[AlbumQueueItem]:
+        return [
+            AlbumQueueItem(
+                week=week,
+                position=index,
+                artist=f"Artist {index}",
+                album=f"Album {index}",
+                artist_key=f"artist {index}",
+                album_key=f"album {index}",
+                source_ids=("source",),
+                source_count=1,
+                listen_url=f"https://open.spotify.com/album/{index}",
+                listen_kind="spotify",
+                editorial_url=None,
+                is_new=True,
+            )
+            for index in range(1, count + 1)
+        ]
+
+    db.replace_album_queue(week, queue(11))
+
+    assert len(db.album_queue(week) or []) == 11
+    payload = build_site_week_payload(db, week, None, source_quality={})
+    assert [album["title"] for album in payload["albums"]] == [
+        f"Album {index}" for index in range(1, 8)
+    ]
+    with pytest.raises(ValueError, match="more than 19"):
+        db.replace_album_queue(week, queue(20))
+    assert len(db.album_queue(week) or []) == 11
     db.close()
 
 

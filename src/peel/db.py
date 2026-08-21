@@ -44,6 +44,7 @@ ALBUM_FEEDBACK_RATINGS: dict[str, int] = {
     # Availability is delivery metadata, not a musical judgement.
     "unavailable": 0,
 }
+MAX_ALBUM_LISTENING_QUEUE_ITEMS = 19
 
 WindowTrackRow = tuple[str, str, str, str, str]
 SourceQuality = tuple[float, float]  # (avg_rating, score)
@@ -1352,8 +1353,11 @@ class DB:
         exportação apenas lê estas linhas; não pesquisa Spotify nem recalcula.
         """
         _validate_iso_week(week)
-        if len(items) > 7:
-            raise ValueError("album queue cannot contain more than 7 items")
+        if len(items) > MAX_ALBUM_LISTENING_QUEUE_ITEMS:
+            raise ValueError(
+                "album listening queue cannot contain more than "
+                f"{MAX_ALBUM_LISTENING_QUEUE_ITEMS} items"
+            )
         if any(item.week != week for item in items):
             raise ValueError("album queue item week must match the target week")
         if [item.position for item in items] != list(range(1, len(items) + 1)):

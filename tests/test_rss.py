@@ -8,7 +8,10 @@ import pytest
 
 from peel.sources.rss import (
     AquariumDrunkard,
+    ClashAlbumReviews,
+    ClashFirstTake,
     ConsequenceMusic,
+    DIYAlbumReviews,
     GorillaVsBear,
     GuardianMusicAlbums,
     KexpInOurHeadphones,
@@ -245,6 +248,15 @@ class TestSourceKind:
         """GuardianMusicAlbums.kind == 'album'."""
         source = GuardianMusicAlbums()
         assert source.kind == "album"
+
+    def test_diy_album_reviews_kind_is_album(self) -> None:
+        assert DIYAlbumReviews().kind == "album"
+
+    def test_clash_album_reviews_kind_is_album(self) -> None:
+        assert ClashAlbumReviews().kind == "album"
+
+    def test_clash_first_take_kind_is_track(self) -> None:
+        assert ClashFirstTake().kind == "track"
 
     def test_quietus_kind_is_album(self) -> None:
         """TheQuietus.kind == 'album'."""
@@ -649,6 +661,75 @@ class TestAquariumDrunkard:
         albums = source.fetch()
 
         assert len(albums) == 7
+
+
+class TestDIYAndClashAlbumReviews:
+    def test_diy_requires_album_path_and_tag(self) -> None:
+        source = DIYAlbumReviews()
+        valid = {
+            "title": "Westside Cowboy — It Goes On",
+            "link": "https://diymag.com/review/album/westside-cowboy-it-goes-on",
+            "tags": [{"term": "Reviews"}, {"term": "Album Reviews"}],
+        }
+
+        parsed = source._parse_entry(valid)
+
+        assert parsed is not None
+        assert (parsed.artist, parsed.title, parsed.source_id) == (
+            "Westside Cowboy",
+            "It Goes On",
+            "diy_album_reviews",
+        )
+        assert source._parse_entry({**valid, "tags": [{"term": "Reviews"}]}) is None
+        assert source._parse_entry(
+            {**valid, "link": "https://diymag.com/news/westside-cowboy"}
+        ) is None
+
+    def test_clash_excludes_first_take_and_requires_exact_title(self) -> None:
+        source = ClashAlbumReviews()
+        valid = {
+            "title": "Jorja Smith – What Are The Odds",
+            "link": "https://www.clashmusic.com/reviews/jorja-smith-what-are-the-odds/",
+        }
+
+        parsed = source._parse_entry(valid)
+
+        assert parsed is not None
+        assert (parsed.artist, parsed.title, parsed.source_id) == (
+            "Jorja Smith",
+            "What Are The Odds",
+            "clash_album_reviews",
+        )
+        assert source._parse_entry(
+            {
+                **valid,
+                "title": "First Take: Fontaines D.C. – ‘Marianne’",
+                "link": "https://www.clashmusic.com/reviews/first-take-fontaines-d-c-marianne/",
+            }
+        ) is None
+        assert source._parse_entry({**valid, "title": "A narrative review headline"}) is None
+
+    def test_clash_first_take_routes_single_to_track(self) -> None:
+        source = ClashFirstTake()
+        first_take = {
+            "title": "First Take: Fontaines D.C. – ‘Marianne’",
+            "link": "https://www.clashmusic.com/reviews/first-take-fontaines-d-c-marianne/",
+        }
+
+        parsed = source._parse_entry(first_take)
+
+        assert parsed is not None
+        assert (parsed.artist, parsed.title, parsed.source_id) == (
+            "Fontaines D.C.",
+            "Marianne",
+            "clash_first_take",
+        )
+        assert source._parse_entry(
+            {
+                "title": "Jorja Smith – What Are The Odds",
+                "link": "https://www.clashmusic.com/reviews/jorja-smith-what-are-the-odds/",
+            }
+        ) is None
 
 
 class TestGuardianMusicAlbums:
