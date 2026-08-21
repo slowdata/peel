@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from click import unstyle
 from typer.testing import CliRunner
 
 import peel.cli as cli
@@ -117,8 +118,9 @@ class TestSyncPull:
         result = runner.invoke(cli.app, ["sync", "pull"])
 
         assert result.exit_code == 0
-        assert "2026-W31" in result.stdout
-        assert "2026-W32" in result.stdout
+        output = unstyle(result.stdout)
+        assert "2026-W31" in output
+        assert "2026-W32" in output
         assert calls == [(tmp_path / "data" / "peel.db", tmp_path)]
 
 

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import structlog
+from click import unstyle
 from typer.testing import CliRunner
 
 import peel.cli as cli
@@ -200,7 +201,7 @@ class TestAlbumsCLI:
         )
 
         assert result.exit_code == 2
-        assert "Coloca --week depois do subcomando" in result.output
+        assert "Coloca --week depois do subcomando" in unstyle(result.output)
 
     def test_albums_open_uses_installed_spotify_app(self, tmp_path: Path, monkeypatch) -> None:
         db_path = tmp_path / "albums.db"
@@ -279,7 +280,7 @@ class TestAlbumsCLI:
 
         assert result.exit_code == 0
         assert "Fetched Artist" in result.output
-        assert "Fila incompleta: 1/11" in result.output
+        assert "Fila incompleta: 1/11" in unstyle(result.output)
         assert "Dry run" in result.output
         assert db_path.read_bytes() == before
         spotify.assert_not_called()
@@ -348,7 +349,7 @@ class TestAlbumsCLI:
         result = runner.invoke(cli.app, ["albums", "feedback"], input="q\n")
 
         assert result.exit_code == 0
-        assert "Feedback de álbuns: 2026-W33" in result.output
+        assert "Feedback de álbuns: 2026-W33" in unstyle(result.output)
         assert "Active Artist" in result.output
         assert "Historic Artist" not in result.output
 
@@ -376,7 +377,7 @@ class TestAlbumsCLI:
         )
 
         assert result.exit_code == 0
-        assert "Feedback de álbuns: 2026-W32" in result.output
+        assert "Feedback de álbuns: 2026-W32" in unstyle(result.output)
         assert "Historic Artist" in result.output
         assert "Active Artist" not in result.output
         db = DB(str(db_path))
@@ -430,7 +431,7 @@ class TestAlbumsCLI:
         )
 
         assert result.exit_code == 0
-        assert "snapshot de álbuns 2026-W32 está vazia" in result.output
+        assert "snapshot de álbuns 2026-W32 está vazia" in unstyle(result.output)
         assert "Active Artist" not in result.output
 
 
@@ -1098,7 +1099,7 @@ class TestCliSite:
         )
 
         assert result.exit_code == 0
-        assert f"Exported {current_week}" in result.stdout
+        assert f"Exported {current_week}" in unstyle(result.stdout)
         assert (site_dir / "src" / "data" / "weeks" / f"{current_week}.json").exists()
 
 
