@@ -111,6 +111,9 @@ def export_site(
     finalized_playlist_id = canonical_playlist_id(playlist_id) if playlist_id else None
     exported: list[ExportedWeek] = []
     for week in weeks_to_export(resolved_current_week, weeks):
+        if db.is_archived_week(week):
+            log.info("site_export.skipped_archived_week", week=week)
+            continue
         path = output_dir / f"{week}.json"
         existing_albums = _existing_albums(path) if path.exists() else None
         has_album_snapshot = db.album_queue(week) is not None
@@ -165,6 +168,8 @@ def build_site_week_payload(
     usa as URIs e a ordem que Spotify confirmou, mesmo que scores/feedback
     mudem numa re-exportação posterior.
     """
+    if db.is_archived_week(week):
+        raise ValueError(f"Semana {week} arquivada; publicação cancelada.")
     quality = source_quality or _load_source_quality(db)
     finalized_playlist_key = (
         canonical_playlist_id(finalized_playlist_id) if finalized_playlist_id else None
@@ -357,9 +362,7 @@ def _export_albums(
     if snapshot is not None:
         # A snapshot privada é a fila de escuta. A edição pública Sept mantém
         # o seu contrato editorial de, no máximo, sete álbuns na mesma ordem.
-        return [
-            _snapshot_album_to_json(item) for item in snapshot[:MAX_PUBLISHED_ALBUMS]
-        ]
+        return [_snapshot_album_to_json(item) for item in snapshot[:MAX_PUBLISHED_ALBUMS]]
     if week >= CANONICAL_ALBUM_QUEUE_SINCE:
         raise ValueError(f"Sem snapshot canónica de álbuns para {week}; export do site cancelado.")
     # Sem snapshot só há fallback para semanas históricas. Não é usado para

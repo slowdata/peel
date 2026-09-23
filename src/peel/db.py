@@ -432,6 +432,41 @@ class DB:
             """
         )
 
+        # Ordered, validated weekly triage: survives rotation of review_queue.
+        # Do not backfill legacy queues as verified; W36 exposed that ambiguity.
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS review_queue_snapshots (
+                week TEXT NOT NULL,
+                playlist_id TEXT NOT NULL,
+                items_json TEXT NOT NULL,
+                confirmed_at TEXT NOT NULL,
+                PRIMARY KEY (week, playlist_id)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS listening_resets (
+                resume_week TEXT PRIMARY KEY,
+                from_week TEXT NOT NULL,
+                through_week TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS queue_recoveries (
+                week TEXT PRIMARY KEY,
+                recovered_at TEXT NOT NULL,
+                note TEXT NOT NULL,
+                provenance_json TEXT NOT NULL
+            )
+            """
+        )
+
         # Snapshot canónico de uma semana finalizada. O cabeçalho conserva até
         # uma playlist finalizada vazia; as tracks fixam URIs e ordem para que
         # exports/re-exports não voltem a recalcular um Top 7 diferente.
@@ -941,39 +976,137 @@ class DB:
         self,
         playlist_id: str,
         items: list[ReviewQueueItem],
+        *,
+        week: str | None = None,
     ) -> None:
-        """Persiste a ordem exacta confirmada na playlist de triagem."""
+        """Atomically persist active + historical queue after Spotify read-back."""
+        week = week or (items[0].current_week if items else None)
+        if week is not None:
+            _validate_iso_week(week)
+        if any(item.current_week != week for item in items):
+            raise ValueError("review queue contains mixed weeks")
+        if len({item.spotify_uri for item in items}) != len(items):
+            raise ValueError("review queue contains duplicate URIs")
         now = datetime.now(UTC).isoformat()
-        self.conn.execute("DELETE FROM review_queue WHERE playlist_id = ?", (playlist_id,))
-        self.conn.executemany(
-            """
-            INSERT INTO review_queue (
-                playlist_id, position, spotify_uri, source_id, artist, title,
-                source_url, source_count, affinity, is_new, added_at_week,
-                current_week, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                (
-                    playlist_id,
-                    position,
-                    item.spotify_uri,
-                    item.source_id,
-                    item.artist,
-                    item.title,
-                    item.source_url,
-                    item.source_count,
-                    item.affinity,
-                    int(item.is_new),
-                    item.added_at_week,
-                    item.current_week,
-                    now,
+        with self.conn:
+            self.conn.execute("DELETE FROM review_queue WHERE playlist_id = ?", (playlist_id,))
+            self.conn.executemany(
+                """
+                INSERT INTO review_queue (
+                    playlist_id, position, spotify_uri, source_id, artist, title,
+                    source_url, source_count, affinity, is_new, added_at_week,
+                    current_week, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        playlist_id,
+                        position,
+                        item.spotify_uri,
+                        item.source_id,
+                        item.artist,
+                        item.title,
+                        item.source_url,
+                        item.source_count,
+                        item.affinity,
+                        int(item.is_new),
+                        item.added_at_week,
+                        item.current_week,
+                        now,
+                    )
+                    for position, item in enumerate(items, start=1)
+                ],
+            )
+            if week is not None:
+                self.conn.execute(
+                    """
+                    INSERT INTO review_queue_snapshots VALUES (?, ?, ?, ?)
+                    ON CONFLICT(week, playlist_id) DO UPDATE SET
+                        items_json = excluded.items_json, confirmed_at = excluded.confirmed_at
+                    """,
+                    (week, playlist_id, json.dumps([item.model_dump() for item in items]), now),
                 )
-                for position, item in enumerate(items, start=1)
-            ],
+        log.info("db.review_queue_replaced", playlist_id=playlist_id, week=week, count=len(items))
+
+    def review_queue_snapshot(self, playlist_id: str, week: str) -> list[ReviewQueueItem] | None:
+        row = self.conn.execute(
+            "SELECT items_json FROM review_queue_snapshots WHERE playlist_id = ? AND week = ?",
+            (playlist_id, week),
+        ).fetchone()
+        if row is None:
+            return None
+        items = [ReviewQueueItem.model_validate(item) for item in json.loads(row[0])]
+        if any(item.current_week != week for item in items):
+            raise ValueError("invalid review queue snapshot week")
+        return items
+
+    def archive_listening_weeks(self, from_week: str, through_week: str) -> str:
+        """Retire a backlog without deleting discoveries or manufacturing dislikes.
+
+        Historical snapshots/feedback stay accessible explicitly. New source
+        mentions must not resurrect already-known identities after the reset.
+        """
+        _validate_iso_week(from_week)
+        _validate_iso_week(through_week)
+        if from_week > through_week:
+            raise ValueError("archive interval is reversed")
+        if self.conn.execute(
+            "SELECT 1 FROM finalized_weeks WHERE week BETWEEN ? AND ? LIMIT 1",
+            (from_week, through_week),
+        ).fetchone():
+            raise ValueError("cannot archive finalized weeks")
+        year, week = map(int, through_week.split("-W"))
+        resume = iso_week(datetime.fromisocalendar(year, week, 1) + timedelta(weeks=1))
+        existing = self.conn.execute(
+            "SELECT from_week, through_week FROM listening_resets WHERE resume_week = ?",
+            (resume,),
+        ).fetchone()
+        if existing is not None and existing != (from_week, through_week):
+            raise ValueError("a different archive interval already exists for this restart")
+        with self.conn:
+            self.conn.execute(
+                "INSERT OR IGNORE INTO listening_resets VALUES (?, ?, ?, ?)",
+                (resume, from_week, through_week, datetime.now(UTC).isoformat()),
+            )
+        return resume
+
+    def active_review_week(self, playlist_id: str) -> str | None:
+        """Latest confirmation, not largest ISO week (a recovery can go backwards)."""
+        row = self.conn.execute(
+            """
+            SELECT week FROM review_queue_snapshots
+            WHERE playlist_id = ? AND NOT EXISTS (
+                SELECT 1 FROM listening_resets WHERE week BETWEEN from_week AND through_week
+            )
+            ORDER BY confirmed_at DESC, week DESC LIMIT 1
+            """,
+            (playlist_id,),
+        ).fetchone()
+        if row is not None:
+            return str(row[0])
+        rows = self.review_queue(playlist_id)
+        return rows[0].current_week if rows else None
+
+    def queue_recovery_note(self, week: str) -> str | None:
+        row = self.conn.execute(
+            "SELECT note FROM queue_recoveries WHERE week = ?", (week,)
+        ).fetchone()
+        return str(row[0]) if row else None
+
+    def listening_floor(self, week: str) -> str | None:
+        row = self.conn.execute(
+            "SELECT MAX(resume_week) FROM listening_resets WHERE resume_week <= ?", (week,)
+        ).fetchone()
+        return row[0] if row else None
+
+    def is_archived_week(self, week: str) -> bool:
+        return (
+            self.conn.execute(
+                "SELECT 1 FROM listening_resets WHERE ? BETWEEN from_week AND through_week",
+                (week,),
+            ).fetchone()
+            is not None
         )
-        self.conn.commit()
-        log.info("db.review_queue_replaced", playlist_id=playlist_id, count=len(items))
 
     def review_queue(self, playlist_id: str) -> list[ReviewQueueItem]:
         """Snapshot persistido da triagem, pela mesma ordem da playlist Spotify."""
@@ -983,6 +1116,10 @@ class DB:
                    affinity, is_new, added_at_week, current_week
             FROM review_queue
             WHERE playlist_id = ?
+              AND NOT EXISTS (
+                SELECT 1 FROM listening_resets
+                WHERE review_queue.current_week BETWEEN from_week AND through_week
+              )
             ORDER BY position ASC
             """,
             (playlist_id,),
@@ -1197,6 +1334,12 @@ class DB:
     def list_unmatched_with_urls(self, max_age_days: int) -> list[tuple[str, str, str, str | None]]:
         """Lista unmatched recentes preservando source_url quando existe."""
         cutoff = (datetime.now(UTC) - timedelta(days=max_age_days)).isoformat()
+        floor = self.listening_floor(iso_week(datetime.now(UTC)))
+        if floor:
+            year, week = map(int, floor.split("-W"))
+            cutoff = max(
+                cutoff, datetime.fromisocalendar(year, week, 1).replace(tzinfo=UTC).isoformat()
+            )
         cursor = self.conn.execute(
             """
             SELECT source_id, artist, title, MAX(source_url)
@@ -1452,9 +1595,16 @@ class DB:
             ) in rows
         ]
 
-    def latest_album_queue(self) -> list[AlbumQueueItem] | None:
+    def latest_album_queue(self, playlist_id: str | None = None) -> list[AlbumQueueItem] | None:
+        if playlist_id is not None:
+            active = self.active_review_week(playlist_id)
+            if active is not None:
+                # Missing/empty active album snapshots must never fall back to another week.
+                return self.album_queue(active)
         row = self.conn.execute(
-            "SELECT week FROM album_queue_weeks ORDER BY week DESC LIMIT 1"
+            "SELECT week FROM album_queue_weeks "
+            "WHERE week >= COALESCE((SELECT MAX(resume_week) FROM listening_resets), '') "
+            "ORDER BY week DESC LIMIT 1"
         ).fetchone()
         return self.album_queue(str(row[0])) if row else None
 
@@ -1776,10 +1926,25 @@ class DB:
             """,
             (cutoff_week, current_week),
         )
+        candidates = cursor.fetchall()
         banned_uris = self._banned_uris()
         banned_keys = self.banned_track_keys()
+        floor = self.listening_floor(current_week)
+        retired = (
+            self.conn.execute(
+                "SELECT spotify_uri, artist, title FROM tracks WHERE added_at_week < ?", (floor,)
+            ).fetchall()
+            if floor
+            else []
+        )
+        retired_uris = {str(row[0]) for row in retired}
+        retired_keys = {(normalize(str(row[1])), normalize(str(row[2]))) for row in retired}
         rows: list[WindowTrackRow] = []
-        for spotify_uri, artist, title, source_id, added_at in cursor.fetchall():
+        for spotify_uri, artist, title, source_id, added_at in candidates:
+            if str(spotify_uri) in retired_uris:
+                continue
+            if (normalize(str(artist)), normalize(str(title))) in retired_keys:
+                continue
             if str(spotify_uri) in banned_uris:
                 continue
             if (normalize(str(artist)), normalize(str(title))) in banned_keys:

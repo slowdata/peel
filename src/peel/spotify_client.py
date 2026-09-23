@@ -12,6 +12,7 @@ Decisões de design:
 from __future__ import annotations
 
 import re
+import time
 
 import spotipy
 import structlog
@@ -90,6 +91,10 @@ def _reauth_message() -> str:
 
 class SpotifyReauthRequired(RuntimeError):
     """Refresh token expirou/revogado; é preciso authorization code flow."""
+
+
+class SpotifyPlaylistMismatch(RuntimeError):
+    """Spotify accepted a write but did not return the requested ordered queue."""
 
 
 class SpotifyClient:
@@ -217,7 +222,7 @@ class SpotifyClient:
             log.exception("spotify.album_search_failed", artist=artist, album=album, error=str(e))
             return []
 
-    def playlist_track_uris(self, playlist_id: str) -> list[str]:
+    def playlist_track_uris(self, playlist_id: str, *, strict: bool = False) -> list[str]:
         """Lê as URIs de uma playlist, preservando ordem.
 
         A Spotify mudou recentemente o campo de ``track`` para ``item`` nesta
@@ -228,16 +233,45 @@ class SpotifyClient:
         offset = 0
         while True:
             page = self.sp.playlist_items(playlist_id, limit=100, offset=offset)
-            items = page.get("items", [])
+            items = page.get("items")
+            if not isinstance(items, list) or (not items and page.get("next")):
+                raise SpotifyPlaylistMismatch(
+                    "Resposta de playlist inválida ou paginação sem progresso"
+                )
             for row in items:
                 item = row.get("item") or row.get("track") or {}
                 uri = item.get("uri")
                 if isinstance(uri, str) and uri.startswith("spotify:track:"):
                     uris.append(uri)
-            if not page.get("next"):
-                break
+                elif strict:
+                    raise SpotifyPlaylistMismatch("Playlist contém item nulo, local ou não musical")
             offset += len(items)
+            if not page.get("next"):
+                if strict and page.get("total") is not None and page["total"] != offset:
+                    raise SpotifyPlaylistMismatch("Contagem da playlist mudou durante a leitura")
+                break
         return uris
+
+    def verify_playlist_items(self, playlist_id: str, expected: list[str]) -> None:
+        """Read back URI *and order*. Retry reads only, never replay a write."""
+        actual: list[str] = []
+        for attempt in range(3):
+            actual = self.playlist_track_uris(playlist_id, strict=True)
+            if actual == expected:
+                log.info("playlist.verified", playlist_id=playlist_id, count=len(actual))
+                return
+            if attempt < 2:
+                time.sleep(1)
+        log.error(
+            "playlist.verification_failed",
+            playlist_id=playlist_id,
+            expected=expected,
+            actual=actual,
+        )
+        raise SpotifyPlaylistMismatch(
+            f"Spotify não confirmou a fila: {len(expected)} pedidas, {len(actual)} lidas; "
+            "URIs ou ordem diferentes. DB e Telegram não devem anunciar esta escrita."
+        )
 
     def add_to_playlist(self, playlist_id: str, uris: list[str]) -> None:
         """Adiciona faixas a uma playlist em chunks de 100 (limite da API).
@@ -291,12 +325,14 @@ class SpotifyClient:
             playlist_id: ID ou URI da playlist
             uris: Lista de Spotify track URIs (ordem preservada)
 
-        Levanta exceção se algo falhar — responsabilidade do caller tratar.
+        Só retorna depois de reler e confirmar todas as URIs e a ordem.
+        Falha (sem repetir a escrita) se a resposta não coincidir.
         """
         if not uris:
             # Limpa a playlist (replace com lista vazia)
             try:
                 self.sp.playlist_replace_items(playlist_id, [])
+                self.verify_playlist_items(playlist_id, [])
                 log.info("playlist.cleared", playlist_id=playlist_id)
             except Exception as e:
                 log.exception("playlist.clear_failed", playlist_id=playlist_id, error=str(e))
@@ -342,6 +378,7 @@ class SpotifyClient:
                     )
                     raise
 
+        self.verify_playlist_items(playlist_id, uris)
         log.info(
             "playlist.replaced_complete",
             playlist_id=playlist_id,

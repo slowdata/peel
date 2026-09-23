@@ -8,6 +8,7 @@ from spotipy.oauth2 import SpotifyOauthError
 from peel.spotify_client import (
     SCOPES,
     SpotifyClient,
+    SpotifyPlaylistMismatch,
     SpotifyReauthRequired,
     _and_the_variant,
     _clean_for_query,
@@ -143,7 +144,24 @@ def mock_spotify_client():
         with patch("peel.spotify_client.spotipy.Spotify") as mock_sp:
             mock_sp_instance = MagicMock()
             mock_sp.return_value = mock_sp_instance
+            stored: list[str] = []
 
+            def replace(_pid, uris):
+                stored[:] = uris
+
+            def append(_pid, uris):
+                stored.extend(uris)
+
+            def read(_pid, limit=100, offset=0):
+                return {
+                    "items": [{"item": {"uri": uri}} for uri in stored[offset : offset + limit]],
+                    "next": "next" if offset + limit < len(stored) else None,
+                    "total": len(stored),
+                }
+
+            mock_sp_instance.playlist_replace_items.side_effect = replace
+            mock_sp_instance.playlist_add_items.side_effect = append
+            mock_sp_instance.playlist_items.side_effect = read
             client = SpotifyClient()
             yield client, mock_sp_instance
 
@@ -187,6 +205,7 @@ class TestReplacePlaylistItems:
         mock_sp.playlist_replace_items.assert_called_once_with("playlist:123", [])
         # Não deve chamar playlist_add_items
         mock_sp.playlist_add_items.assert_not_called()
+        mock_sp.playlist_items.assert_called_once()
 
     def test_replace_playlist_items_50_uris(self, mock_spotify_client):
         """replace_playlist_items com 50 URIs (< 100)."""
@@ -262,3 +281,57 @@ class TestReplacePlaylistItems:
 
         with pytest.raises(Exception, match="API error on add"):
             client.replace_playlist_items("playlist:123", uris)
+
+    @pytest.mark.parametrize("actual", [[], ["b"], ["b", "a"], ["a", "b", "c"]])
+    def test_successful_http_write_is_not_confirmation(
+        self, mock_spotify_client, monkeypatch, actual
+    ) -> None:
+        client, sp = mock_spotify_client
+        monkeypatch.setattr("peel.spotify_client.time.sleep", lambda _: None)
+        sp.playlist_items.side_effect = lambda *_a, **_k: {
+            "items": [{"item": {"uri": f"spotify:track:{uri}"}} for uri in actual],
+            "total": len(actual),
+            "next": None,
+        }
+        with pytest.raises(SpotifyPlaylistMismatch, match="não confirmou"):
+            client.replace_playlist_items("playlist", ["spotify:track:a", "spotify:track:b"])
+        sp.playlist_replace_items.assert_called_once()
+        assert sp.playlist_items.call_count == 3
+
+    def test_only_reads_are_retried_for_eventual_consistency(
+        self, mock_spotify_client, monkeypatch
+    ) -> None:
+        client, sp = mock_spotify_client
+        monkeypatch.setattr("peel.spotify_client.time.sleep", lambda _: None)
+        sp.playlist_items.side_effect = [
+            {"items": [], "total": 0, "next": None},
+            {"items": [{"track": {"uri": "spotify:track:a"}}], "total": 1, "next": None},
+        ]
+        client.replace_playlist_items("playlist", ["spotify:track:a"])
+        sp.playlist_replace_items.assert_called_once()
+        assert sp.playlist_items.call_count == 2
+
+    @pytest.mark.parametrize(
+        "page",
+        [
+            {"items": [{"item": None}], "next": None},
+            {"items": [{"item": {"uri": "spotify:episode:x"}}], "next": None},
+            {"items": [], "next": "next"},
+            {"items": [], "next": None, "total": 1},
+            {"next": None},
+        ],
+    )
+    def test_verification_never_hides_unreadable_items(self, mock_spotify_client, page) -> None:
+        client, sp = mock_spotify_client
+        sp.playlist_items.side_effect = None
+        sp.playlist_items.return_value = page
+        with pytest.raises(SpotifyPlaylistMismatch):
+            client.replace_playlist_items("playlist", [])
+        sp.playlist_replace_items.assert_called_once()
+
+    def test_read_error_never_repeats_write(self, mock_spotify_client) -> None:
+        client, sp = mock_spotify_client
+        sp.playlist_items.side_effect = RuntimeError("read error")
+        with pytest.raises(RuntimeError, match="read error"):
+            client.replace_playlist_items("playlist", ["spotify:track:a"])
+        sp.playlist_replace_items.assert_called_once()

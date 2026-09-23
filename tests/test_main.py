@@ -454,6 +454,7 @@ class TestMainIntegration:
             patch.object(NprNewMusicFridayStarting5, "fetch", return_value=[]),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
             patch("peel.main.send_digest") as mock_digest,
+            pytest.raises(RuntimeError, match="Spotify indisponível"),
         ):
             run()
 
@@ -1124,6 +1125,7 @@ class TestPlaylistSafetyCaps:
             patch.object(DB, "ranked_tracks_in_window", side_effect=RuntimeError("boom")),
             patch("peel.main.SpotifyClient", return_value=mock_sp),
             patch("peel.main.send_digest") as mock_digest,
+            pytest.raises(RuntimeError, match="Triagem não seleccionada"),
         ):
             run()
 

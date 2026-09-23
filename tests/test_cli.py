@@ -1212,6 +1212,33 @@ class TestCliTriage:
         assert "Sem tracks activas sem avaliação" in unrated.output
         assert "Sem tracks activas sem avaliação" in pending.output
 
+    def test_filtered_triage_and_feedback_keep_original_playlist_positions(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        db_path = tmp_path / "test.db"
+        db = DB(str(db_path))
+        db.init_schema()
+        items = [
+            _queue_item(f"spotify:track:{name}", f"Artist {name}", f"Track {name}")
+            for name in "ABC"
+        ]
+        for item in items:
+            db.record_track(item.spotify_uri, item.source_id, item.artist, item.title, None)
+        db.replace_review_queue("playlist-id", items)
+        db.upsert_feedback(items[0].spotify_uri, "like")
+        db.upsert_feedback(items[2].spotify_uri, "skip")
+        db.close()
+        monkeypatch.setattr(cli, "settings", _settings(db_path))
+        for flag in ("--unrated", "--pending"):
+            result = runner.invoke(cli.app, ["triage", flag])
+            assert result.exit_code == 0, result.output
+            line = next(line for line in unstyle(result.output).splitlines() if "Track B" in line)
+            assert line.split("│")[1].strip() == "2"
+            assert "Track A" not in result.output and "Track C" not in result.output
+        result = runner.invoke(cli.app, ["feedback"], input="q\n")
+        assert result.exit_code == 0, result.output
+        assert "#2 · [1/1] Artist B" in unstyle(result.output)
+
 
 class TestCliPlaylist:
     def test_playlist_fill_week_dry_run_lists_tracks(

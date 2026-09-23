@@ -156,7 +156,13 @@ PEEL_MAX_SOURCE_ITEM_AGE_DAYS=30
 
 Só sources `kind = "track"` podem entrar na playlist. Sources `album`, `context`, `podcast`, `scrape` ou `manual_spotify` ficam fora da playlist automática. Items publicados há mais de `PEEL_MAX_SOURCE_ITEM_AGE_DAYS` dias são ignorados quando a source expõe data.
 
-A playlist de triagem é a fila real para ouvir: todas as tracks novas da run entram primeiro. Só se faltarem lugares até ao cap entram tracks pendentes, sem feedback, de runs anteriores. Nos pendentes, consenso mantém prioridade e o score da source já inclui feedback; repetições da mesma source sofrem uma penalização linear suave — não há quotas nem caps. O Telegram só é enviado depois de Spotify actualizar a triagem e identifica cada faixa como `🆕 nova` ou `↻ pendente`.
+A playlist de triagem é a fila real para ouvir: todas as tracks novas da run entram primeiro. Só se faltarem lugares até ao cap entram tracks pendentes, sem feedback, de runs anteriores. Nos pendentes, consenso mantém prioridade e o score da source já inclui feedback; repetições da mesma source sofrem uma penalização linear suave — não há quotas nem caps. Depois da escrita, o Peel **relê todas as URIs e a ordem no Spotify**. Só depois dessa confirmação guarda os snapshots activo/semanal e envia Telegram (`🆕 nova` / `↻ pendente`). Uma resposta HTTP de sucesso não basta: uma discrepância faz a run falhar, sem anunciar uma fila falsa nem repetir a escrita.
+
+As fontes RSS com janela temporal usam 14 dias de sobreposição. Antes da primeira
+run bem-sucedida da fonte, `fetch_source` alarga a janela para 30 dias, sem aumentar
+o limite de páginas. A DB deduplica observações já conhecidas. Isto não recupera
+artigos que já desapareceram do feed: nesses casos a recuperação pelo arquivo é
+explícita e documenta a data editorial e a data real de recolha.
 
 ### Album queue
 
@@ -183,8 +189,11 @@ uv run peel albums refresh --week 2026-W29  # reconstrói explicitamente a snaps
 uv run peel site export            # reexporta snapshots sem as recalcular
 ```
 
-`albums refresh` é o único caminho para substituir deliberadamente uma semana
-já existente; uma re-exportação normal apenas lê links e ordem congelados.
+`albums refresh` ou uma recuperação dirigida e documentada podem substituir
+explicitamente uma snapshot; uma re-exportação normal apenas lê links e ordem
+congelados. Os comandos humanos `albums`, `report` e `finalize`, sem `--week`,
+seguem a última fila confirmada no Spotify, mesmo que seja uma semana recuperada
+anterior à semana mais recente de descobertas.
 
 ```bash
 uv run peel triage                 # fila confirmada, na ordem Spotify
@@ -200,6 +209,11 @@ uv run peel finalize --week 2026-W29 # após feedback: confirma o Top 7 em Spoti
 
 `finalize` grava o Top 7 e a ordem que Spotify confirmou. Re-exports posteriores
 usam esse snapshot canónico; semanas ainda não finalizadas mantêm o ranking editorial.
+
+A ordem e o número de cada faixa vêm sempre da fila confirmada. `triage --unrated`
+e `feedback` preservam o número original, sem renumerar depois de ocultar avaliações.
+A auditoria do relatório segue a mesma ordem; descobertas fora da playlist ficam
+separadas e sem número. O Telegram numera a lista pela mesma snapshot.
 
 Os comandos humanos escondem logs internos por defeito; para diagnóstico local,
 usa `uv run peel --verbose triage` (a weekly mantém logs JSON completos para CI).
@@ -242,6 +256,24 @@ Para uma leitura mais agradável, `--html` cria uma página autónoma em
 `data/reports/.html/`, com a paleta visual do Peel; `--open` gera essa preview e
 abre-a no browser. A preview é local e pode sempre ser regenerada.
 
+Desde W37, a secção principal de faixas usa `review_queue_snapshots`: a mesma
+ordem, URIs, proveniência e contagem de novas/pendentes do Telegram. As descobertas
+brutas ficam separadas em auditoria. Sem snapshot semanal, a geração falha em vez
+de substituir a triagem por uma listagem de descobertas. Nas semanas anteriores,
+a ausência do snapshot é explicitada; não se inventa uma confirmação retroactiva.
+
+Um reset de escuta é um **arquivo, não uma avaliação negativa**. `listening_resets`
+regista o intervalo retirado e a semana de recomeço. Descobertas, feedback e filas
+históricas permanecem na DB. O corte de backlog aplica-se às faixas, não funciona
+como rejeição de álbuns: um disco não avaliado pode ser recuperado por consenso
+editorial novo ou por escolha explícita do utilizador. Relatórios arquivados são
+movidos sem alteração para `data/reports/archive/` (previews em `archive/.html/`).
+Semanas finalizadas não podem ser arquivadas; semanas arquivadas não são exportadas
+para o site. Fazer backup antes de um reset e não reconstruir semanas antigas com
+feeds actuais. Uma recuperação regista a nota e a proveniência em `queue_recoveries`,
+visíveis no relatório; observações feitas hoje não são retrodatadas. O relatório
+original arquivado é mantido separado da edição recuperada.
+
 ```bash
 uv run peel report --week 2026-W32
 uv run peel report --week 2026-W32 --html
@@ -255,7 +287,11 @@ A weekly corre no GitHub, mas os comandos interactivos usam a DB local. Antes de
 `feedback`, `triage`, `albums`, `report`, `finalize` e `site export`, o Peel compara
 e sincroniza automaticamente **apenas** `data/peel.db`; alterações de código no
 checkout não bloqueiam o estado. Se existirem feedback local e estado remoto novo,
-o Peel pára sem sobrescrever nenhum dos dois.
+o Peel pára sem sobrescrever nenhum dos dois. Um conflito com uma run/reset local
+não publicado também pára: o merge de feedback não pode apagar a nova fila.
+Reconciliações explícitas são feitas numa cópia, com backups, validação e decisões
+registadas em [`data/reconciliations/`](data/reconciliations/README.md); nunca se
+resolvem descartando silenciosamente uma das bases de dados.
 
 ```bash
 uv run peel sync status # mostra Git e estado canónico separadamente

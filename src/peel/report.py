@@ -19,15 +19,17 @@ from peel.albums import (
     AlbumRecommendation,
     top_album_recommendations,
 )
+from peel.config import settings
 from peel.db import DB, iso_week
 from peel.matcher import normalize
-from peel.models import AlbumQueueItem
+from peel.models import AlbumQueueItem, ReviewQueueItem
 from peel.scoring import build_source_scores
 from peel.sources.registry import source_label
 
 log = structlog.get_logger()
 
 REPORTS_DIR = Path("data/reports")
+CANONICAL_REVIEW_QUEUE_SINCE = "2026-W37"
 
 
 @dataclass(slots=True)
@@ -53,6 +55,7 @@ class WeeklyTrack:
     last_added_at: str
     sources: list[tuple[str, str | None]]
     feedback: tuple[int, str, str | None] | None
+    queue_position: int | None = None
 
 
 @dataclass(slots=True)
@@ -88,6 +91,9 @@ class WeeklyReport:
     recommended_albums: list[AlbumRecommendation | AlbumQueueItem]
     unmatched: list[tuple[str, str, str, str | None]]
     summaries: list[SourceSummary]
+    triage: list[ReviewQueueItem] | None
+    archived: bool
+    recovery_note: str | None
 
 
 def generate_weekly_report(
@@ -139,6 +145,22 @@ def _load_weekly_report(db: DB, week: str) -> WeeklyReport:
     recommended_albums = _load_recommended_albums(db, week)
     unmatched = _load_weekly_unmatched(db, week)
     summaries = _build_source_summaries(tracks, unmatched)
+    playlist_id = settings.peel_review_playlist_id or settings.peel_playlist_id
+    triage = db.review_queue_snapshot(playlist_id, week)
+    if triage is None and week >= CANONICAL_REVIEW_QUEUE_SINCE:
+        raise ValueError(f"Sem snapshot de triagem confirmada para {week}; relatório cancelado.")
+    if triage is not None:
+        positions = {item.spotify_uri: index for index, item in enumerate(triage, 1)}
+        identities = {
+            (normalize(item.artist), normalize(item.title)): index
+            for index, item in enumerate(triage, 1)
+        }
+        for track in tracks:
+            track.queue_position = positions.get(
+                track.spotify_uri, identities.get((normalize(track.artist), normalize(track.title)))
+            )
+        # Audit subsets keep playlist positions; non-queued discoveries go last.
+        tracks.sort(key=lambda track: track.queue_position or len(triage) + 1)
 
     return WeeklyReport(
         week=week,
@@ -147,6 +169,9 @@ def _load_weekly_report(db: DB, week: str) -> WeeklyReport:
         recommended_albums=recommended_albums,
         unmatched=unmatched,
         summaries=summaries,
+        triage=triage,
+        archived=db.is_archived_week(week),
+        recovery_note=db.queue_recovery_note(week),
     )
 
 
@@ -350,13 +375,46 @@ def _build_source_summaries(
 def _render_markdown(report: WeeklyReport) -> str:
     lines: list[str] = [f"# Peel {report.week}"]
 
-    lines.append("\n## Tracks")
+    if report.recovery_note:
+        lines.append(f"\n> {_md_escape(report.recovery_note)}")
+    if report.archived:
+        lines.append("\n> Semana arquivada: não é uma fila de escuta activa.")
+    lines.append("\n## Triagem")
+    if report.triage is None:
+        lines.append("Snapshot de triagem indisponível; as descobertas abaixo não são a playlist.")
+    else:
+        new = sum(item.is_new for item in report.triage)
+        lines.append(
+            f"{len(report.triage)} faixas · {new} novas · {len(report.triage) - new} pendentes"
+        )
+        for position, item in enumerate(report.triage, 1):
+            state = "nova" if item.is_new else "pendente"
+            lines.append(
+                f"{position}. {_md_escape(item.artist)} — {_md_escape(item.title)} — "
+                f"{state} {item.added_at_week} — {item.source_count} fontes"
+            )
+            lines.append(f"   - Spotify: `{item.spotify_uri}`")
+            lines.append(
+                f"   - Source: {item.source_id}"
+                + (f" — {item.source_url}" if item.source_url else "")
+            )
+
+    lines.append("\n## Tracks / Descobertas da semana (auditoria)")
+    if report.triage is not None:
+        lines.append("Mesma ordem e números da triagem; registos fora da fila aparecem separados.")
     if report.tracks:
+        outside_heading = False
         for track in report.tracks:
+            if report.triage is not None and track.queue_position is None and not outside_heading:
+                lines.append("\n### Fora da triagem (sem número de playlist)")
+                outside_heading = True
             rating = track.feedback[1] if track.feedback else "—"
             artist = _md_escape(track.artist)
             title = _md_escape(track.title)
-            lines.append(f"- {artist} — {title} — {track.source_count} fontes — rating: {rating}")
+            number = f"**#{track.queue_position}** " if track.queue_position is not None else ""
+            lines.append(
+                f"- {number}{artist} — {title} — {track.source_count} fontes — rating: {rating}"
+            )
             lines.append(f"  - Spotify: `{track.spotify_uri}`")
             lines.append("  - Sources:")
             for source_id, source_url in track.sources:
@@ -583,8 +641,35 @@ def _render_html(report: WeeklyReport) -> str:
         _render_html_album(index, album)
         for index, album in enumerate(report.recommended_albums, start=1)
     )
-    track_rows = "\n".join(
-        _render_html_track(index, track) for index, track in enumerate(report.tracks, start=1)
+    discovery_parts: list[str] = []
+    outside_heading = False
+    for index, track in enumerate(report.tracks, 1):
+        position = track.queue_position if report.triage is not None else index
+        if position is None and not outside_heading:
+            discovery_parts.append("<h3>Fora da triagem · sem número de playlist</h3>")
+            outside_heading = True
+        discovery_parts.append(_render_html_track(position, track))
+    discovery_rows = "\n".join(discovery_parts)
+    track_rows = (
+        "\n".join(_render_html_triage(index, item) for index, item in enumerate(report.triage, 1))
+        if report.triage is not None
+        else discovery_rows
+    )
+    track_count = len(report.triage) if report.triage is not None else len(report.tracks)
+    track_heading = "Triagem" if report.triage is not None else "Descobertas (não é a playlist)"
+    triage_summary = (
+        f"{sum(item.is_new for item in report.triage)} novas · "
+        f"{sum(not item.is_new for item in report.triage)} pendentes · ordem confirmada no Spotify"
+        if report.triage is not None
+        else "Sem snapshot histórico da triagem."
+    )
+    discovery_details = (
+        f"<details><summary>Descobertas da semana · {len(report.tracks)} faixas</summary>"
+        '<p class="lede">Mesma ordem e números da triagem; '
+        "registos fora da fila aparecem separados.</p>"
+        f'<div class="tracks">{discovery_rows}</div></details>'
+        if report.triage is not None
+        else ""
     )
     album_context = "\n".join(_render_html_context(album) for album in report.albums)
     unmatched = "\n".join(_render_html_unmatched(item) for item in report.unmatched)
@@ -593,6 +678,9 @@ def _render_html(report: WeeklyReport) -> str:
         "<tr><td>—</td><td>0</td><td>0</td><td>0</td><td>0</td><td>—</td></tr>"
     )
     week = escape(report.week)
+    track_metric = _html_metric(
+        track_count, "faixas na triagem" if report.triage is not None else "descobertas"
+    )
 
     return f"""<!doctype html>
 <html lang="pt">
@@ -608,12 +696,13 @@ def _render_html(report: WeeklyReport) -> str:
     <header>
       <p class="eyebrow mono">Peel / relatório semanal</p>
       <h1>Semana <em>{week}</em></h1>
+      {f'<p class="lede">{escape(report.recovery_note)}</p>' if report.recovery_note else ""}
       <p class="lede">
         Estado local da descoberta editorial: fila canónica, contexto,
         falhas de matching e saúde das fontes.
       </p>
       <div class="metrics">
-        {_html_metric(len(report.tracks), "faixas")}
+        {track_metric}
         {_html_metric(len(report.recommended_albums), "álbuns")}
         {_html_metric(len(report.unmatched), "sem match")}
         {_html_metric(len(report.summaries), "fontes")}
@@ -626,12 +715,15 @@ def _render_html(report: WeeklyReport) -> str:
     </section>
 
     <section>
-      {_html_section_heading("Faixas", len(report.tracks))}
-      <div class="tracks">{track_rows or _html_empty("Sem faixas nesta semana.")}</div>
+      {_html_section_heading(track_heading, track_count)}
+      <p class="lede">{triage_summary}</p>
+      {"<p class='lede'>Semana arquivada; não é a fila activa.</p>" if report.archived else ""}
+      <div class="tracks">{track_rows or _html_empty("Fila confirmada vazia.")}</div>
     </section>
 
     <section>
       {_html_section_heading("Auditoria", len(report.albums) + len(report.unmatched))}
+      {discovery_details}
       <details>
         <summary>Contexto editorial · {len(report.albums)} menções</summary>
         <ul class="detail-list">{album_context or "<li>Sem menções de álbuns.</li>"}</ul>
@@ -643,7 +735,7 @@ def _render_html(report: WeeklyReport) -> str:
     </section>
 
     <section>
-      {_html_section_heading("Resumo por fonte", len(report.summaries))}
+      {_html_section_heading("Resumo por fonte · descobertas", len(report.summaries))}
       <div class="table-wrap">
         <table>
           <thead>
@@ -713,7 +805,7 @@ def _album_html_links(
     return album.sources, album.link_url, editorial
 
 
-def _render_html_track(position: int, track: WeeklyTrack) -> str:
+def _render_html_track(position: int | None, track: WeeklyTrack) -> str:
     source_links = ", ".join(
         _html_link(source_url, source_label(source_id))
         if source_url
@@ -724,13 +816,28 @@ def _render_html_track(position: int, track: WeeklyTrack) -> str:
     spotify_url = _spotify_track_url(track.spotify_uri)
     title = _html_link(spotify_url, track.title) if spotify_url else escape(track.title)
     return f"""
-<article class="track">
-  <span class="number">{position:02d}</span>
+<article class="track" data-discovery-uri="{escape(track.spotify_uri, quote=True)}">
+  <span class="number">{f"{position:02d}" if position is not None else "—"}</span>
   <div>
     <p class="track-title">{title}</p>
     <p class="track-artist">{escape(track.artist)} · <span class="sources">{source_links}</span></p>
   </div>
   <span class="rating {escape(rating)}">{escape(rating)}</span>
+</article>"""
+
+
+def _render_html_triage(position: int, item: ReviewQueueItem) -> str:
+    title = _html_link(_spotify_track_url(item.spotify_uri), item.title)
+    source = _html_link(item.source_url, source_label(item.source_id))
+    state = "nova" if item.is_new else "pendente"
+    return f"""
+<article class="track" data-uri="{escape(item.spotify_uri, quote=True)}">
+  <span class="number">{position:02d}</span>
+  <div>
+    <p class="track-title">{title}</p>
+    <p class="track-artist">{escape(item.artist)} · {source} · {item.source_count} fontes</p>
+    <p class="sources">{state} {escape(item.added_at_week)}</p>
+  </div>
 </article>"""
 
 

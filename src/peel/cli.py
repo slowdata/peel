@@ -39,6 +39,7 @@ from peel.albums import CANONICAL_ALBUM_QUEUE_SINCE, select_album_queue
 from peel.config import settings
 from peel.db import ALBUM_FEEDBACK_RATINGS, DB, FEEDBACK_RATINGS, iso_week
 from peel.doctor_sources import inspect_registered_sources
+from peel.listening import archive_report_files
 from peel.main import (
     MAX_ALBUM_QUEUE_ITEMS,
     MAX_ALBUM_RESOLUTION_CANDIDATES,
@@ -202,6 +203,13 @@ def finalize(
     db = DB(str(_resolve_path(settings.db_path)))
     try:
         db.init_schema()
+        if week is None:
+            target_week = (
+                db.active_review_week(settings.peel_review_playlist_id or settings.peel_playlist_id)
+                or target_week
+            )
+        if db.is_archived_week(target_week):
+            raise typer.BadParameter(f"Semana {target_week} arquivada; finalize cancelado.")
         keepers = db.week_keeper_uris(target_week)
         try:
             sp = SpotifyClient()
@@ -392,9 +400,11 @@ def _active_unrated_triage_items(db: DB) -> list[ReviewQueueItem]:
 def _run_triage_feedback_session(db: DB, *, limit: int) -> None:
     """Sessão interactiva canónica da fila activa de triagem."""
     playlist_id = settings.peel_review_playlist_id or settings.peel_playlist_id
-    if not db.review_queue(playlist_id):
+    queue = db.review_queue(playlist_id)
+    if not queue:
         console.print("Sem snapshot de triagem confirmado. Aguarda a próxima weekly.")
         return
+    positions = {item.spotify_uri: index for index, item in enumerate(queue, 1)}
 
     items = _active_unrated_triage_items(db)
     if not items:
@@ -405,7 +415,8 @@ def _run_triage_feedback_session(db: DB, *, limit: int) -> None:
     saved_count = 0
     for index, item in enumerate(items[:limit], start=1):
         console.print(
-            f"[{index}/{min(len(items), limit)}] {item.artist} — {item.title} "
+            f"#{positions[item.spotify_uri]} · [{index}/{min(len(items), limit)}] "
+            f"{item.artist} — {item.title} "
             f"({source_label(item.source_id)})"
         )
         chosen_rating = _prompt_rating(default="like")
@@ -554,7 +565,9 @@ def albums(
                 console.print(f"A snapshot de álbuns {target_week} está vazia.")
                 return
         else:
-            items = db.latest_album_queue()
+            items = db.latest_album_queue(
+                settings.peel_review_playlist_id or settings.peel_playlist_id
+            )
             if items is None:
                 console.print("Sem fila de álbuns confirmada. Aguarda a próxima weekly.")
                 return
@@ -734,7 +747,9 @@ def albums_feedback(
                 console.print(f"A snapshot de álbuns {target_week} está vazia.")
                 return
         else:
-            items = db.latest_album_queue()
+            items = db.latest_album_queue(
+                settings.peel_review_playlist_id or settings.peel_playlist_id
+            )
             if items is None:
                 console.print("Sem fila de álbuns confirmada. Aguarda a próxima weekly.")
                 return
@@ -803,9 +818,14 @@ def triage(
     try:
         db.init_schema()
         queue_items = db.review_queue(playlist_id)
-        items = [(item, db.feedback_for_track_identity(item.spotify_uri)) for item in queue_items]
+        items = [
+            (position, item, db.feedback_for_track_identity(item.spotify_uri))
+            for position, item in enumerate(queue_items, 1)
+        ]
         if unrated:
-            items = [(item, feedback) for item, feedback in items if feedback is None]
+            items = [
+                (position, item, feedback) for position, item, feedback in items if feedback is None
+            ]
     finally:
         db.close()
 
@@ -822,7 +842,7 @@ def triage(
     table.add_column("Source")
     table.add_column("Artist", style="bold")
     table.add_column("Title")
-    for index, (item, feedback) in enumerate(items, start=1):
+    for index, item, feedback in items:
         if feedback is not None:
             state = f"✓ {feedback[1]}"
         else:
@@ -889,7 +909,7 @@ def triage_bootstrap() -> None:
                 "A playlist tem tracks sem detalhe local; não foi criado snapshot. "
                 "Corre uma weekly ou confirma a DB sincronizada."
             )
-        db.replace_review_queue(playlist_id, items)
+        db.replace_review_queue(playlist_id, items, week=iso_week(datetime.now(UTC)))
     finally:
         db.close()
 
@@ -920,22 +940,29 @@ def report(
     ] = False,
 ) -> None:
     """Gera o relatório semanal sem reescrever snapshots históricos por defeito."""
+    requested_week = _normalize_week_option(week) if week else None
     _auto_sync_state("report")
     db_path = _resolve_path(settings.db_path)
-    target_week = _normalize_week_option(week) if week else iso_week(datetime.now(UTC))
-    target_dir = output_dir or PROJECT_ROOT / "data" / "reports"
-    markdown_path = target_dir / f"{target_week}.md"
-    canonical_week = latest_state_week(db_path)
-    preserve_historical = (
-        markdown_path.exists()
-        and canonical_week is not None
-        and target_week < canonical_week
-        and not refresh_report
-    )
-
     db = DB(str(db_path))
     try:
         db.init_schema()
+        active_week = db.active_review_week(
+            settings.peel_review_playlist_id or settings.peel_playlist_id
+        )
+        target_week = requested_week or active_week or iso_week(datetime.now(UTC))
+        target_dir = output_dir or PROJECT_ROOT / "data" / "reports"
+        markdown_path = target_dir / f"{target_week}.md"
+        canonical_week = active_week or latest_state_week(db_path)
+        preserve_historical = (
+            markdown_path.exists()
+            and canonical_week is not None
+            and target_week != canonical_week
+            and not refresh_report
+        )
+        if db.is_archived_week(target_week):
+            target_dir = target_dir / "archive"
+            markdown_path = target_dir / f"{target_week}.md"
+            preserve_historical = markdown_path.exists() and not refresh_report
         if preserve_historical:
             console.print(
                 f"Report preserved: {markdown_path} (histórico; usa --refresh para substituir)."
@@ -1984,7 +2011,7 @@ def _project_path(value: str) -> Path:
 
 
 def _regenerate_state_reports(db_path: Path) -> list[Path]:
-    """Regenerate only the latest report; older Markdown snapshots are immutable."""
+    """Regenerate the active edition (possibly recovered); leave other weeks frozen."""
     week = latest_state_week(db_path)
     if week is None or week < CANONICAL_ALBUM_QUEUE_SINCE:
         return []
@@ -1993,6 +2020,12 @@ def _regenerate_state_reports(db_path: Path) -> list[Path]:
     db = DB(str(db_path))
     try:
         db.init_schema()
+        week = (
+            db.active_review_week(settings.peel_review_playlist_id or settings.peel_playlist_id)
+            or week
+        )
+        if db.is_archived_week(week):
+            return []
         try:
             return [generate_weekly_report(db, week=week, output_dir=reports_dir)]
         except ValueError as exc:
@@ -2048,6 +2081,13 @@ def _push_state_checkout(
         target_reports.mkdir(parents=True, exist_ok=True)
         for report_path in report_paths:
             shutil.copy2(report_path, target_reports / report_path.name)
+        archived_db = DB(str(cloned_db))
+        try:
+            archive_report_files(archived_db, target_reports)
+        except ValueError as exc:
+            raise StateSyncError(str(exc)) from exc
+        finally:
+            archived_db.close()
 
         for args in (
             ["config", "user.name", "peel-local"],

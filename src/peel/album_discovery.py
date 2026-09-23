@@ -9,6 +9,7 @@ from peel.config import settings
 from peel.db import DB
 from peel.models import Track
 from peel.sources.base import Source
+from peel.sources.fetch import fetch_source
 from peel.sources.registry import active_sources
 
 
@@ -45,7 +46,7 @@ def discover_album_mentions(
     errors: list[str] = []
     for source in album_sources:
         try:
-            items = source.fetch()
+            items = fetch_source(db, source)
         except Exception as exc:  # noqa: BLE001 - aggregate before any DB write
             errors.append(f"{source.id}: {exc}")
             continue

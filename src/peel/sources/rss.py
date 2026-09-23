@@ -44,7 +44,7 @@ class RSSSource(Source):
     """Template opt-in para páginas secundárias, com ``{page}`` e opcionalmente ``{url}``."""
 
     lookback_days: int | None = None
-    """Janela opcional de antiguidade para fontes RSS paginadas."""
+    """Janela de antiguidade (também em feeds de uma só página)."""
 
     max_pages: int = 1
     """Máximo de páginas RSS; o default preserva exactamente um pedido."""
@@ -547,7 +547,7 @@ class PitchforkAlbumReviews(PitchforkBestAlbums):
     name = "Pitchfork Album Reviews"
     url = "https://pitchfork.com/feed/reviews/albums/rss"
     best_url = "https://pitchfork.com/feed/reviews/best/albums/rss"
-    lookback_days = 8
+    lookback_days = 14
 
     def __init__(self) -> None:
         super().__init__()
@@ -589,7 +589,7 @@ class DIYAlbumReviews(RSSSource):
     name = "DIY — Album Reviews"
     url = "https://diymag.com/feed"
     kind = "album"
-    lookback_days = 8
+    lookback_days = 14
 
     def _parse_entry(self, entry: dict) -> Track | None:
         link = str(entry.get("link", "")).strip()
@@ -597,9 +597,7 @@ class DIYAlbumReviews(RSSSource):
             path = urlparse(link).path
         except ValueError:
             return None
-        terms = {
-            str(tag.get("term", "")).strip().casefold() for tag in entry.get("tags", [])
-        }
+        terms = {str(tag.get("term", "")).strip().casefold() for tag in entry.get("tags", [])}
         if not path.startswith("/review/album/") or "album reviews" not in terms:
             return None
         return super()._parse_entry(entry)
@@ -621,7 +619,7 @@ class ClashAlbumReviews(RSSSource):
     name = "Clash — Album Reviews"
     url = "https://www.clashmusic.com/reviews/feed/"
     kind = "album"
-    lookback_days = 8
+    lookback_days = 14
     _NON_ALBUM_PREFIXES = (
         "first take:",
         "film review:",
@@ -659,7 +657,7 @@ class ClashFirstTake(RSSSource):
     name = "Clash — First Take"
     url = "https://www.clashmusic.com/reviews/feed/"
     kind = "track"
-    lookback_days = 8
+    lookback_days = 14
 
     def _parse_entry(self, entry: dict) -> Track | None:
         link = str(entry.get("link", "")).strip()
@@ -668,9 +666,7 @@ class ClashFirstTake(RSSSource):
         except ValueError:
             return None
         title = _strip_html_tags(unescape(str(entry.get("title", "")))).strip()
-        if not path.startswith("/reviews/") or not title.casefold().startswith(
-            "first take:"
-        ):
+        if not path.startswith("/reviews/") or not title.casefold().startswith("first take:"):
             return None
         return super()._parse_entry(entry)
 
@@ -708,8 +704,17 @@ class GuardianMusicAlbums(RSSSource):
         if not title:
             return None
 
+        tags = {str(tag.get("term", "")).casefold() for tag in entry.get("tags", [])}
+        link = str(entry.get("link", "")).casefold()
+        if tags & {"film", "documentary films", "music documentary", "theatre", "books"}:
+            return None
+        if re.search(r"(?:tour-movie|concert-film|documentary|film)-review(?:[/?#]|$)", link):
+            return None
+
         match = re.match(r"^(?P<artist>[^:]+):\s+(?P<album>.+?)\s+review\b", title)
         if not match:
+            return None
+        if re.search(r"\b(?:tour movie|concert film|documentary)\b", title[match.end() :], re.I):
             return None
 
         artist = match.group("artist").strip()
@@ -1106,7 +1111,7 @@ class ConsequenceMusic(RSSSource):
     kind = "track"
     url = "https://consequence.net/category/music/feed/"
     pagination_url_template = "{url}?paged={page}"
-    lookback_days = 8
+    lookback_days = 14
     max_pages = 16
 
     def _parse_entry(self, entry: dict) -> Track | None:

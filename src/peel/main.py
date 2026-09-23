@@ -40,6 +40,7 @@ from peel.matcher import best_match, normalize
 from peel.models import AlbumQueueItem, Track
 from peel.scoring import SourceScore, build_source_scores
 from peel.site_export import make_album_resolver, spotify_album_search_url
+from peel.sources.fetch import fetch_source
 from peel.sources.registry import active_sources
 from peel.spotify_client import SpotifyClient
 from peel.telegram import AlbumPickItem, DigestItem, TriageItem, send_digest
@@ -224,7 +225,7 @@ def run(dry_run: bool = False) -> None:
 
             try:
                 # 1. Fetch da source
-                tracks = source.fetch()
+                tracks = fetch_source(db, source)
                 fresh_tracks = _filter_fresh_source_items(source.id, tracks, datetime.now(UTC))
                 source_stats.fetched_count = len(tracks)
                 source_stats.fresh_count = len(fresh_tracks)
@@ -544,7 +545,7 @@ def run(dry_run: bool = False) -> None:
                 )
         except Exception as e:
             log.exception("playlist.triage_selection_failed", error=str(e))
-            window_uris = []
+            raise RuntimeError("Triagem não seleccionada; entrega cancelada") from e
         try:
             selected_albums = select_album_queue(
                 db,
@@ -568,7 +569,7 @@ def run(dry_run: bool = False) -> None:
             log.exception("albums.recommendations_failed", error=str(e))
 
         if not triage_ready:
-            log.error("playlist.rotation_skipped", reason="triage_selection_failed")
+            raise RuntimeError("Triagem não seleccionada; entrega cancelada")
         elif dry_run:
             log.info(
                 "playlist.rotation_skipped_dry_run",
@@ -579,7 +580,7 @@ def run(dry_run: bool = False) -> None:
         else:
             try:
                 sp.replace_playlist_items(target_playlist, window_uris)
-                db.replace_review_queue(target_playlist, triage_entries)
+                db.replace_review_queue(target_playlist, triage_entries, week=current_week)
                 playlist_updated = True
                 if album_queue_ready:
                     try:
@@ -602,6 +603,7 @@ def run(dry_run: bool = False) -> None:
                     playlist_id=target_playlist,
                     error=str(e),
                 )
+                raise
 
     finally:
         # 4. Telegram só pode anunciar a fila que Spotify confirmou. Dry-run é
@@ -613,7 +615,7 @@ def run(dry_run: bool = False) -> None:
         else:
             try:
                 send_digest(
-                    triage_entries,
+                    db.review_queue(settings.peel_review_playlist_id or settings.peel_playlist_id),
                     # A queue canónica substitui o dump de menções cruas;
                     # Telegram mostra uma única lista, na ordem persistida.
                     [],
@@ -634,7 +636,7 @@ def run(dry_run: bool = False) -> None:
         # 6. Log final com totais
         duration_seconds = (datetime.now(UTC) - start_time).total_seconds()
         log.info(
-            "run.completed",
+            "run.completed" if (playlist_updated or dry_run) else "run.failed",
             sources_processed=sources_processed,
             tracks_added=tracks_added,
             tracks_unmatched=tracks_unmatched,

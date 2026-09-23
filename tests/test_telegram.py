@@ -73,6 +73,9 @@ class TestFormatMessage:
         assert "↻ pendente 2026-W27 ⭐ 🎯" in msg
         assert 'href="https://open.spotify.com/track/new"' in msg
         assert 'href="https://kexp.example/new">Review</a>' in msg
+        lines = [line for line in msg.splitlines() if "https://open.spotify.com/track/" in line]
+        assert lines[0].startswith("1. 🆕")
+        assert lines[1].startswith("2. ↻")
         assert "... e mais" not in msg
 
     def test_format_message_lists_every_triage_track(self) -> None:
@@ -97,6 +100,15 @@ class TestFormatMessage:
         assert "Triagem actual (25)" in msg
         assert "Track 24" in msg
         assert "... e mais" not in msg
+        chunks = _split_message(msg, max_len=500)
+        assert len(chunks) > 1
+        lines = [
+            line
+            for chunk in chunks
+            for line in chunk.splitlines()
+            if "https://open.spotify.com/track/" in line
+        ]
+        assert [line.split(".", 1)[0] for line in lines] == [str(n) for n in range(1, 26)]
 
     def test_format_message_affinity_badge(self, monkeypatch) -> None:
         """Mostra 🎯 quando a afinidade passa o threshold."""

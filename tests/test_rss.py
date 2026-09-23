@@ -223,7 +223,7 @@ class TestSourceKind:
         assert source.kind == "track"
         assert source.url == "https://consequence.net/category/music/feed/"
         assert source._page_url(2) == "https://consequence.net/category/music/feed/?paged=2"
-        assert source.lookback_days == 8
+        assert source.lookback_days == 14
         assert source.max_pages == 16
 
     def test_lineofbestfit_news_kind_is_track(self) -> None:
@@ -681,9 +681,10 @@ class TestDIYAndClashAlbumReviews:
             "diy_album_reviews",
         )
         assert source._parse_entry({**valid, "tags": [{"term": "Reviews"}]}) is None
-        assert source._parse_entry(
-            {**valid, "link": "https://diymag.com/news/westside-cowboy"}
-        ) is None
+        assert (
+            source._parse_entry({**valid, "link": "https://diymag.com/news/westside-cowboy"})
+            is None
+        )
 
     def test_clash_excludes_first_take_and_requires_exact_title(self) -> None:
         source = ClashAlbumReviews()
@@ -700,13 +701,16 @@ class TestDIYAndClashAlbumReviews:
             "What Are The Odds",
             "clash_album_reviews",
         )
-        assert source._parse_entry(
-            {
-                **valid,
-                "title": "First Take: Fontaines D.C. – ‘Marianne’",
-                "link": "https://www.clashmusic.com/reviews/first-take-fontaines-d-c-marianne/",
-            }
-        ) is None
+        assert (
+            source._parse_entry(
+                {
+                    **valid,
+                    "title": "First Take: Fontaines D.C. – ‘Marianne’",
+                    "link": "https://www.clashmusic.com/reviews/first-take-fontaines-d-c-marianne/",
+                }
+            )
+            is None
+        )
         assert source._parse_entry({**valid, "title": "A narrative review headline"}) is None
 
     def test_clash_first_take_routes_single_to_track(self) -> None:
@@ -724,12 +728,15 @@ class TestDIYAndClashAlbumReviews:
             "Marianne",
             "clash_first_take",
         )
-        assert source._parse_entry(
-            {
-                "title": "Jorja Smith – What Are The Odds",
-                "link": "https://www.clashmusic.com/reviews/jorja-smith-what-are-the-odds/",
-            }
-        ) is None
+        assert (
+            source._parse_entry(
+                {
+                    "title": "Jorja Smith – What Are The Odds",
+                    "link": "https://www.clashmusic.com/reviews/jorja-smith-what-are-the-odds/",
+                }
+            )
+            is None
+        )
 
 
 class TestGuardianMusicAlbums:
@@ -746,6 +753,23 @@ class TestGuardianMusicAlbums:
             "link": "https://www.theguardian.com/music/example",
         }
         assert source._extract_artist_title(entry) == ("Kneecap", "Fenian")
+
+    @pytest.mark.parametrize(
+        "entry",
+        [
+            {
+                "title": "Oasis: Don’t Look Back in Anger review – mammoth tour movie",
+                "link": "https://www.theguardian.com/music/2026/sep/05/oasis-tour-movie-review",
+            },
+            {
+                "title": "Oasis: Don’t Look Back in Anger review – a reunion",
+                "tags": [{"term": "Film"}, {"term": "Music documentary"}],
+            },
+            {"title": "Artist: Title review – an excellent documentary"},
+        ],
+    )
+    def test_rejects_film_reviews_in_music_feed(self, entry) -> None:
+        assert GuardianMusicAlbums()._extract_artist_title(entry) is None
 
     def test_ignores_non_album_review_title(self) -> None:
         source = GuardianMusicAlbums()

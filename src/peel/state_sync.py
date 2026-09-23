@@ -308,6 +308,26 @@ def _merge_user_state(
     try:
         with sqlite3.connect(remote_path) as conn:
             conn.execute("ATTACH DATABASE ? AS local_state", (str(local_path),))
+            # A local run/reset is not merely feedback. Overlaying it onto a
+            # different remote weekly would lose discoveries or revive queues.
+            # Stop rather than claiming an incomplete merge is safe.
+            for table in ("review_queue_snapshots", "listening_resets", "queue_recoveries"):
+                local_columns = list(conn.execute(f'PRAGMA local_state.table_info("{table}")'))
+                if not local_columns:
+                    continue
+                local_rows = set(conn.execute(f'SELECT * FROM local_state."{table}"'))
+                remote_columns = list(conn.execute(f'PRAGMA main.table_info("{table}")'))
+                remote_rows = (
+                    set(conn.execute(f'SELECT * FROM main."{table}"')) if remote_columns else set()
+                )
+                unpublished = local_rows - remote_rows
+                if table == "review_queue_snapshots" and changed_since is not None:
+                    unpublished = {row for row in unpublished if row[-1] > changed_since}
+                if unpublished:
+                    raise StateSyncError(
+                        "Há uma run/reset local não publicado e o remoto avançou. "
+                        "Merge automático cancelado para preservar a fila; reconcilia os snapshots."
+                    )
             _merge_feedback_table(conn, "feedback", ("spotify_uri",))
             _merge_feedback_table(conn, "album_feedback", ("artist_key", "album_key"))
             _merge_timestamped_table(

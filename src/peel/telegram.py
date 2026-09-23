@@ -43,6 +43,8 @@ def send_digest(
     playlist_id: str,
     external_entries: list[DigestItem] | None = None,
     album_recommendations: list[AlbumPickItem] | None = None,
+    *,
+    notice: str | None = None,
 ) -> None:
     """Envia digest semanal via Telegram.
 
@@ -67,6 +69,8 @@ def send_digest(
         external_entries or [],
         album_recommendations or [],
     )
+    if notice:
+        text = escape(notice) + "\n\n" + text
     url = f"{API_BASE}/bot{settings.telegram_bot_token}/sendMessage"
 
     # Chunking: semanas grandes podem exceder 4096 chars. Parte em newlines
@@ -98,7 +102,7 @@ def send_digest(
     log.info(
         "telegram.sent",
         tracks=len(new_tracks),
-        albums=len(new_albums),
+        albums=len(album_recommendations or new_albums),
         chunks=sent,
     )
 
@@ -167,8 +171,8 @@ def _format_message(
         pending_count = len(triage_tracks) - new_count
         lines.append(f"<b>🎧 Triagem actual ({len(triage_tracks)})</b>")
         lines.append(f"<i>🆕 {new_count} novas · ↻ {pending_count} pendentes</i>")
-        for item in triage_tracks:
-            lines.append(_format_triage_item(item))
+        for position, item in enumerate(triage_tracks, 1):
+            lines.append(_format_triage_item(item, position))
         lines.append("")
     elif new_tracks:
         lines.append(f"<b>Novas tracks ({len(new_tracks)})</b>")
@@ -273,7 +277,7 @@ def _unpack_item(item: DigestItem) -> tuple[str, str, str, str | None, int, floa
     return source_id, artist, title, url_, 1, None
 
 
-def _format_triage_item(item: TriageItem) -> str:
+def _format_triage_item(item: TriageItem, position: int) -> str:
     label = f"{escape(item.artist)} — {escape(item.title)}"
     status = (
         f"🆕 nova {escape(item.current_week)}"
@@ -286,7 +290,7 @@ def _format_triage_item(item: TriageItem) -> str:
     if item.affinity >= settings.affinity_badge_threshold:
         badges.append("🎯")
     badge_text = " ".join(badges)
-    prefix = f"• {status}" + (f" {badge_text}" if badge_text else "")
+    prefix = f"{position}. {status}" + (f" {badge_text}" if badge_text else "")
     source_label = escape(_friendly(item.source_id))
     if item.source_count > 1:
         source_label = f"{source_label}, {item.source_count} fontes"

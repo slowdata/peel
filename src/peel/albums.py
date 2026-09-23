@@ -133,6 +133,8 @@ def select_album_queue(
     rows = _load_all_album_mentions(db, through_week=current_week)
     adjusted_quality = _album_feedback_quality(db, source_quality)
     ranked = rank_album_recommendations(rows, source_quality=adjusted_quality, limit=len(rows))
+    # Archiving an old listening queue is not rejecting its albums. In
+    # particular, fresh editorial consensus can revive an unrated recent LP.
     eligible = [
         item for item in ranked if db.album_feedback_for_identity(item.artist, item.album) is None
     ]
@@ -272,9 +274,7 @@ def _softly_diverse(
         return []
     remaining = list(candidates)
     selected: list[AlbumRecommendation] = []
-    counts = Counter(
-        _source_family(item.sources[0]) for item in (already or []) if item.sources
-    )
+    counts = Counter(_source_family(item.sources[0]) for item in (already or []) if item.sources)
     while remaining and len(selected) < limit:
 
         def key(item: AlbumRecommendation) -> tuple[float, float, int, float, str, str]:
