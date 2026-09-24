@@ -174,8 +174,8 @@ actualiza a última observação. Menções editoriais novas e consenso entram a
 de pendentes sem feedback; labels Bandcamp são complementares e singles nunca
 são elegíveis. Os artigos `First Take` da Clash são encaminhados separadamente
 para a triagem de faixas. CLI, Telegram e relatório local mostram a snapshot
-completa; a edição pública Sept preserva a mesma ordem, limitada aos primeiros
-sete álbuns.
+completa. A edição pública Sept tem uma selecção explícita separada, com até sete
+álbuns aprovados; não trunca automaticamente os primeiros sete da fila privada.
 
 ```bash
 uv run peel albums                 # fila activa e links de escuta
@@ -204,11 +204,31 @@ uv run peel feedback --history --week 2026-W28
 uv run peel triage feedback        # alias compatível de `peel feedback`
 uv run peel triage --open          # abre Spotify
 uv run peel triage bootstrap       # uma vez: importa a triagem já existente
-uv run peel finalize --week 2026-W29 # após feedback: confirma o Top 7 em Spotify e no site
+uv run peel finalize --selection data/selections/2026-W38.json --dry-run
+uv run peel finalize --selection data/selections/2026-W38.json
+uv run peel site export --week 2026-W38 --weeks 1 --no-resolve-albums
 ```
 
-`finalize` grava o Top 7 e a ordem que Spotify confirmou. Re-exports posteriores
-usam esse snapshot canónico; semanas ainda não finalizadas mantêm o ranking editorial.
+Desde W38, `finalize` exige uma selecção aprovada (`--selection`, exemplo em
+`data/selections/2026-W38.json`), ou reutiliza a edição já finalizada. O plano fixa
+as URIs e identidades dos álbuns **na ordem escolhida**, e os timestamps das duas
+filas ouvidas. Só entram avaliações `love`/`like`, com leitura de feedback por
+identidade; faixas pendentes de semanas anteriores são elegíveis sem alterar a
+sua data de descoberta. Não há preenchimento automático. Correcções de nomes
+para publicação são explícitas no plano, sem reescrever as descobertas.
+
+`--dry-run` valida numa cópia temporária sem sync, migração da DB real, Spotify,
+Telegram ou export. Na execução real, só depois de Spotify confirmar todas as
+URIs e a ordem são gravados atomicamente o snapshot de faixas e a selecção
+pública completa (faixas, álbuns e metadados). O export toca **apenas essa semana**.
+As filas privadas e o feedback permanecem intactos. Re-exports usam o snapshot
+congelado, não novos rankings nem os primeiros sete álbuns privados. Para alterar
+uma edição finalizada é obrigatório um novo plano com `--refresh`.
+
+Sem selecção pública confirmada, semanas desde W38 não são exportadas. O fallback
+editorial só permanece para o formato legado anterior. A primeira publicação
+com o novo schema exige publicar código e estado juntos; o sync recusa merges
+que perderiam a selecção completa numa DB remota ainda sem essa tabela.
 
 A ordem e o número de cada faixa vêm sempre da fila confirmada. `triage --unrated`
 e `feedback` preservam o número original, sem renumerar depois de ocultar avaliações.

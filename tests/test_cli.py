@@ -1086,7 +1086,30 @@ class TestCliSite:
         # Semana corrente precisa de pelo menos uma faixa, senão o export
         # (corretamente) salta semanas vazias e não escreve ficheiro.
         db.record_track("spotify:track:cli1", "stereogum_new_music", "Snag", "Unarrest Me", None)
-        db.replace_album_queue(iso_week(datetime.now(UTC)), [])
+        current_week = iso_week(datetime.now(UTC))
+        db.replace_album_queue(current_week, [])
+        db.upsert_feedback("spotify:track:cli1", "like")
+        db.replace_finalized_week_tracks(
+            current_week,
+            "playlist-id",
+            ["spotify:track:cli1"],
+            selection={
+                "week": current_week,
+                "playlist_id": "playlist-id",
+                "track_uris": ["spotify:track:cli1"],
+                "tracks": [
+                    {
+                        "rank": 1,
+                        "artist": "Snag",
+                        "title": "Unarrest Me",
+                        "source": "Stereogum",
+                        "source_count": 1,
+                        "spotify_url": "https://open.spotify.com/track/cli1",
+                    }
+                ],
+                "albums": [],
+            },
+        )
         db.close()
         site_dir = tmp_path / "peel-sept"
         current_week = iso_week(datetime.now(UTC))

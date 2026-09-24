@@ -36,6 +36,7 @@ log = structlog.get_logger()
 AlbumResolver = Callable[[str, str], str | None]
 AlbumSpotifyMatch = Literal["direct", "resolved", "search"]
 MAX_PUBLISHED_ALBUMS = 7
+CANONICAL_PUBLIC_SELECTION_SINCE = "2026-W38"
 
 
 def make_album_resolver(sp: Any, threshold: int = 85) -> AlbumResolver:
@@ -114,6 +115,12 @@ def export_site(
         if db.is_archived_week(week):
             log.info("site_export.skipped_archived_week", week=week)
             continue
+        if week >= CANONICAL_PUBLIC_SELECTION_SINCE and (
+            not finalized_playlist_id
+            or db.finalized_week_selection(week, finalized_playlist_id) is None
+        ):
+            log.info("site_export.skipped_unfinalized_week", week=week)
+            continue
         path = output_dir / f"{week}.json"
         existing_albums = _existing_albums(path) if path.exists() else None
         has_album_snapshot = db.album_queue(week) is not None
@@ -164,9 +171,9 @@ def build_site_week_payload(
 ) -> dict[str, Any]:
     """Constrói o JSON de uma semana seguindo exactamente o contrato do site.
 
-    Sem snapshot finalizado mantém o ranking editorial legacy. Quando existe,
-    usa as URIs e a ordem que Spotify confirmou, mesmo que scores/feedback
-    mudem numa re-exportação posterior.
+    Desde W38 exige a selecção pública completa e congelada. Em semanas
+    legadas, usa as URIs finalizadas quando existem; o fallback editorial
+    anterior só permanece para essas semanas.
     """
     if db.is_archived_week(week):
         raise ValueError(f"Semana {week} arquivada; publicação cancelada.")
@@ -177,16 +184,28 @@ def build_site_week_payload(
     finalized_uris = (
         db.finalized_week_uris(week, finalized_playlist_key) if finalized_playlist_key else None
     )
-    tracks = (
-        _export_finalized_tracks(db, week, finalized_uris, quality)
-        if finalized_uris is not None
-        else _export_tracks(db, week, quality)
+    selection = (
+        db.finalized_week_selection(week, finalized_playlist_key)
+        if finalized_playlist_key
+        else None
     )
-    albums = (
-        preserved_albums
-        if preserved_albums is not None
-        else _export_albums(db, week, quality, album_resolver=album_resolver)
-    )
+    if week >= CANONICAL_PUBLIC_SELECTION_SINCE and selection is None:
+        raise ValueError(f"Sem selecção pública confirmada para {week}; export cancelado.")
+    if selection is not None:
+        if selection["track_uris"] != finalized_uris:
+            raise ValueError("Selecção pública e snapshot Spotify divergentes")
+        tracks, albums = selection["tracks"], selection["albums"]
+    else:
+        tracks = (
+            _export_finalized_tracks(db, week, finalized_uris, quality)
+            if finalized_uris is not None
+            else _export_tracks(db, week, quality)
+        )
+        albums = (
+            preserved_albums
+            if preserved_albums is not None
+            else _export_albums(db, week, quality, album_resolver=album_resolver)
+        )
     sources = _sources_for_payload(tracks, albums)
     start = _week_start(week)
     end = start + timedelta(days=6)

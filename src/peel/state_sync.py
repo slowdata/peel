@@ -328,6 +328,17 @@ def _merge_user_state(
                         "Há uma run/reset local não publicado e o remoto avançou. "
                         "Merge automático cancelado para preservar a fila; reconcilia os snapshots."
                     )
+            if list(conn.execute('PRAGMA local_state.table_info("finalized_week_selections")')):
+                has_selection = conn.execute(
+                    "SELECT 1 FROM local_state.finalized_week_selections LIMIT 1"
+                ).fetchone()
+                if has_selection and not list(
+                    conn.execute('PRAGMA main.table_info("finalized_week_selections")')
+                ):
+                    raise StateSyncError(
+                        "Selecção pública local exige o novo schema remoto; "
+                        "publica código e estado juntos, sem perder a selecção."
+                    )
             _merge_feedback_table(conn, "feedback", ("spotify_uri",))
             _merge_feedback_table(conn, "album_feedback", ("artist_key", "album_key"))
             _merge_timestamped_table(
@@ -387,6 +398,13 @@ def _merge_user_state(
                     _copy_table_where(
                         conn,
                         "finalized_week_tracks",
+                        mode="REPLACE",
+                        where="week = ? AND playlist_id = ?",
+                        params=(week, playlist_id),
+                    )
+                    _copy_table_where(
+                        conn,
+                        "finalized_week_selections",
                         mode="REPLACE",
                         where="week = ? AND playlist_id = ?",
                         params=(week, playlist_id),

@@ -52,6 +52,7 @@ from peel.matcher import normalize
 from peel.models import ReviewQueueItem
 from peel.musicbrainz import fetch_musicbrainz_artist_genres
 from peel.playlists import canonical_playlist_id
+from peel.publication import PublicationPlan, prepare_publication
 from peel.release_radar import (
     DEFAULT_RELEASE_RADAR_URL,
     ReleaseRadarTrack,
@@ -61,7 +62,7 @@ from peel.release_radar import (
 )
 from peel.report import generate_weekly_html_report, generate_weekly_report
 from peel.scoring import SourceScore, build_source_scores
-from peel.site_export import export_site, make_album_resolver
+from peel.site_export import CANONICAL_PUBLIC_SELECTION_SINCE, export_site, make_album_resolver
 from peel.sources.registry import source_label
 from peel.spotify_client import SpotifyClient, SpotifyReauthRequired
 from peel.state_sync import (
@@ -195,12 +196,48 @@ def finalize(
     export: Annotated[
         bool, typer.Option("--export/--no-export", help="Exportar o site após finalizar")
     ] = True,
+    selection: Annotated[
+        Path | None, typer.Option("--selection", help="JSON da selecção aprovada")
+    ] = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Validar sem quaisquer escritas externas")
+    ] = False,
+    refresh: Annotated[
+        bool, typer.Option("--refresh", help="Substituir explicitamente uma edição finalizada")
+    ] = False,
 ) -> None:
-    """Publica a semana: keepers (love/like) da triagem → playlist Weekly + export do site."""
-    _auto_sync_state("finalize")
+    """Finaliza apenas a semana escolhida, com selecção explícita desde W38."""
+    plan = None
+    if selection is not None:
+        try:
+            plan = PublicationPlan.model_validate_json(selection.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise typer.BadParameter(str(exc), param_hint="--selection") from exc
+        if week and _normalize_week_option(week) != plan.week:
+            raise typer.BadParameter("Semana do plano difere de --week")
+        week = plan.week
     target_week = _normalize_week_option(week) if week else iso_week(datetime.now(UTC))
     snapshot_playlist_id = canonical_playlist_id(settings.peel_playlist_id)
-    db = DB(str(_resolve_path(settings.db_path)))
+    review_id = settings.peel_review_playlist_id or settings.peel_playlist_id
+    if plan and (
+        canonical_playlist_id(plan.playlist_id) != snapshot_playlist_id
+        or canonical_playlist_id(plan.review_playlist_id) != canonical_playlist_id(review_id)
+        or canonical_playlist_id(review_id) == snapshot_playlist_id
+    ):
+        raise typer.BadParameter("Playlists do plano não correspondem à configuração")
+    if not dry_run:
+        _auto_sync_state("finalize")
+    temporary = tempfile.TemporaryDirectory(prefix="peel-finalize-") if dry_run else None
+    db_path = _resolve_path(settings.db_path)
+    if temporary is not None:
+        copied = Path(temporary.name) / "peel.db"
+        with (
+            sqlite3.connect(f"{db_path.as_uri()}?mode=ro", uri=True) as source,
+            sqlite3.connect(copied) as dest,
+        ):
+            source.backup(dest)
+        db_path = copied
+    db = DB(str(db_path))
     try:
         db.init_schema()
         if week is None:
@@ -210,13 +247,42 @@ def finalize(
             )
         if db.is_archived_week(target_week):
             raise typer.BadParameter(f"Semana {target_week} arquivada; finalize cancelado.")
-        keepers = db.week_keeper_uris(target_week)
+        saved = db.finalized_week_selection(target_week, snapshot_playlist_id)
+        selected = saved
+        if plan is not None:
+            if saved and saved["plan"] != plan.model_dump(mode="json") and not refresh:
+                raise typer.BadParameter(
+                    "Edição já finalizada; usa --refresh para mudar a selecção"
+                )
+            if not saved or refresh:
+                try:
+                    selected = prepare_publication(db, plan)
+                except ValueError as exc:
+                    raise typer.BadParameter(str(exc), param_hint="--selection") from exc
+        if target_week >= CANONICAL_PUBLIC_SELECTION_SINCE and selected is None:
+            raise typer.BadParameter("Indica --selection com as faixas e álbuns aprovados")
+        previous = db.finalized_week_uris(target_week, snapshot_playlist_id)
+        keepers = (
+            selected["track_uris"]
+            if selected is not None
+            else (
+                previous
+                if previous is not None and not refresh
+                else db.week_keeper_uris(target_week)
+            )
+        )
+        if dry_run:
+            console.print_json(data=selected or {"week": target_week, "track_uris": keepers})
+            console.print("Dry-run: sem alterações à DB, Spotify, Telegram ou site.")
+            return
         try:
             sp = SpotifyClient()
         except SpotifyReauthRequired as exc:
             _abort_spotify_reauth(exc)
         sp.replace_playlist_items(settings.peel_playlist_id, keepers)
-        db.replace_finalized_week_tracks(target_week, snapshot_playlist_id, keepers)
+        db.replace_finalized_week_tracks(
+            target_week, snapshot_playlist_id, keepers, selection=selected
+        )
         console.print(
             f"Finalized {target_week}: {len(keepers)} keepers → {settings.peel_playlist_id}"
         )
@@ -225,7 +291,7 @@ def finalize(
                 export_site(
                     db,
                     _resolve_path(str(site_dir)),
-                    weeks=2,
+                    weeks=1,
                     playlist_id=snapshot_playlist_id,
                     current_week=target_week,
                     album_resolver=make_album_resolver(sp),
@@ -233,13 +299,15 @@ def finalize(
             except Exception:
                 console.print(
                     "Export falhou depois da confirmação Spotify; o snapshot ficou guardado. "
-                    "Corre uv run peel site export para repetir."
+                    f"Corre uv run peel site export --week {target_week} --weeks 1 para repetir."
                 )
                 raise
             console.print("Site exported.")
         console.print("Corre uv run peel sync push.")
     finally:
         db.close()
+        if temporary is not None:
+            temporary.cleanup()
 
 
 @app.command()
@@ -1237,6 +1305,7 @@ def site_export(
         typer.Option("--site-dir", help="Diretório do site Astro peel-sept"),
     ] = Path("../peel-sept"),
     weeks: Annotated[int, typer.Option("--weeks", min=1, help="Nº de semanas a exportar")] = 2,
+    week: Annotated[str | None, typer.Option("--week", help="Última semana do intervalo")] = None,
     playlist_id: Annotated[
         str | None,
         typer.Option("--playlist-id", help="ID/URI/URL da playlist Spotify"),
@@ -1250,6 +1319,7 @@ def site_export(
     ] = True,
 ) -> None:
     """Exporta JSON semanal para o site Astro peel-sept."""
+    target_week = _normalize_week_option(week) if week else None
     _auto_sync_state("site export")
     album_resolver = None
     if resolve_albums:
@@ -1269,11 +1339,14 @@ def site_export(
             target_site_dir,
             weeks=weeks,
             playlist_id=playlist_id or settings.peel_playlist_id,
+            current_week=target_week,
             album_resolver=album_resolver,
         )
     finally:
         db.close()
 
+    if not exported:
+        console.print("Sem semanas confirmadas para exportar.")
     for item in exported:
         console.print(f"Exported {item.week}: {item.path}")
 

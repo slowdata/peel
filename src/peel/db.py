@@ -494,6 +494,18 @@ class DB:
             """
         )
 
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS finalized_week_selections (
+                week TEXT NOT NULL,
+                playlist_id TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                confirmed_at TEXT NOT NULL,
+                PRIMARY KEY (week, playlist_id)
+            )
+            """
+        )
+
         # Fila canónica de álbuns. Ao contrário de ``album_mentions``, estas
         # linhas são uma decisão semanal já entregue: ordem e links não podem
         # voltar a depender de ranking, rede ou feeds num re-export.
@@ -1156,6 +1168,8 @@ class DB:
         week: str,
         playlist_id: str,
         spotify_uris: list[str],
+        *,
+        selection: dict | None = None,
     ) -> None:
         """Persiste a ordem exacta que Spotify confirmou para uma semana.
 
@@ -1169,37 +1183,67 @@ class DB:
         if len(set(spotify_uris)) != len(spotify_uris):
             raise ValueError("finalized week snapshot cannot contain duplicate Spotify URIs")
 
+        _validate_iso_week(week)
+        if selection is None and self.finalized_week_selection(week, playlist_key) is not None:
+            raise ValueError("Não substituir apenas URIs de uma selecção pública completa")
+        if selection is not None and (
+            selection.get("week") != week
+            or selection.get("playlist_id") != playlist_key
+            or selection.get("track_uris") != spotify_uris
+            or [item.get("spotify_url") for item in selection.get("tracks", [])]
+            != [
+                uri.replace("spotify:track:", "https://open.spotify.com/track/")
+                for uri in spotify_uris
+            ]
+            or [item.get("rank") for item in selection.get("tracks", [])]
+            != list(range(1, len(spotify_uris) + 1))
+            or len(selection.get("albums", [])) > 7
+            or [item.get("rank") for item in selection.get("albums", [])]
+            != list(range(1, len(selection.get("albums", [])) + 1))
+        ):
+            raise ValueError("Selecção pública não corresponde ao snapshot Spotify")
         now = datetime.now(UTC).isoformat()
-        self.conn.execute(
-            """
-            INSERT INTO finalized_weeks (week, playlist_id, finalized_at)
-            VALUES (?, ?, ?)
-            ON CONFLICT(week, playlist_id) DO UPDATE SET finalized_at = excluded.finalized_at
-            """,
-            (week, playlist_key, now),
-        )
-        self.conn.execute(
-            "DELETE FROM finalized_week_tracks WHERE week = ? AND playlist_id = ?",
-            (week, playlist_key),
-        )
-        self.conn.executemany(
-            """
-            INSERT INTO finalized_week_tracks
-            (week, playlist_id, position, spotify_uri, finalized_at)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            [
-                (week, playlist_key, position, spotify_uri, now)
-                for position, spotify_uri in enumerate(spotify_uris, start=1)
-            ],
-        )
-        self.conn.commit()
+        with self.conn:
+            self.conn.execute(
+                """
+                INSERT INTO finalized_weeks (week, playlist_id, finalized_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(week, playlist_id) DO UPDATE SET finalized_at = excluded.finalized_at
+                """,
+                (week, playlist_key, now),
+            )
+            self.conn.execute(
+                "DELETE FROM finalized_week_tracks WHERE week = ? AND playlist_id = ?",
+                (week, playlist_key),
+            )
+            self.conn.executemany(
+                """
+                INSERT INTO finalized_week_tracks
+                (week, playlist_id, position, spotify_uri, finalized_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                [(week, playlist_key, n, uri, now) for n, uri in enumerate(spotify_uris, 1)],
+            )
+            if selection is not None:
+                self.conn.execute(
+                    "INSERT INTO finalized_week_selections VALUES (?, ?, ?, ?) "
+                    "ON CONFLICT(week, playlist_id) DO UPDATE SET "
+                    "payload_json=excluded.payload_json, confirmed_at=excluded.confirmed_at",
+                    (week, playlist_key, json.dumps(selection, ensure_ascii=False), now),
+                )
         log.info(
             "db.finalized_week_tracks_replaced",
             week=week,
             playlist_id=playlist_key,
             count=len(spotify_uris),
         )
+
+    def finalized_week_selection(self, week: str, playlist_id: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT payload_json FROM finalized_week_selections WHERE week=? AND playlist_id=?",
+            (week, canonical_playlist_id(playlist_id)),
+        ).fetchone()
+        return json.loads(row[0]) if row else None
 
     def finalized_week_uris(self, week: str, playlist_id: str) -> list[str] | None:
         """Lê o snapshot finalizado, ou ``None`` se a semana ainda é legacy."""

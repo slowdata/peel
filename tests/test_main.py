@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from selectolax.parser import HTMLParser
 
 from peel.affinity import build_affinity_profile
 from peel.albums import AlbumRecommendation
@@ -22,6 +23,7 @@ from peel.main import (
     slots_for_source,
 )
 from peel.models import AlbumQueueItem, Track
+from peel.report import build_weekly_html_report
 from peel.scoring import SourceScore
 from peel.site_export import build_site_week_payload
 from peel.sources.bandcamp import BandcampLabel
@@ -347,7 +349,7 @@ class TestMainIntegration:
         assert digest.call_args.kwargs["album_recommendations"] == []
         db.close()
 
-    def test_album_snapshot_order_is_shared_by_db_telegram_and_site(
+    def test_private_album_order_is_shared_by_db_telegram_and_report(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         db_path, week = _configure_album_pipeline_db(tmp_path, monkeypatch)
@@ -367,13 +369,15 @@ class TestMainIntegration:
         persisted = db.album_queue(week)
         assert persisted == expected
         telegram_order = [item[1] for item in digest.call_args.kwargs["album_recommendations"]]
-        payload = build_site_week_payload(db, week, None, source_quality={})
+        report = HTMLParser(build_weekly_html_report(db, week))
         assert (
             [item.album for item in persisted or []]
             == telegram_order
-            == [album["title"] for album in payload["albums"]]
+            == [node.text() for node in report.css("article.album h3")]
             == ["Second", "First"]
         )
+        with pytest.raises(ValueError, match="Sem selecção pública"):
+            build_site_week_payload(db, week, None, source_quality={})
         db.close()
 
     def test_dry_run_never_updates_playlist_or_sends_telegram(
