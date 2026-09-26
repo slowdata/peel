@@ -1,0 +1,44 @@
+name: test suite
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: tests (${{ matrix.rendering }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        rendering: [plain, ansi]
+    env:
+      UV_PYTHON: "3.11"
+      SPOTIFY_CLIENT_ID: dummy
+      SPOTIFY_CLIENT_SECRET: dummy
+      SPOTIFY_REFRESH_TOKEN: dummy
+      PEEL_PLAYLIST_ID: dummy
+      PEEL_REVIEW_PLAYLIST_ID: dummy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - name: install locked dependencies
+        run: uv sync --locked --all-groups
+      - name: lint
+        run: |
+          uv run --frozen ruff check src tests
+          uv run --frozen ruff format --check src tests
+      - name: run full suite without colour
+        if: matrix.rendering == 'plain'
+        env:
+          NO_COLOR: "1"
+          _TYPER_FORCE_DISABLE_TERMINAL: "1"
+        run: uv run --frozen pytest
+      - name: run full suite with forced ANSI colour
+        if: matrix.rendering == 'ansi'
+        env:
+          FORCE_COLOR: "1"
+        run: env -u NO_COLOR -u _TYPER_FORCE_DISABLE_TERMINAL uv run --frozen pytest

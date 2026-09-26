@@ -62,7 +62,20 @@ Sem algoritmos, sem bolhas — apenas bom gosto humano, entregue.
 
 O projeto corre automaticamente à sexta-feira (18:00 UTC) via [GitHub Actions](/.github/workflows/weekly.yml).
 
-Para dispatch manual (testes):
+Cada push para `main` e cada PR executam a suite completa, com e sem cores ANSI,
+através de `tests.yml`. A execução semanal usa exactamente esse mesmo gate;
+só depois dos dois modos passarem pode alterar a triagem e enviar o digest.
+O CI de push/PR usa credenciais fictícias e não corre o pipeline musical.
+Validação local não basta: confirmar CI verde no commit publicado antes de
+declarar a aplicação pronta ou fazer dispatch de recuperação.
+
+Se os testes ou a execução semanal falharem, um job independente envia para o
+Telegram: **«Peel: a execução semanal falhou.»**, seguido do link da execução.
+O alerta não depende de instalar o Peel, não inclui logs/secrets e não repete
+um envio de resultado incerto. Se o próprio Telegram estiver indisponível,
+a falha do alerta fica visível no GitHub; não há garantia de entrega nesse caso.
+
+Para dispatch manual (execução real, com Spotify e Telegram):
 ```bash
 # Na página de Actions do repo, clica em "weekly peel run" → "Run workflow"
 ```
@@ -83,13 +96,15 @@ peel/
 │   └── sources/
 │       ├── base.py         # Interface Source (ABC)
 │       └── rss.py          # RSSSource + PitchforkBNT
-├── tests/                  # Suite de testes (62 testes)
+├── tests/                  # Suite de testes
 ├── scripts/
 │   └── bootstrap_refresh_token.py  # Geração inicial do refresh token
 ├── data/
 │   └── peel.db            # SQLite state (tracks vistas, histórico)
 └── .github/workflows/
-    └── weekly.yml         # GitHub Actions: cron + manual dispatch
+    ├── ci.yml             # Testes em push/PR, sem entregas externas
+    ├── tests.yml          # Gate partilhado: suite completa plain/ANSI
+    └── weekly.yml         # Cron + manual dispatch + alerta de falha
 ```
 
 ## Development

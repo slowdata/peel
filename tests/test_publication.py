@@ -5,6 +5,8 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from click import unstyle
+from typer import rich_utils
 from typer.testing import CliRunner
 
 from peel import cli
@@ -250,20 +252,30 @@ def test_cli_only_exports_selected_week_after_spotify_confirmation(sample, monke
         assert len(db.album_queue(plan.week)) == 11
 
 
-def test_cli_rejects_missing_plan_and_changed_finalized_choices(sample, monkeypatch):
+@pytest.mark.parametrize("force_color", [False, True], ids=["plain", "ansi"])
+def test_cli_rejects_missing_plan_and_changed_finalized_choices(sample, monkeypatch, force_color):
     db, plan, tmp = sample
     client = MagicMock()
     monkeypatch.setattr(cli, "_auto_sync_state", lambda _: None)
     monkeypatch.setattr(cli, "SpotifyClient", client)
-    result = CliRunner().invoke(cli.app, ["finalize", "--week", plan.week])
-    assert result.exit_code != 0 and "--selection" in result.output
+    # Typer enables Rich colour on GitHub Actions even without a TTY.
+    # Exercise that rendering locally, not just the runner's default mode.
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setattr(rich_utils, "FORCE_TERMINAL", force_color)
+    result = CliRunner().invoke(cli.app, ["finalize", "--week", plan.week], color=force_color)
+    assert result.exit_code == 2
+    assert ("\x1b[" in result.output) is force_color
+    assert "Indica --selection" in unstyle(result.output)
+    assert db.finalized_week_uris(plan.week, "public") is None
     payload = prepare_publication(db, plan)
     db.replace_finalized_week_tracks(plan.week, "public", plan.tracks, selection=payload)
     plan.tracks.reverse()
     path = tmp / "changed.json"
     path.write_text(plan.model_dump_json())
-    result = CliRunner().invoke(cli.app, ["finalize", "--selection", str(path)])
-    assert result.exit_code != 0 and "--refresh" in result.output
+    result = CliRunner().invoke(cli.app, ["finalize", "--selection", str(path)], color=force_color)
+    assert result.exit_code == 2
+    assert ("\x1b[" in result.output) is force_color
+    assert "usa --refresh" in unstyle(result.output)
     client.assert_not_called()
     assert db.finalized_week_selection(plan.week, "public") == payload
 

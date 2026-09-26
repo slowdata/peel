@@ -5,6 +5,8 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from click import unstyle
+from rich.console import Console
 
 from peel.config import settings
 from peel.db import DB
@@ -151,7 +153,8 @@ def test_active_week_can_be_recovered_before_latest_discovery(db, monkeypatch):
     assert db.active_review_week("review") == "2026-W37"
 
 
-def test_default_human_commands_follow_recovered_week(db, monkeypatch, tmp_path):
+@pytest.mark.parametrize("force_color", [False, True], ids=["plain", "ansi"])
+def test_default_human_commands_follow_recovered_week(db, monkeypatch, tmp_path, force_color):
     from typer.testing import CliRunner
 
     from peel import cli
@@ -161,6 +164,9 @@ def test_default_human_commands_follow_recovered_week(db, monkeypatch, tmp_path)
     monkeypatch.setattr(settings, "peel_review_playlist_id", "review")
     monkeypatch.setattr(settings, "peel_playlist_id", "weekly")
     monkeypatch.setattr(cli, "_auto_sync_state", lambda _: None)
+    monkeypatch.setattr(
+        cli, "console", Console(width=160, force_terminal=force_color, no_color=False)
+    )
     for week in ("2026-W37", "2026-W36"):
         db.replace_album_queue(
             week,
@@ -201,11 +207,12 @@ def test_default_human_commands_follow_recovered_week(db, monkeypatch, tmp_path)
     runner = CliRunner()
     result = runner.invoke(cli.app, ["albums"])
     assert result.exit_code == 0, result.output
-    assert "Album 2026-W36" in result.output
-    assert "Album 2026-W37" not in result.output
+    assert "Album 2026-W36" in unstyle(result.output)
+    assert "Album 2026-W37" not in unstyle(result.output)
     result = runner.invoke(cli.app, ["albums", "feedback"], input="q\n")
     assert result.exit_code == 0, result.output
-    assert "Artist 2026-W36" in result.output
+    assert ("\x1b[" in result.output) is force_color
+    assert "Artist 2026-W36" in unstyle(result.output)
     result = runner.invoke(cli.app, ["report", "--html", "--output-dir", str(tmp_path / "reports")])
     assert result.exit_code == 0, result.output
     assert (tmp_path / "reports/2026-W36.md").exists()

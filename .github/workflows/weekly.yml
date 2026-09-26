@@ -8,10 +8,23 @@ on:
   # Dispatch manual para testes durante desenvolvimento
   workflow_dispatch:
 
+# Não sobrepor escritas na triagem nem entregas Telegram.
+concurrency:
+  group: peel-weekly
+  cancel-in-progress: false
+
 jobs:
+  tests:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/tests.yml
+
   run:
+    needs: tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      UV_PYTHON: "3.11"
     permissions:
       contents: write
 
@@ -24,24 +37,9 @@ jobs:
 
       - name: setup uv
         uses: astral-sh/setup-uv@v3
-        with:
-          python-version: "3.11"
 
       - name: install dependencies
-        run: uv sync --all-groups
-
-      - name: run tests
-        # Dummy env vars: config.py instancia Settings() a nível de módulo e
-        # valida os secrets ao importar. Testes não precisam dos valores reais
-        # (tudo está mockado), mas precisam que o import não rebente.
-        env:
-          SPOTIFY_CLIENT_ID: dummy
-          SPOTIFY_CLIENT_SECRET: dummy
-          SPOTIFY_REFRESH_TOKEN: dummy
-          PEEL_PLAYLIST_ID: dummy
-          PEEL_REVIEW_PLAYLIST_ID: dummy
-        run: uv run pytest
-        # Se os testes falharem, o workflow para aqui (não corre peel)
+        run: uv sync --locked --all-groups
 
       - name: run peel
         run: uv run peel run
@@ -75,3 +73,45 @@ jobs:
           # Só comita se houver mudanças (não falha se DB não mudou)
           git diff --cached --quiet || git commit -m "chore: weekly peel state update"
           git push
+
+  failure-alert:
+    needs: [tests, run]
+    if: ${{ always() && (needs.tests.result == 'failure' || needs.run.result == 'failure') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      # Sem checkout, dependências do Peel ou retries de envio.
+      - name: notify Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.parse
+          import urllib.request
+
+          token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+          chat = os.environ.get("TELEGRAM_CHAT_ID", "")
+          if not token or not chat:
+              sys.exit("Alerta não enviado: configuração Telegram em falta.")
+          text = "Peel: a execução semanal falhou.\n" + os.environ["RUN_URL"]
+          request = urllib.request.Request(
+              f"https://api.telegram.org/bot{token}/sendMessage",
+              data=urllib.parse.urlencode({"chat_id": chat, "text": text}).encode(),
+              method="POST",
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  result = json.load(response)
+              if not result.get("ok"):
+                  raise ValueError("Telegram rejeitou o alerta")
+          except Exception:
+              # Não imprimir a excepção: pode conter o token no URL.
+              sys.exit("Não foi possível confirmar o alerta Telegram; envio não repetido.")
+          print("Alerta de falha enviado.")
+          PY
