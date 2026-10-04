@@ -908,6 +908,7 @@ def albums_refresh(
             target_week,
             limit=MAX_ALBUM_RESOLUTION_CANDIDATES,
             source_quality=quality,
+            affinity=build_affinity_profile(db).score,
         )
         if not selected and db.album_queue(target_week) is not None:
             console.print("Sem álbuns elegíveis; snapshot existente preservada.")

@@ -594,3 +594,81 @@ def test_album_snapshot_freezes_site_links(tmp_path: Path) -> None:
     assert payload["albums"][0]["listen_url"] == "https://open.spotify.com/album/frozen"
     assert payload["albums"][0]["link"] == "https://review.example/a"
     db.close()
+
+
+def _fresh_mentions(db: DB, rows: list[tuple[str, str, str, str]]) -> None:
+    for artist, album, source, seen_at in rows:
+        db._record_album_mention(
+            artist=artist,
+            album=album,
+            source_id=source,
+            source_url="https://review.example/album",
+            spotify_album_uri=None,
+            seen_at=seen_at,
+            added_at_week="2026-W29",
+        )
+    db.conn.commit()
+
+
+def test_affinity_reorders_within_consensus_but_never_beats_or_drops(tmp_path: Path) -> None:
+    db = DB(str(tmp_path / "peel.db"))
+    db.init_schema()
+    _fresh_mentions(
+        db,
+        [
+            ("Consensus", "Agreed", "guardian_music_albums", "2026-07-14T09:00:00+00:00"),
+            ("Consensus", "Agreed", "clash_album_reviews", "2026-07-14T09:00:00+00:00"),
+            ("Unknown", "Newest", "diy_album_reviews", "2026-07-16T10:00:00+00:00"),
+            ("Loved", "Older", "diy_album_reviews", "2026-07-14T10:00:00+00:00"),
+            ("Rejected", "Middle", "diy_album_reviews", "2026-07-15T10:00:00+00:00"),
+        ],
+    )
+    scores = {"Loved": 0.73, "Rejected": 0.38}
+    selected = select_album_queue(
+        db, "2026-W29", limit=7, affinity=lambda artist: scores.get(artist, 0.5)
+    )
+    assert [item.artist for item, _ in selected] == ["Consensus", "Loved", "Unknown", "Rejected"]
+    neutral = select_album_queue(db, "2026-W29", limit=7)
+    assert [item.artist for item, _ in neutral] == ["Consensus", "Unknown", "Rejected", "Loved"]
+    db.close()
+
+
+@pytest.mark.parametrize(
+    ("artist", "title", "excluded"),
+    [
+        ("Various Artists", "Synthetic Water Music", True),
+        ("Los Retros", "Early Days (2016-2019)", True),
+        ("This Heat", "Made Available: John Peel Sessions", True),
+        ("Mermaid Chunky", "chaperone (Peach Remix)", True),
+        ("Someone", "Greatest Hits", True),
+        # Genuine new releases that have been liked must stay eligible.
+        ("SPIKE FUCK", "Live from Underground", False),
+        ("Alex G", "Teenage Sex and Death at Camp Miasma (Original Motion Picture Score)", False),
+        ("Marisa Anderson", "The Anthology of UnAmerican Folk Music", False),
+        ("Jungle", "Sunshine", False),
+    ],
+)
+def test_compilations_are_not_new_albums(artist: str, title: str, excluded: bool) -> None:
+    from peel.albums import is_compilation_release
+
+    assert is_compilation_release(artist, title) is excluded
+
+
+def test_compilations_never_enter_the_queue(tmp_path: Path) -> None:
+    db = DB(str(tmp_path / "peel.db"))
+    db.init_schema()
+    _fresh_mentions(
+        db,
+        [
+            ("Various Artists", "Label Sampler", "diy_album_reviews", "2026-07-14T10:00:00+00:00"),
+            ("Band", "Real Album", "diy_album_reviews", "2026-07-14T09:00:00+00:00"),
+        ],
+    )
+    assert [item.album for item, _ in select_album_queue(db, "2026-W29")] == ["Real Album"]
+    db.close()
+
+
+def test_default_private_album_queue_is_seven() -> None:
+    from peel.config import Settings
+
+    assert Settings.model_fields["peel_max_albums_to_review"].default == 7

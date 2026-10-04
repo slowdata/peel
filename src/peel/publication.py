@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from peel.albums import is_archival_album_title
+from peel.albums import is_archival_album_title, is_compilation_release
 from peel.db import DB
 from peel.playlists import canonical_playlist_id
 from peel.site_export import _snapshot_album_to_json, spotify_track_url
@@ -149,6 +149,7 @@ def album_candidates(db: DB, week: str) -> list[Candidate]:
             feedback
             and feedback[1] in _POSITIVE
             and not is_archival_album_title(item.album)
+            and not is_compilation_release(item.artist, item.album)
             and is_direct_album_link(item.listen_url, item.listen_kind)
         ):
             key = (item.artist_key, item.album_key)

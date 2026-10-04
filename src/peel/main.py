@@ -561,6 +561,7 @@ def run(dry_run: bool = False) -> None:
                 current_week,
                 limit=MAX_ALBUM_RESOLUTION_CANDIDATES,
                 source_quality=source_quality,
+                affinity=affinity_profile.score,
             )
             # Resolve uma pool limitada para poder substituir candidatos sem
             # link directo; nunca escala para todo o universo de menções.

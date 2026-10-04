@@ -48,10 +48,11 @@ class Settings(BaseSettings):
         default=30,
         alias="PEEL_MAX_SOURCE_ITEM_AGE_DAYS",
     )
-    # Fila privada para ouvir e avaliar. Pode ser maior que os sete álbuns
-    # publicados, mas fica abaixo de 20 para continuar humanamente manejável.
+    # Fila privada para ouvir e avaliar. Sete por defeito (Out 2026): 11 era
+    # demasiado para ouvir por semana, e o consenso — o sinal que mais acerta
+    # (75% positivos vs 43% com uma só fonte) — já ocupa o topo da fila.
     peel_max_albums_to_review: int = Field(
-        default=11,
+        default=7,
         ge=1,
         le=19,
         alias="PEEL_MAX_ALBUMS_TO_REVIEW",

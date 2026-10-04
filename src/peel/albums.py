@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
@@ -118,6 +119,7 @@ def select_album_queue(
     *,
     limit: int = 7,
     source_quality: Mapping[str, SourceQuality] | None = None,
+    affinity: Callable[[str], float] | None = None,
 ) -> list[tuple[AlbumRecommendation, bool]]:
     """Select current new mentions first, then any unrated pending albums.
 
@@ -125,6 +127,8 @@ def select_album_queue(
     fixed. A *new* source for an old album is current editorial consensus and
     therefore is eligible in the fresh phase. Source repeat penalties only
     break close calls; they are deliberately not a quota or a hard cap.
+    Within the same consensus level, artists the listener already rated
+    positively come first and rejected ones last; affinity never excludes.
     """
     if limit <= 0:
         return []
@@ -140,9 +144,13 @@ def select_album_queue(
     ]
     fresh = [item for item in eligible if item.newest_source_week == current_week]
     pending = [item for item in eligible if item.newest_source_week != current_week]
-    selected = _softly_diverse(fresh, adjusted_quality, limit)
+    selected = _softly_diverse(fresh, adjusted_quality, limit, affinity=affinity)
     if len(selected) < limit:
-        selected.extend(_softly_diverse(pending, adjusted_quality, limit - len(selected), selected))
+        selected.extend(
+            _softly_diverse(
+                pending, adjusted_quality, limit - len(selected), selected, affinity=affinity
+            )
+        )
     fresh_keys = {(item.artist_key, item.album_key) for item in fresh}
     return [(item, (item.artist_key, item.album_key) in fresh_keys) for item in selected]
 
@@ -186,7 +194,11 @@ def rank_album_recommendations(
     quality = source_quality or {}
     buckets: dict[tuple[str, str], _AlbumBucket] = {}
     for row in rows:
-        if not is_album_url(row.source_url) or is_archival_album_title(row.album):
+        if (
+            not is_album_url(row.source_url)
+            or is_archival_album_title(row.album)
+            or is_compilation_release(row.artist, row.album)
+        ):
             continue
         key = (row.artist_key, row.album_key)
         buckets.setdefault(key, _AlbumBucket(row.artist, row.album, *key)).add(row, quality)
@@ -236,6 +248,39 @@ def is_archival_album_title(title: str) -> bool:
     return bool(_ARCHIVAL_TITLE_RE.search(title))
 
 
+# Formats that are not an artist's new album. Live albums and soundtracks stay
+# eligible: both have been genuine, liked new releases (SPIKE FUCK, Alex G).
+_COMPILATION_TITLE_RE = re.compile(
+    r"(?:\b(?:greatest\s+hits|best\s+of|rarities|b-?sides)\b|"
+    r"\bsessions?\b|"
+    r"\bremix(?:es)?\b|"
+    r"\(\s*(?:19|20)\d{2}\s*[-\u2013]\s*(?:19|20)\d{2}\s*\))",
+    re.IGNORECASE,
+)
+_VARIOUS_ARTISTS = {"various", "various artists", "v/a", "va"}
+
+
+def is_compilation_release(artist: str, title: str) -> bool:
+    """Various-artists compilations, retrospectives, sessions and remix releases."""
+    return artist.strip().lower() in _VARIOUS_ARTISTS or bool(_COMPILATION_TITLE_RE.search(title))
+
+
+LOVED_ARTIST_AFFINITY = 0.6
+REJECTED_ARTIST_AFFINITY = 0.45
+
+
+def _affinity_tier(affinity: Callable[[str], float] | None, artist: str) -> int:
+    """1 = artist you rated well, -1 = artist you rejected, 0 = unknown/neutral."""
+    if affinity is None:
+        return 0
+    score = affinity(artist)
+    if score >= LOVED_ARTIST_AFFINITY:
+        return 1
+    if score <= REJECTED_ARTIST_AFFINITY:
+        return -1
+    return 0
+
+
 def _source_family(source_id: str) -> str:
     """Publication-level identity prevents two feeds from faking consensus."""
     return _SOURCE_FAMILIES.get(source_id, source_id)
@@ -268,6 +313,8 @@ def _softly_diverse(
     quality: Mapping[str, SourceQuality] | None,
     limit: int,
     already: list[AlbumRecommendation] | None = None,
+    *,
+    affinity: Callable[[str], float] | None = None,
 ) -> list[AlbumRecommendation]:
     """Diminishing returns by publication family without excluding any source."""
     if limit <= 0:
@@ -277,7 +324,7 @@ def _softly_diverse(
     counts = Counter(_source_family(item.sources[0]) for item in (already or []) if item.sources)
     while remaining and len(selected) < limit:
 
-        def key(item: AlbumRecommendation) -> tuple[float, float, int, float, str, str]:
+        def key(item: AlbumRecommendation) -> tuple[float, int, float, int, float, str, str]:
             source = item.sources[0] if item.sources else ""
             family = _source_family(source)
             # One scalar means feedback quality and repeat penalty genuinely
@@ -288,6 +335,7 @@ def _softly_diverse(
             fresh_at = item.newest_source_at or item.latest_seen_at
             return (
                 -item.source_count,
+                -_affinity_tier(affinity, item.artist),
                 -adjusted,
                 _source_tier(source),
                 -_timestamp(fresh_at),

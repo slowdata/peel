@@ -182,7 +182,7 @@ uv run peel affinity backfill-genres --source musicbrainz --limit 20 --sleep 1.5
 ```bash
 PEEL_MAX_TRACKS_PER_SOURCE=8
 PEEL_MAX_TRACKS_PER_RUN=28
-PEEL_MAX_ALBUMS_TO_REVIEW=11
+PEEL_MAX_ALBUMS_TO_REVIEW=7
 PEEL_MAX_SOURCE_ITEM_AGE_DAYS=30
 ```
 
@@ -198,9 +198,14 @@ explícita e documenta a data editorial e a data real de recolha.
 
 ### Album queue
 
-A weekly confirma uma fila privada independente de até 11 álbuns por defeito
+A weekly confirma uma fila privada independente de até 7 álbuns por defeito
 (`PEEL_MAX_ALBUMS_TO_REVIEW`, limite configurável ímpar e máximo 19) para ouvir
-e avaliar. A primeira
+e avaliar. A ordem é: consenso entre publicações (75% de positivos no histórico,
+contra 43% com uma só fonte); dentro do mesmo consenso, artistas que já avaliaste
+bem primeiro e os que rejeitaste no fim — a afinidade reordena, nunca exclui.
+Reedições, compilações *Various Artists*, retrospectivas `(2016-2019)`, sessões
+e remisturas não são álbuns novos; discos ao vivo e bandas sonoras continuam
+elegíveis. A primeira
 observação de cada `(artista, álbum, source)` é imutável; polling repetido só
 actualiza a última observação. Menções editoriais novas e consenso entram antes
 de pendentes sem feedback; labels Bandcamp são complementares e singles nunca

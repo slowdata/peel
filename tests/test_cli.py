@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 
 import peel.cli as cli
 from peel.db import DB, iso_week
+from peel.main import MAX_ALBUM_QUEUE_ITEMS
 from peel.models import AlbumQueueItem, ReviewQueueItem
 
 runner = CliRunner()
@@ -280,7 +281,7 @@ class TestAlbumsCLI:
 
         assert result.exit_code == 0
         assert "Fetched Artist" in result.output
-        assert "Fila incompleta: 1/11" in unstyle(result.output)
+        assert f"Fila incompleta: 1/{MAX_ALBUM_QUEUE_ITEMS}" in unstyle(result.output)
         assert "Dry run" in result.output
         assert db_path.read_bytes() == before
         spotify.assert_not_called()
