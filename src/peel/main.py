@@ -40,6 +40,7 @@ from peel.matcher import best_match, normalize
 from peel.models import AlbumQueueItem, Track
 from peel.scoring import SourceScore, build_source_scores
 from peel.site_export import make_album_resolver
+from peel.sources.base import Source
 from peel.sources.fetch import fetch_source
 from peel.sources.registry import active_sources
 from peel.spotify_client import SpotifyClient
@@ -247,203 +248,22 @@ def run(dry_run: bool = False) -> None:
 
                 # 2. Bifurca por source.kind
                 if source.kind == "album":
-                    # Processa como álbuns (sem Spotify search)
-                    for track in fresh_tracks:
-                        try:
-                            source_stats.processed_count += 1
-                            # track.title é o nome do álbum
-                            is_new = db.record_album(
-                                track.artist,
-                                track.title,
-                                source.id,
-                                track.source_url,
-                                spotify_album_uri=track.spotify_album_uri,
-                            )
-
-                            if is_new:
-                                albums_added += 1
-                                source_stats.album_count += 1
-                                log.info(
-                                    "album.recorded",
-                                    source_id=source.id,
-                                    artist=track.artist,
-                                    album=track.title,
-                                )
-
-                        except Exception as e:
-                            log.exception(
-                                "album.processing_failed",
-                                source_id=source.id,
-                                artist=track.artist,
-                                album=track.title,
-                                error=str(e),
-                            )
-                            continue
-
+                    albums_added += _process_album_items(db, source, fresh_tracks, source_stats)
                 elif source.kind == "track":
-                    # Processa como tracks (único kind que pode ir para playlist).
-                    # O slice por source evita backfill infinito de feeds longos: a próxima
-                    # run volta a olhar para os mesmos N itens do topo, não para backlog.
-                    source_cap = source_slot_caps.get(
-                        source.id,
-                        settings.peel_max_tracks_per_source,
+                    added, unmatched, playlist_slots_used = _process_track_items(
+                        db,
+                        sp,
+                        source,
+                        fresh_tracks,
+                        source_stats,
+                        source_slot_caps=source_slot_caps,
+                        banned_track_keys=banned_track_keys,
+                        playlist_slots_used=playlist_slots_used,
+                        new_track_uris=new_track_uris,
+                        new_track_entries=new_track_entries,
                     )
-                    source_candidates = fresh_tracks[:source_cap]
-                    source_stats.skipped_cap_count += max(
-                        0, len(fresh_tracks) - len(source_candidates)
-                    )
-                    for track in source_candidates:
-                        try:
-                            if _track_key(track.artist, track.title) in banned_track_keys:
-                                log.info(
-                                    "track.skipped_banned",
-                                    source_id=source.id,
-                                    artist=track.artist,
-                                    title=track.title,
-                                    reason="artist_title",
-                                )
-                                continue
-
-                            # Searching e atribuição de consenso procedem sempre (são
-                            # baratas e enriquecem a qualificação da faixa). O cap global
-                            # limita só as tracks NOVAS que sobem ao digest/playlist — assim
-                            # faixas unmatched não "queimam" slots e fontes tardias (ex.: NPR)
-                            # não são starvationadas por unmatched de fontes cedo.
-                            source_stats.processed_count += 1
-
-                            # Busca candidatos no Spotify
-                            candidates = sp.search_track(track.artist, track.title, limit=5)
-
-                            # Encontra melhor match
-                            uri = best_match(
-                                track,
-                                candidates,
-                                threshold=settings.match_threshold,
-                            )
-
-                            if uri is None:
-                                # Não encontrou match
-                                db.record_unmatched(
-                                    source.id,
-                                    track.artist,
-                                    track.title,
-                                    track.source_url,
-                                )
-                                tracks_unmatched += 1
-                                source_stats.unmatched_count += 1
-                                log.warning(
-                                    "track.no_match",
-                                    source_id=source.id,
-                                    artist=track.artist,
-                                    title=track.title,
-                                )
-                                continue
-
-                            canonical_uri = db.canonical_uri_for_track_identity(
-                                track.artist,
-                                track.title,
-                            )
-                            if canonical_uri is not None and canonical_uri != uri:
-                                log.info(
-                                    "track.canonical_uri_reused",
-                                    source_id=source.id,
-                                    matched_uri=uri,
-                                    canonical_uri=canonical_uri,
-                                )
-                                uri = canonical_uri
-
-                            if db.is_banned_uri(uri):
-                                log.info(
-                                    "track.skipped_banned",
-                                    source_id=source.id,
-                                    artist=track.artist,
-                                    title=track.title,
-                                    uri=uri,
-                                    reason="uri",
-                                )
-                                continue
-
-                            source_stats.matched_count += 1
-                            already = db.already_added(uri)
-
-                            if already:
-                                # Consenso: atribui uma fonte nova a um URI já conhecido.
-                                # Sempre registado — não conta para o cap de novidades.
-                                inserted = db.record_track(
-                                    uri,
-                                    source.id,
-                                    track.artist,
-                                    track.title,
-                                    track.source_url,
-                                )
-                                log.debug(
-                                    "track.attributed_existing",
-                                    source_id=source.id,
-                                    uri=uri,
-                                    inserted=inserted,
-                                )
-                                continue
-
-                            # Brand-new URI — sujeito ao cap de NOVIDADES da semana.
-                            # Verificamos o cap ANTES de registar: o digest e a playlist
-                            # de triagem ficam alinhados (só tracks registadas entram na
-                            # janela de rotação), faixas capped não poluem o histórico,
-                            # e unmatched não queimam slots (o search já aconteceu acima).
-                            # Serão redescobertas numa run futura se ainda forem frescas.
-                            if _track_cap_reached(playlist_slots_used):
-                                source_stats.skipped_cap_count += 1
-                                log.info(
-                                    "track.skipped_global_cap",
-                                    source_id=source.id,
-                                    artist=track.artist,
-                                    title=track.title,
-                                    uri=uri,
-                                    max_tracks_per_run=settings.peel_max_tracks_per_run,
-                                )
-                                continue
-                            playlist_slots_used += 1
-
-                            # TRADE-OFF de design: registamos a track no DB ANTES de a
-                            # adicionar à playlist. Se replace_playlist_items falhar
-                            # depois, essa track fica "órfã" — marcada como added no DB
-                            # mas nunca entregue ao Spotify. Aceitamos este trade-off
-                            # porque: (1) Falhas do Spotify são raras e transientes;
-                            # (2) A próxima run trará novas faixas (evolução normal);
-                            # (3) Two-phase commit duplicaria complexidade sem ganho
-                            #     proporcional. Eventos de falha são auditáveis via logs.
-                            inserted = db.record_track(
-                                uri,
-                                source.id,
-                                track.artist,
-                                track.title,
-                                track.source_url,
-                            )
-
-                            tracks_added += 1
-                            source_stats.new_unique_count += 1
-                            new_track_uris.append(uri)
-                            new_track_entries.append(
-                                (source.id, track.artist, track.title, track.source_url)
-                            )
-
-                            log.info(
-                                "track.matched_and_added",
-                                source_id=source.id,
-                                artist=track.artist,
-                                title=track.title,
-                                uri=uri,
-                            )
-
-                        except Exception as e:
-                            log.exception(
-                                "track.processing_failed",
-                                source_id=source.id,
-                                artist=track.artist,
-                                title=track.title,
-                                error=str(e),
-                            )
-                            continue
-
+                    tracks_added += added
+                    tracks_unmatched += unmatched
                 else:
                     log.info(
                         "source.skipped_non_playlist_kind",
@@ -489,91 +309,21 @@ def run(dry_run: bool = False) -> None:
             else settings.peel_playlist_window_weeks
         )
         try:
-            window_uris = db.ranked_tracks_in_window(
+            window_uris, triage_entries, triage_ready = _select_triage(
+                db,
                 current_week,
                 rotation_weeks,
                 source_quality,
-                affinity_profile.score,
-            )
-            current_week_uris = db.ranked_tracks_in_window(
-                current_week,
-                1,
-                source_quality,
-                affinity_profile.score,
-            )
-            candidate_metadata = _load_review_candidate_metadata(
-                db,
-                window_uris,
-                source_quality,
                 affinity_profile,
-            )
-            window_uris = select_review_playlist_uris(
-                window_uris,
-                current_week_uris,
                 new_track_uris,
-                lambda uri: not db.has_feedback_for_track_identity(uri),
-                limit=settings.peel_max_tracks_per_run,
-                candidate_metadata=candidate_metadata,
             )
-            triage_entries = build_triage_items(
-                db,
-                window_uris,
-                set(new_track_uris),
-                current_week,
-                source_quality,
-                affinity_profile,
-            )
-            triage_ready = len(triage_entries) == len(window_uris)
-            if triage_ready:
-                distribution = dict(
-                    sorted(Counter(item.source_id for item in triage_entries).items())
-                )
-                new_distribution = dict(
-                    sorted(
-                        Counter(item.source_id for item in triage_entries if item.is_new).items()
-                    )
-                )
-                pending_distribution = dict(
-                    sorted(
-                        Counter(
-                            item.source_id for item in triage_entries if not item.is_new
-                        ).items()
-                    )
-                )
-                log.info(
-                    "playlist.triage_source_distribution",
-                    sources=distribution,
-                    new_sources=new_distribution,
-                    pending_sources=pending_distribution,
-                )
-            if not triage_ready:
-                log.error(
-                    "playlist.triage_incomplete",
-                    expected_tracks=len(window_uris),
-                    digest_tracks=len(triage_entries),
-                )
         except Exception as e:
             log.exception("playlist.triage_selection_failed", error=str(e))
             raise RuntimeError("Triagem não seleccionada; entrega cancelada") from e
         try:
-            selected_albums = select_album_queue(
-                db,
-                current_week,
-                limit=MAX_ALBUM_RESOLUTION_CANDIDATES,
-                source_quality=source_quality,
-                affinity=affinity_profile.score,
+            album_queue_items = _select_album_queue_items(
+                db, current_week, source_quality, affinity_profile, album_resolver
             )
-            # Resolve uma pool limitada para poder substituir candidatos sem
-            # link directo; nunca escala para todo o universo de menções.
-            album_queue_items = _album_queue_snapshot_items(
-                current_week, selected_albums, album_resolver
-            )
-            if len(album_queue_items) < MAX_ALBUM_QUEUE_ITEMS:
-                log.warning(
-                    "albums.queue_underfilled",
-                    count=len(album_queue_items),
-                    target=MAX_ALBUM_QUEUE_ITEMS,
-                )
             album_queue_ready = True
         except Exception as e:
             log.exception("albums.recommendations_failed", error=str(e))
@@ -691,6 +441,319 @@ def _track_cap_reached(playlist_slots_used: int) -> bool:
 def _track_key(artist: str, title: str) -> tuple[str, str]:
     """Identidade normalizada de uma faixa para evitar reentrada de bans."""
     return normalize(artist), normalize(title)
+
+
+def _select_triage(
+    db: DB,
+    current_week: str,
+    rotation_weeks: int,
+    source_quality: dict[str, tuple[float, float]],
+    affinity_profile: AffinityProfile,
+    new_track_uris: list[str],
+) -> tuple[list[str], list[TriageItem], bool]:
+    """Escolhe a fila de triagem; ``ready`` só se os metadados cobrem cada URI."""
+    window_uris = db.ranked_tracks_in_window(
+        current_week,
+        rotation_weeks,
+        source_quality,
+        affinity_profile.score,
+    )
+    current_week_uris = db.ranked_tracks_in_window(
+        current_week,
+        1,
+        source_quality,
+        affinity_profile.score,
+    )
+    candidate_metadata = _load_review_candidate_metadata(
+        db,
+        window_uris,
+        source_quality,
+        affinity_profile,
+    )
+    window_uris = select_review_playlist_uris(
+        window_uris,
+        current_week_uris,
+        new_track_uris,
+        lambda uri: not db.has_feedback_for_track_identity(uri),
+        limit=settings.peel_max_tracks_per_run,
+        candidate_metadata=candidate_metadata,
+    )
+    triage_entries = build_triage_items(
+        db,
+        window_uris,
+        set(new_track_uris),
+        current_week,
+        source_quality,
+        affinity_profile,
+    )
+    triage_ready = len(triage_entries) == len(window_uris)
+    if triage_ready:
+        distribution = dict(sorted(Counter(item.source_id for item in triage_entries).items()))
+        new_distribution = dict(
+            sorted(Counter(item.source_id for item in triage_entries if item.is_new).items())
+        )
+        pending_distribution = dict(
+            sorted(Counter(item.source_id for item in triage_entries if not item.is_new).items())
+        )
+        log.info(
+            "playlist.triage_source_distribution",
+            sources=distribution,
+            new_sources=new_distribution,
+            pending_sources=pending_distribution,
+        )
+    if not triage_ready:
+        log.error(
+            "playlist.triage_incomplete",
+            expected_tracks=len(window_uris),
+            digest_tracks=len(triage_entries),
+        )
+    return window_uris, triage_entries, triage_ready
+
+
+def _select_album_queue_items(
+    db: DB,
+    current_week: str,
+    source_quality: dict[str, tuple[float, float]],
+    affinity_profile: AffinityProfile,
+    album_resolver: Callable[[str, str], str | None],
+) -> list[AlbumQueueItem]:
+    """Fila privada de álbuns já resolvida para links directos."""
+    selected_albums = select_album_queue(
+        db,
+        current_week,
+        limit=MAX_ALBUM_RESOLUTION_CANDIDATES,
+        source_quality=source_quality,
+        affinity=affinity_profile.score,
+    )
+    # Resolve uma pool limitada para poder substituir candidatos sem
+    # link directo; nunca escala para todo o universo de menções.
+    album_queue_items = _album_queue_snapshot_items(current_week, selected_albums, album_resolver)
+    if len(album_queue_items) < MAX_ALBUM_QUEUE_ITEMS:
+        log.warning(
+            "albums.queue_underfilled",
+            count=len(album_queue_items),
+            target=MAX_ALBUM_QUEUE_ITEMS,
+        )
+    return album_queue_items
+
+
+def _process_album_items(
+    db: DB, source: Source, fresh_tracks: list[Track], source_stats: SourceRunStats
+) -> int:
+    """Regista menções de álbuns (sem Spotify search); devolve álbuns novos."""
+    albums_added = 0
+    # Processa como álbuns (sem Spotify search)
+    for track in fresh_tracks:
+        try:
+            source_stats.processed_count += 1
+            # track.title é o nome do álbum
+            is_new = db.record_album(
+                track.artist,
+                track.title,
+                source.id,
+                track.source_url,
+                spotify_album_uri=track.spotify_album_uri,
+            )
+
+            if is_new:
+                albums_added += 1
+                source_stats.album_count += 1
+                log.info(
+                    "album.recorded",
+                    source_id=source.id,
+                    artist=track.artist,
+                    album=track.title,
+                )
+
+        except Exception as e:
+            log.exception(
+                "album.processing_failed",
+                source_id=source.id,
+                artist=track.artist,
+                album=track.title,
+                error=str(e),
+            )
+            continue
+
+    return albums_added
+
+
+def _process_track_items(
+    db: DB,
+    sp: SpotifyClient,
+    source: Source,
+    fresh_tracks: list[Track],
+    source_stats: SourceRunStats,
+    *,
+    source_slot_caps: Mapping[str, int],
+    banned_track_keys: set[tuple[str, str]],
+    playlist_slots_used: int,
+    new_track_uris: list[str],
+    new_track_entries: list[DigestItem],
+) -> tuple[int, int, int]:
+    """Match Spotify e registo de faixas; devolve (novas, unmatched, slots usados)."""
+    tracks_added = 0
+    tracks_unmatched = 0
+    # Processa como tracks (único kind que pode ir para playlist).
+    # O slice por source evita backfill infinito de feeds longos: a próxima
+    # run volta a olhar para os mesmos N itens do topo, não para backlog.
+    source_cap = source_slot_caps.get(
+        source.id,
+        settings.peel_max_tracks_per_source,
+    )
+    source_candidates = fresh_tracks[:source_cap]
+    source_stats.skipped_cap_count += max(0, len(fresh_tracks) - len(source_candidates))
+    for track in source_candidates:
+        try:
+            if _track_key(track.artist, track.title) in banned_track_keys:
+                log.info(
+                    "track.skipped_banned",
+                    source_id=source.id,
+                    artist=track.artist,
+                    title=track.title,
+                    reason="artist_title",
+                )
+                continue
+
+            # Searching e atribuição de consenso procedem sempre (são
+            # baratas e enriquecem a qualificação da faixa). O cap global
+            # limita só as tracks NOVAS que sobem ao digest/playlist — assim
+            # faixas unmatched não "queimam" slots e fontes tardias (ex.: NPR)
+            # não são starvationadas por unmatched de fontes cedo.
+            source_stats.processed_count += 1
+
+            # Busca candidatos no Spotify
+            candidates = sp.search_track(track.artist, track.title, limit=5)
+
+            # Encontra melhor match
+            uri = best_match(
+                track,
+                candidates,
+                threshold=settings.match_threshold,
+            )
+
+            if uri is None:
+                # Não encontrou match
+                db.record_unmatched(
+                    source.id,
+                    track.artist,
+                    track.title,
+                    track.source_url,
+                )
+                tracks_unmatched += 1
+                source_stats.unmatched_count += 1
+                log.warning(
+                    "track.no_match",
+                    source_id=source.id,
+                    artist=track.artist,
+                    title=track.title,
+                )
+                continue
+
+            canonical_uri = db.canonical_uri_for_track_identity(
+                track.artist,
+                track.title,
+            )
+            if canonical_uri is not None and canonical_uri != uri:
+                log.info(
+                    "track.canonical_uri_reused",
+                    source_id=source.id,
+                    matched_uri=uri,
+                    canonical_uri=canonical_uri,
+                )
+                uri = canonical_uri
+
+            if db.is_banned_uri(uri):
+                log.info(
+                    "track.skipped_banned",
+                    source_id=source.id,
+                    artist=track.artist,
+                    title=track.title,
+                    uri=uri,
+                    reason="uri",
+                )
+                continue
+
+            source_stats.matched_count += 1
+            already = db.already_added(uri)
+
+            if already:
+                # Consenso: atribui uma fonte nova a um URI já conhecido.
+                # Sempre registado — não conta para o cap de novidades.
+                inserted = db.record_track(
+                    uri,
+                    source.id,
+                    track.artist,
+                    track.title,
+                    track.source_url,
+                )
+                log.debug(
+                    "track.attributed_existing",
+                    source_id=source.id,
+                    uri=uri,
+                    inserted=inserted,
+                )
+                continue
+
+            # Brand-new URI — sujeito ao cap de NOVIDADES da semana.
+            # Verificamos o cap ANTES de registar: o digest e a playlist
+            # de triagem ficam alinhados (só tracks registadas entram na
+            # janela de rotação), faixas capped não poluem o histórico,
+            # e unmatched não queimam slots (o search já aconteceu acima).
+            # Serão redescobertas numa run futura se ainda forem frescas.
+            if _track_cap_reached(playlist_slots_used):
+                source_stats.skipped_cap_count += 1
+                log.info(
+                    "track.skipped_global_cap",
+                    source_id=source.id,
+                    artist=track.artist,
+                    title=track.title,
+                    uri=uri,
+                    max_tracks_per_run=settings.peel_max_tracks_per_run,
+                )
+                continue
+            playlist_slots_used += 1
+
+            # TRADE-OFF de design: registamos a track no DB ANTES de a
+            # adicionar à playlist. Se replace_playlist_items falhar
+            # depois, essa track fica "órfã" — marcada como added no DB
+            # mas nunca entregue ao Spotify. Aceitamos este trade-off
+            # porque: (1) Falhas do Spotify são raras e transientes;
+            # (2) A próxima run trará novas faixas (evolução normal);
+            # (3) Two-phase commit duplicaria complexidade sem ganho
+            #     proporcional. Eventos de falha são auditáveis via logs.
+            inserted = db.record_track(
+                uri,
+                source.id,
+                track.artist,
+                track.title,
+                track.source_url,
+            )
+
+            tracks_added += 1
+            source_stats.new_unique_count += 1
+            new_track_uris.append(uri)
+            new_track_entries.append((source.id, track.artist, track.title, track.source_url))
+
+            log.info(
+                "track.matched_and_added",
+                source_id=source.id,
+                artist=track.artist,
+                title=track.title,
+                uri=uri,
+            )
+
+        except Exception as e:
+            log.exception(
+                "track.processing_failed",
+                source_id=source.id,
+                artist=track.artist,
+                title=track.title,
+                error=str(e),
+            )
+            continue
+
+    return tracks_added, tracks_unmatched, playlist_slots_used
 
 
 def source_health_notice(empty_sources: list[str], failed_sources: list[str]) -> str | None:

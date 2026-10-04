@@ -16,4 +16,3 @@ Curto e actual. O histórico está em [`docs/archive/`](docs/archive/README.md).
 - Pitchfork News: alargar o parser só com títulos reais que falhem.
 - Reedições sem marca no título (ex.: Alan Vega — *Collision Drive*) ainda
   passam; o `publicar` permite excluí-las à mão.
-- Partir `main.run` em etapas, sem mudar resultados.
