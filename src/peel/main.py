@@ -178,6 +178,11 @@ def run(dry_run: bool = False) -> None:
     retried_total = 0
     retried_matched = 0
 
+    # Fontes partidas nesta run: feed sem entradas ou excepcao. Seguem no Telegram
+    # para que uma fonte morta nao passe semanas despercebida como "ok".
+    empty_sources: list[str] = []
+    failed_sources: list[str] = []
+
     # Defaults para o finally: se a run rebentar antes do scoring, o digest
     # continua best-effort sem affinity/source quality.
     source_quality: dict[str, tuple[float, float]] = {}
@@ -226,6 +231,9 @@ def run(dry_run: bool = False) -> None:
             try:
                 # 1. Fetch da source
                 tracks = fetch_source(db, source)
+                if getattr(source, "last_raw_entries", None) == 0:
+                    empty_sources.append(source.name)
+                    log.warning("source.empty_feed", source_id=source.id)
                 fresh_tracks = _filter_fresh_source_items(source.id, tracks, datetime.now(UTC))
                 source_stats.fetched_count = len(tracks)
                 source_stats.fresh_count = len(fresh_tracks)
@@ -458,6 +466,7 @@ def run(dry_run: bool = False) -> None:
                 )
                 db.update_source_state(source.id, "error", str(e))
                 source_stats.record(db, "error", str(e))
+                failed_sources.append(source.name)
                 continue
 
         # 2.5 Prune rows unmatched expiradas (desistimos após a janela de retry)
@@ -621,6 +630,7 @@ def run(dry_run: bool = False) -> None:
                     [],
                     settings.peel_review_playlist_id or settings.peel_playlist_id,
                     album_recommendations=_album_queue_digest_items(persisted_album_queue),
+                    notice=source_health_notice(empty_sources, failed_sources),
                 )
             except Exception:
                 log.exception("digest.crashed")
@@ -680,6 +690,15 @@ def _track_cap_reached(playlist_slots_used: int) -> bool:
 def _track_key(artist: str, title: str) -> tuple[str, str]:
     """Identidade normalizada de uma faixa para evitar reentrada de bans."""
     return normalize(artist), normalize(title)
+
+
+def source_health_notice(empty_sources: list[str], failed_sources: list[str]) -> str | None:
+    """Short plain-text warning for broken sources; ``None`` when all is well."""
+    problems = [f"{name} (feed vazio)" for name in empty_sources]
+    problems += [f"{name} (erro)" for name in failed_sources]
+    if not problems:
+        return None
+    return "\u26a0\ufe0f Fontes com problemas nesta execução: " + ", ".join(problems) + "."
 
 
 def _load_banned_track_keys(db: DB) -> set[tuple[str, str]]:

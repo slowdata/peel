@@ -9,7 +9,7 @@ permissions:
 jobs:
   tests:
     name: tests (${{ matrix.rendering }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -23,8 +23,8 @@ jobs:
       PEEL_PLAYLIST_ID: dummy
       PEEL_REVIEW_PLAYLIST_ID: dummy
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
       - name: install locked dependencies
         run: uv sync --locked --all-groups
       - name: lint

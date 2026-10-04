@@ -21,6 +21,13 @@ class Source(ABC):
     """Nome human-readable da fonte, ex.: 'Pitchfork Best New Tracks'."""
 
     kind: str = "track"
+
+    last_raw_entries: int | None = None
+    """Entradas brutas do último fetch, antes de filtros; ``None`` = desconhecido.
+
+    Um feed com zero entradas está quase sempre partido (URL, bloqueio, parser).
+    Filtros editoriais que devolvem zero não contam: só o feed vazio é alerta.
+    """
     """Tipo de conteúdo: "track" (padrão, vai para Spotify) ou "album" (para digest)."""
 
     @abstractmethod

@@ -2,9 +2,10 @@ name: weekly peel run
 
 on:
   schedule:
-    # Sexta às 18:00 UTC — lançamentos já disponíveis, ciclo editorial UK
-    # praticamente completo e boa parte do dia editorial norte-americano.
-    - cron: "0 18 * * 5"
+    # Sexta às 17:17 UTC — lançamentos já disponíveis e ciclo editorial UK
+    # praticamente completo. Fora do início da hora, quando o GitHub atrasa
+    # mais os agendamentos (em Set/Out 2026 chegaram 2h30–4h tarde às 18:00).
+    - cron: "17 17 * * 5"
   # Dispatch manual para testes durante desenvolvimento
   workflow_dispatch:
 
@@ -21,7 +22,7 @@ jobs:
 
   run:
     needs: tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       UV_PYTHON: "3.11"
@@ -30,13 +31,13 @@ jobs:
 
     steps:
       - name: checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # fetch-depth: 0 necessário para git log, commits, etc.
           fetch-depth: 0
 
       - name: setup uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v10.2.0
 
       - name: install dependencies
         run: uv sync --locked --all-groups
@@ -77,7 +78,7 @@ jobs:
   failure-alert:
     needs: [tests, run]
     if: ${{ always() && (needs.tests.result == 'failure' || needs.run.result == 'failure') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions: {}
     steps:

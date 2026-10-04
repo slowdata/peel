@@ -60,7 +60,7 @@ Sem algoritmos, sem bolhas — apenas bom gosto humano, entregue.
 
 ## Automated Weekly Run
 
-O projeto corre automaticamente à sexta-feira (18:00 UTC) via [GitHub Actions](/.github/workflows/weekly.yml).
+O projeto corre automaticamente à sexta-feira (17:17 UTC, fora do início da hora para reduzir atrasos do GitHub) via [GitHub Actions](/.github/workflows/weekly.yml).
 
 Cada push para `main` e cada PR executam a suite completa, com e sem cores ANSI,
 através de `tests.yml`. A execução semanal usa exactamente esse mesmo gate;

@@ -200,6 +200,7 @@ class RSSSource(Source):
                     reason="max_pages",
                 )
 
+        self.last_raw_entries = total_entries
         log.info(
             "rss.fetched",
             source_id=self.id,
@@ -893,6 +894,13 @@ def _extract_release_news_artist_title(title: str) -> tuple[str, str] | None:
             r"^(?P<artist>.+?)\s+Wants\b.*?New\s+Song\b.*?"
             r"[\"\u201c](?P<track>[^\"\u201d]+)[\"\u201d]"
         ),
+        # Mogwai Recruit Iggy Pop for New Song "Underground"
+        # The headline artist leads; guests after the verb are only credits.
+        (
+            r"^(?P<artist>.+?)\s+(?:Recruit|Recruits|Recruited|Tap|Taps|Tapped|"
+            r"Enlist|Enlists|Enlisted|Team|Teams|Teamed)\b.*?\bfor\s+(?:a\s+)?"
+            r"New\s+(?:Song|Single|Track)\s+[\"\u201c](?P<track>[^\"\u201d]+)[\"\u201d]"
+        ),
         # Watch Charli XCX ... New Song “Wink Wink”
         (
             r"^Watch\s+(?P<artist>.+?)\s+(?:Let|Perform|Share|Release|Debut|Play)\b"
@@ -1015,7 +1023,8 @@ class PitchforkNews(RSSSource):
 
     id = "pitchfork_news"
     name = "Pitchfork News"
-    url = "https://www.pitchfork.com/feed/feed-news/rss"
+    # Sem ``www.``: esse host deixou de responder e o feed vinha vazio em silencio.
+    url = "https://pitchfork.com/feed/feed-news/rss"
 
     def _extract_artist_title(self, entry: dict) -> tuple[str, str] | None:
         title = entry.get("title", "").strip()
