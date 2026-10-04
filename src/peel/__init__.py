@@ -1,2 +1,1 @@
-def main() -> None:
-    print("Hello from peel!")
+"""Peel — descoberta musical editorial semanal."""

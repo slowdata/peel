@@ -808,35 +808,6 @@ class DB:
         )
         return [(row[0], row[1]) for row in cursor.fetchall()]
 
-    def recent_tracks_with_sources(
-        self,
-        limit: int = 50,
-    ) -> list[tuple[str, str, str, str, int, str, str]]:
-        """Tracks agregadas com contagem de fontes.
-
-        Returns:
-            Lista de tuplos:
-            (spotify_uri, artist, title, added_at_week, source_count, first_added_at, last_added_at)
-        """
-        cursor = self.conn.execute(
-            """
-            SELECT
-                spotify_uri,
-                artist,
-                title,
-                MAX(added_at_week) AS added_at_week,
-                COUNT(DISTINCT source_id) AS source_count,
-                MIN(added_at) AS first_added_at,
-                MAX(added_at) AS last_added_at
-            FROM tracks
-            GROUP BY spotify_uri, artist, title
-            ORDER BY last_added_at DESC, artist COLLATE NOCASE, title COLLATE NOCASE
-            LIMIT ?
-            """,
-            (limit,),
-        )
-        return [tuple(row) for row in cursor.fetchall()]
-
     def feedback_for_track(self, spotify_uri: str) -> tuple[int, str, str | None] | None:
         """Feedback registado para uma track, se existir."""
         cursor = self.conn.execute(

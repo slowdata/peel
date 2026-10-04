@@ -39,7 +39,7 @@ from peel.db import DB, iso_week
 from peel.matcher import best_match, normalize
 from peel.models import AlbumQueueItem, Track
 from peel.scoring import SourceScore, build_source_scores
-from peel.site_export import make_album_resolver, spotify_album_search_url
+from peel.site_export import make_album_resolver
 from peel.sources.fetch import fetch_source
 from peel.sources.registry import active_sources
 from peel.spotify_client import SpotifyClient
@@ -980,50 +980,6 @@ def build_triage_items(
     return items
 
 
-def _sort_track_digest_entries(
-    db: DB,
-    entries: list[DigestItem],
-    source_quality: dict[str, tuple[float, float]],
-    affinity_profile: AffinityProfile,
-) -> list[DigestItem]:
-    """Ordena digest por qualidade primária e affinity como desempate.
-
-    Não filtra nem corta: só altera a ordem de apresentação.
-    """
-    indexed = list(enumerate(entries))
-
-    def sort_key(item: tuple[int, DigestItem]) -> tuple[int, float, float, float, int]:
-        index, entry = item
-        source_id, artist, title, _ = entry[:4]
-        source_count = _safe_source_count(db, artist, title)
-        avg_rating, score = source_quality.get(source_id, (0.0, 0.0))
-        affinity = affinity_profile.score(artist)
-        return (-source_count, -avg_rating, -score, -affinity, index)
-
-    return [entry for _, entry in sorted(indexed, key=sort_key)]
-
-
-def _with_digest_metadata(
-    db: DB,
-    entries: list[DigestItem],
-    affinity_profile: AffinityProfile,
-) -> list[DigestItem]:
-    """Enriquece digest com contagem de fontes e affinity para badges."""
-    enriched: list[DigestItem] = []
-    for source_id, artist, title, url in (entry[:4] for entry in entries):
-        enriched.append(
-            (
-                source_id,
-                artist,
-                title,
-                url,
-                _safe_source_count(db, artist, title),
-                affinity_profile.score(artist),
-            )
-        )
-    return enriched
-
-
 def _safe_source_count(db: DB, artist: str, title: str) -> int:
     try:
         return db.source_count_for_track_identity(artist, title)
@@ -1035,36 +991,6 @@ def _safe_source_count(db: DB, artist: str, title: str) -> int:
             error=str(e),
         )
         return 1
-
-
-def _album_digest_items(
-    recommendations: list[AlbumRecommendation],
-    album_resolver: Callable[[str, str], str | None] | None = None,
-) -> list[AlbumPickItem]:
-    """Converte recomendações de álbuns para o formato compacto do Telegram.
-
-    O link primário deve servir para ouvir: Spotify directo/resolvido, Bandcamp
-    se for a fonte disponível, ou pesquisa Spotify como último recurso. O link
-    editorial/source segue separado para o Telegram poder mostrar "Review" ou
-    "Bandcamp" sem esconder a razão curatorial da escolha.
-    """
-    return [
-        (
-            item.artist,
-            item.album,
-            item.source_count,
-            item.sources,
-            _album_listen_url(
-                item.artist,
-                item.album,
-                item.spotify_album_uri,
-                (source_url for _, source_url in item.source_urls),
-                album_resolver,
-            ),
-            _first_album_source_url(source_url for _, source_url in item.source_urls),
-        )
-        for item in recommendations
-    ]
 
 
 def _album_queue_snapshot_items(
@@ -1153,31 +1079,6 @@ def _album_queue_digest_items(items: list[AlbumQueueItem]) -> list[AlbumPickItem
     ]
 
 
-def _album_listen_url(
-    artist: str,
-    album: str,
-    spotify_album_uri: str | None,
-    source_urls: Iterable[str | None],
-    album_resolver: Callable[[str, str], str | None] | None = None,
-) -> str | None:
-    """URL primário para ouvir um álbum no Telegram."""
-    urls = tuple(source_urls)
-    if spotify_album_uri:
-        return spotify_album_url(spotify_album_uri)
-    if album_resolver is not None:
-        try:
-            resolved = album_resolver(artist, album)
-        except Exception as exc:  # noqa: BLE001 - digest não deve falhar por resolver externo
-            log.warning("digest.album_resolver_failed", artist=artist, album=album, error=str(exc))
-        else:
-            if resolved:
-                return resolved
-    bandcamp_url = _first_bandcamp_url(urls)
-    if bandcamp_url:
-        return bandcamp_url
-    return spotify_album_search_url(artist, album) or _first_album_source_url(urls)
-
-
 def _first_album_source_url(source_urls: Iterable[str | None]) -> str | None:
     for source_url in source_urls:
         if source_url:
@@ -1190,29 +1091,6 @@ def _first_bandcamp_url(source_urls: Iterable[str | None]) -> str | None:
         if source_url and "bandcamp.com" in source_url:
             return source_url
     return None
-
-
-def _with_source_counts(db: DB, entries: list[DigestItem]) -> list[DigestItem]:
-    """Enriquece digest com nº de fontes para destacar consenso.
-
-    Fail-open: se a consulta falhar para um item, mantém o formato antigo com
-    4 campos e o Telegram mostra a track sem marca de consenso.
-    """
-    enriched: list[DigestItem] = []
-    for source_id, artist, title, url in entries:
-        try:
-            source_count = db.source_count_for_track_identity(artist, title)
-            enriched.append((source_id, artist, title, url, source_count))
-        except Exception as e:
-            log.exception(
-                "digest.source_count_failed",
-                source_id=source_id,
-                artist=artist,
-                title=title,
-                error=str(e),
-            )
-            enriched.append((source_id, artist, title, url))
-    return enriched
 
 
 def _retry_unmatched(

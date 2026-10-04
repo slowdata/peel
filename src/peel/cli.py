@@ -62,13 +62,6 @@ from peel.publication import (
     prepare_publication,
     track_candidates,
 )
-from peel.release_radar import (
-    DEFAULT_RELEASE_RADAR_URL,
-    ReleaseRadarTrack,
-    fetch_release_radar,
-    release_radar_snapshot_payload,
-    tracks_from_snapshot,
-)
 from peel.report import generate_weekly_html_report, generate_weekly_report
 from peel.scoring import SourceScore, build_source_scores
 from peel.site_export import CANONICAL_PUBLIC_SELECTION_SINCE, export_site, make_album_resolver
@@ -107,13 +100,11 @@ console = Console(width=160)
 app = typer.Typer(add_completion=False, help="Peel — música curada, sincronizada e visível.")
 sync_app = typer.Typer(add_completion=False, help="Sincronização local/GitHub.")
 doctor_app = typer.Typer(add_completion=False, help="Diagnósticos do Peel.")
-playlist_app = typer.Typer(add_completion=False, help="Ferramentas de playlists Spotify.")
 triage_app = typer.Typer(
     add_completion=False,
     invoke_without_command=True,
     help="Fila de triagem confirmada no Spotify.",
 )
-radar_app = typer.Typer(add_completion=False, help="Snapshots do Spotify Release Radar.")
 site_app = typer.Typer(add_completion=False, help="Exportação para o site peel-sept.")
 affinity_app = typer.Typer(add_completion=False, help="Perfil local de afinidade.")
 albums_app = typer.Typer(
@@ -121,9 +112,7 @@ albums_app = typer.Typer(
 )
 app.add_typer(sync_app, name="sync")
 app.add_typer(doctor_app, name="doctor")
-app.add_typer(playlist_app, name="playlist")
 app.add_typer(triage_app, name="triage")
-app.add_typer(radar_app, name="radar")
 app.add_typer(site_app, name="site")
 app.add_typer(affinity_app, name="affinity")
 app.add_typer(albums_app, name="albums")
@@ -145,17 +134,6 @@ def cli_callback(
     global _OFFLINE_MODE  # noqa: PLW0603 - Typer callback owns this process-wide option
     _OFFLINE_MODE = offline or _env_truthy("PEEL_OFFLINE")
     configure_logging(verbose=verbose, pipeline=ctx.invoked_subcommand == "run")
-
-
-@dataclass(slots=True)
-class TrackSummary:
-    spotify_uri: str
-    artist: str
-    title: str
-    added_at_week: str
-    source_count: int
-    first_added_at: str
-    last_added_at: str
 
 
 @dataclass(slots=True)
@@ -527,52 +505,6 @@ def status() -> None:
                 row.last_error or "",
             )
         console.print(table)
-
-
-@app.command()
-def tracks(
-    sources: bool = typer.Option(False, "--sources", help="Mostra as fontes por música"),
-    limit: int = typer.Option(20, "--limit", min=1, help="Número máximo de músicas"),
-) -> None:
-    """Lista músicas recentes com fontes agregadas."""
-    db_path = _resolve_path(settings.db_path)
-    if not db_path.exists():
-        console.print(f"DB não existe: {db_path}")
-        return
-
-    with sqlite3.connect(db_path) as conn:
-        rows = _fetch_track_summaries(conn, limit)
-        if not rows:
-            console.print("Sem tracks registadas ainda.")
-            return
-
-        table = Table(title="Recent tracks")
-        table.add_column("Artist", style="bold")
-        table.add_column("Title")
-        table.add_column("Week")
-        table.add_column("Sources", justify="right")
-        table.add_column("Rating")
-        table.add_column("Added first")
-        table.add_column("Added last")
-
-        for row in rows:
-            feedback = _feedback_for_track(conn, row.spotify_uri)
-            table.add_row(
-                row.artist,
-                row.title,
-                row.added_at_week,
-                str(row.source_count),
-                feedback[1] if feedback else "",
-                row.first_added_at,
-                row.last_added_at,
-            )
-
-        console.print(table)
-
-        if sources:
-            console.print()
-            for row in rows:
-                _print_track_sources(conn, row)
 
 
 @app.command()
@@ -1309,170 +1241,6 @@ def sources(
     console.print(table)
 
 
-@playlist_app.command("fill-week")
-def playlist_fill_week(
-    week: Annotated[str, typer.Argument(help="Semana ISO, ex. 2026-W22")],
-    playlist_id: Annotated[str, typer.Option("--playlist-id", help="Playlist Spotify destino")],
-    unrated_only: Annotated[
-        bool,
-        typer.Option("--unrated-only", help="Inclui só tracks ainda sem feedback"),
-    ] = False,
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Mostra sem alterar Spotify")] = False,
-) -> None:
-    """Preenche uma playlist existente com tracks de uma semana."""
-    normalized_week = _normalize_week_option(week)
-    rows = _weekly_playlist_rows(normalized_week, unrated_only=unrated_only)
-    if not rows:
-        console.print(f"Sem tracks para {normalized_week}.")
-        return
-
-    table = Table(title=f"Playlist {normalized_week}")
-    table.add_column("Artist", style="bold")
-    table.add_column("Title")
-    table.add_column("URI")
-    for spotify_uri, artist, title in rows:
-        table.add_row(artist, title, spotify_uri)
-    console.print(table)
-
-    if dry_run:
-        console.print(f"Dry run: {len(rows)} tracks; playlist not changed.")
-        return
-
-    try:
-        client = SpotifyClient()
-    except SpotifyReauthRequired as exc:
-        _abort_spotify_reauth(exc)
-    client.replace_playlist_items(playlist_id, [row[0] for row in rows])
-    console.print(f"Playlist filled: {playlist_id} ({len(rows)} tracks).")
-
-
-@radar_app.command("snapshot")
-def radar_snapshot(
-    url: Annotated[
-        str,
-        typer.Option("--url", help="URL da playlist Release Radar no Spotify Web"),
-    ] = DEFAULT_RELEASE_RADAR_URL,
-    week: Annotated[str | None, typer.Option("--week", help="Semana ISO")] = None,
-    output_dir: Annotated[
-        Path,
-        typer.Option("--output-dir", help="Directório para snapshots JSON"),
-    ] = Path("data/radar"),
-    no_write: Annotated[
-        bool,
-        typer.Option("--no-write", help="Só mostra; não grava JSON"),
-    ] = False,
-) -> None:
-    """Extrai a Release Radar via Spotify Web e grava snapshot local."""
-    target_week = _normalize_week_option(week) if week else iso_week(datetime.now(UTC))
-    tracks = fetch_release_radar(url)
-    if not tracks:
-        console.print("[red]Não consegui extrair tracks da página Spotify.[/red]")
-        raise typer.Exit(code=1)
-
-    _print_release_radar_tracks(tracks, title=f"Release Radar {target_week}")
-
-    if no_write:
-        console.print(f"Snapshot não gravado: {len(tracks)} tracks.")
-        return
-
-    target_dir = _resolve_path(str(output_dir))
-    target_dir.mkdir(parents=True, exist_ok=True)
-    path = target_dir / f"{target_week}.json"
-    payload = release_radar_snapshot_payload(tracks, week=target_week, url=url)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    console.print(f"Snapshot written: {path} ({len(tracks)} tracks).")
-
-
-@radar_app.command("liked")
-def radar_liked(
-    week: Annotated[str | None, typer.Option("--week", help="Semana ISO")] = None,
-    snapshot: Annotated[
-        Path | None,
-        typer.Option("--snapshot", help="Snapshot JSON; default data/radar/<week>.json"),
-    ] = None,
-    show_all: Annotated[
-        bool,
-        typer.Option("--all", help="Mostra também tracks ainda não guardadas nos Liked Songs"),
-    ] = False,
-) -> None:
-    """Mostra tracks da Release Radar guardadas nos Spotify Liked Songs."""
-    target_week = _normalize_week_option(week) if week else iso_week(datetime.now(UTC))
-    tracks = _load_release_radar_snapshot(target_week, snapshot)
-
-    try:
-        client = SpotifyClient()
-    except SpotifyReauthRequired as exc:
-        _abort_spotify_reauth(exc)
-
-    saved = _spotify_saved_status(client, tracks)
-    liked_count = sum(saved)
-
-    table = Table(title=f"Release Radar liked {target_week}")
-    table.add_column("#", justify="right")
-    table.add_column("Liked")
-    table.add_column("Artist", style="bold")
-    table.add_column("Title")
-    table.add_column("URI")
-    for track, is_saved in zip(tracks, saved, strict=True):
-        if not show_all and not is_saved:
-            continue
-        table.add_row(
-            str(track.position),
-            "yes" if is_saved else "",
-            track.artist,
-            track.title,
-            track.spotify_uri,
-        )
-    console.print(table)
-    console.print(f"Liked in Spotify: {liked_count}/{len(tracks)}")
-
-
-@radar_app.command("compare")
-def radar_compare(
-    week: Annotated[str | None, typer.Option("--week", help="Semana ISO")] = None,
-    snapshot: Annotated[
-        Path | None,
-        typer.Option("--snapshot", help="Snapshot JSON; default data/radar/<week>.json"),
-    ] = None,
-) -> None:
-    """Compara uma snapshot Release Radar com tracks conhecidas no Peel."""
-    target_week = _normalize_week_option(week) if week else iso_week(datetime.now(UTC))
-    tracks = _load_release_radar_snapshot(target_week, snapshot)
-
-    db = DB(str(_resolve_path(settings.db_path)))
-    try:
-        db.init_schema()
-        matches = _compare_release_radar_tracks(db, tracks)
-    finally:
-        db.close()
-
-    uri_matches = sum(1 for item in matches if item[0] == "uri")
-    text_matches = sum(1 for item in matches if item[0] == "text")
-    misses = sum(1 for item in matches if item[0] == "miss")
-
-    table = Table(title=f"Release Radar overlap {target_week}")
-    table.add_column("#", justify="right")
-    table.add_column("Match")
-    table.add_column("Artist", style="bold")
-    table.add_column("Title")
-    table.add_column("Peel sources")
-    for status, track, sources in matches:
-        label = {"uri": "URI", "text": "text", "miss": "—"}[status]
-        style = "green" if status == "uri" else "yellow" if status == "text" else "dim"
-        table.add_row(
-            str(track.position),
-            f"[{style}]{label}[/{style}]",
-            track.artist,
-            track.title,
-            sources or "",
-        )
-    console.print(table)
-    console.print(
-        f"Overlap: {uri_matches + text_matches}/{len(tracks)} "
-        f"(uri={uri_matches}, text={text_matches}, miss={misses})"
-    )
-
-
 @site_app.command("export")
 def site_export(
     site_dir: Annotated[
@@ -1814,50 +1582,6 @@ def _source_score_rows(weeks: int, min_tracks: int) -> list[SourceScore]:
         db.close()
 
 
-def _weekly_playlist_rows(
-    week: str,
-    unrated_only: bool = False,
-) -> list[tuple[str, str, str]]:
-    db = DB(str(_resolve_path(settings.db_path)))
-    try:
-        db.init_schema()
-        if unrated_only:
-            rows = db.conn.execute(
-                """
-                SELECT t.spotify_uri, t.artist, t.title, MAX(t.added_at) AS last_added_at
-                FROM tracks t
-                LEFT JOIN feedback f ON f.spotify_uri = t.spotify_uri
-                WHERE t.added_at_week = ?
-                  AND f.spotify_uri IS NULL
-                  AND NOT EXISTS (
-                    SELECT 1
-                    FROM tracks rated_track
-                    JOIN feedback rated_feedback
-                      ON rated_feedback.spotify_uri = rated_track.spotify_uri
-                    WHERE rated_track.artist = t.artist
-                      AND rated_track.title = t.title
-                  )
-                GROUP BY t.spotify_uri, t.artist, t.title
-                ORDER BY last_added_at DESC, t.artist COLLATE NOCASE, t.title COLLATE NOCASE
-                """,
-                (week,),
-            ).fetchall()
-        else:
-            rows = db.conn.execute(
-                """
-                SELECT spotify_uri, artist, title, MAX(added_at) AS last_added_at
-                FROM tracks
-                WHERE added_at_week = ?
-                GROUP BY spotify_uri, artist, title
-                ORDER BY last_added_at DESC, artist COLLATE NOCASE, title COLLATE NOCASE
-                """,
-                (week,),
-            ).fetchall()
-        return [(str(row[0]), str(row[1]), str(row[2])) for row in rows]
-    finally:
-        db.close()
-
-
 def _source_confidence(row: SourceScore, min_data_tracks: int) -> str:
     """Label visual para evitar scores enganadores com pouca amostra."""
     return "ok" if row.tracks_matched >= min_data_tracks else "insufficient data"
@@ -2024,72 +1748,6 @@ def _fetch_source_states(conn: sqlite3.Connection) -> list[SourceState]:
     ]
 
 
-def _fetch_track_summaries(
-    conn: sqlite3.Connection,
-    limit: int,
-) -> list[TrackSummary]:
-    rows = conn.execute(
-        """
-        SELECT
-            spotify_uri,
-            artist,
-            title,
-            MAX(added_at_week) AS added_at_week,
-            COUNT(DISTINCT source_id) AS source_count,
-            MIN(added_at) AS first_added_at,
-            MAX(added_at) AS last_added_at
-        FROM tracks
-        GROUP BY spotify_uri, artist, title
-        ORDER BY last_added_at DESC, artist COLLATE NOCASE, title COLLATE NOCASE
-        LIMIT ?
-        """,
-        (limit,),
-    ).fetchall()
-    return [
-        TrackSummary(
-            spotify_uri=row[0],
-            artist=row[1],
-            title=row[2],
-            added_at_week=row[3] or "",
-            source_count=int(row[4]),
-            first_added_at=row[5] or "",
-            last_added_at=row[6] or "",
-        )
-        for row in rows
-    ]
-
-
-def _feedback_for_track(
-    conn: sqlite3.Connection,
-    spotify_uri: str,
-) -> tuple[int, str, str | None] | None:
-    row = conn.execute(
-        "SELECT rating, label, comment FROM feedback WHERE spotify_uri = ?",
-        (spotify_uri,),
-    ).fetchone()
-    if row is None:
-        return None
-    return int(row[0]), str(row[1]), row[2]
-
-
-def _print_track_sources(conn: sqlite3.Connection, row: TrackSummary) -> None:
-    table = Table(title=f"{row.artist} — {row.title}", show_header=False)
-    table.add_column("Source")
-    table.add_column("URL")
-    source_rows = conn.execute(
-        """
-        SELECT source_id, source_url
-        FROM tracks
-        WHERE spotify_uri = ?
-        ORDER BY added_at ASC, source_id
-        """,
-        (row.spotify_uri,),
-    ).fetchall()
-    for source_id, source_url in source_rows:
-        table.add_row(source_id, source_url or "")
-    console.print(table)
-
-
 def _print_feedback_prompt(
     db: DB,
     row: FeedbackRow,
@@ -2161,84 +1819,6 @@ def _save_feedback(
     comment: str | None,
 ) -> None:
     db.upsert_feedback(spotify_uri, rating, comment)
-
-
-def _load_release_radar_snapshot(
-    week: str,
-    snapshot: Path | None = None,
-) -> list[ReleaseRadarTrack]:
-    path = (
-        _resolve_path(str(snapshot))
-        if snapshot
-        else PROJECT_ROOT / "data" / "radar" / f"{week}.json"
-    )
-    if not path.exists():
-        console.print(f"[red]Snapshot não existe:[/red] {path}")
-        raise typer.Exit(code=1)
-
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    tracks = tracks_from_snapshot(payload)
-    if not tracks:
-        console.print(f"[red]Snapshot sem tracks válidas:[/red] {path}")
-        raise typer.Exit(code=1)
-    return tracks
-
-
-def _spotify_saved_status(
-    client: SpotifyClient,
-    tracks: list[ReleaseRadarTrack],
-) -> list[bool]:
-    uris = [track.spotify_uri for track in tracks]
-    saved: list[bool] = []
-    for index in range(0, len(uris), 50):
-        saved.extend(client.sp.current_user_saved_tracks_contains(uris[index : index + 50]))
-    return saved
-
-
-def _print_release_radar_tracks(tracks: list[ReleaseRadarTrack], *, title: str) -> None:
-    table = Table(title=title)
-    table.add_column("#", justify="right")
-    table.add_column("Artist", style="bold")
-    table.add_column("Title")
-    table.add_column("URI")
-    for track in tracks:
-        table.add_row(str(track.position), track.artist, track.title, track.spotify_uri)
-    console.print(table)
-
-
-def _compare_release_radar_tracks(
-    db: DB,
-    tracks: list[ReleaseRadarTrack],
-) -> list[tuple[str, ReleaseRadarTrack, str | None]]:
-    rows = db.conn.execute(
-        """
-        SELECT spotify_uri,
-               MIN(artist) AS artist,
-               MIN(title) AS title,
-               GROUP_CONCAT(DISTINCT source_id) AS sources
-        FROM tracks
-        GROUP BY spotify_uri
-        """
-    ).fetchall()
-    by_uri: dict[str, str | None] = {}
-    by_text: dict[tuple[str, str], str | None] = {}
-    for spotify_uri, artist, title, sources in rows:
-        by_uri[str(spotify_uri)] = str(sources) if sources is not None else None
-        key = (normalize(str(artist)), normalize(str(title)))
-        by_text.setdefault(key, str(sources) if sources is not None else None)
-
-    matches: list[tuple[str, ReleaseRadarTrack, str | None]] = []
-    for track in tracks:
-        uri_sources = by_uri.get(track.spotify_uri)
-        if uri_sources is not None:
-            matches.append(("uri", track, uri_sources))
-            continue
-        text_sources = by_text.get((normalize(track.artist), normalize(track.title)))
-        if text_sources is not None:
-            matches.append(("text", track, text_sources))
-            continue
-        matches.append(("miss", track, None))
-    return matches
 
 
 def _masked(value: str) -> str:

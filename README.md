@@ -104,25 +104,28 @@ O estado (tracks vistas, histórico de sources) fica guardado em `data/peel.db` 
 ```
 peel/
 ├── src/peel/
-│   ├── config.py           # Carregamento de secrets do .env
-│   ├── models.py           # Track (datamodel)
-│   ├── spotify_client.py   # Auth + search + playlist write
-│   ├── matcher.py          # Fuzzy matching de faixas
-│   ├── db.py               # SQLite state management
-│   ├── main.py             # Orquestração principal
-│   └── sources/
-│       ├── base.py         # Interface Source (ABC)
-│       └── rss.py          # RSSSource + PitchforkBNT
-├── tests/                  # Suite de testes
-├── scripts/
-│   └── bootstrap_refresh_token.py  # Geração inicial do refresh token
-├── data/
-│   └── peel.db            # SQLite state (tracks vistas, histórico)
+│   ├── main.py            # Run semanal: fontes → Spotify → triagem → Telegram
+│   ├── cli.py             # Comandos: ouvir, publicar, albums, report, sync…
+│   ├── sources/           # Fontes editoriais (RSS, scrapers, Bandcamp) e registo
+│   ├── albums.py          # Fila de álbuns: consenso, afinidade, filtros de formato
+│   ├── publication.py     # Selecção pública congelada e proposta do publicar
+│   ├── db.py              # Estado SQLite e snapshots
+│   ├── state_sync.py      # Sincronização segura da DB com o GitHub
+│   ├── report.py          # Relatórios Markdown/HTML
+│   ├── site_export.py     # JSON semanal para o site peel-sept
+│   ├── spotify_client.py  # Spotify com verificação por releitura
+│   ├── telegram.py        # Digest semanal
+│   └── affinity.py, scoring.py, matcher.py, musicbrainz.py, …
+├── tests/
+├── data/                  # peel.db, relatórios, selecções, reconciliações
+├── docs/archive/          # Planos e roadmaps antigos (histórico)
 └── .github/workflows/
     ├── ci.yml             # Testes em push/PR, sem entregas externas
     ├── tests.yml          # Gate partilhado: suite completa plain/ANSI
     └── weekly.yml         # Cron + manual dispatch + alerta de falha
 ```
+
+O que está em aberto vive no [TODO](TODO.md).
 
 ## Development
 
@@ -153,18 +156,6 @@ uv run peel doctor sources --json
 uv run peel sources
 uv run peel sources --weeks 4
 uv run peel sources --json
-```
-
-### Spotify Release Radar snapshots
-
-Release Radar é sinal pessoal/algorítmico, não source editorial. Fica fora da
-weekly automática; usa-se para auditoria de cobertura e afinidade futura:
-
-```bash
-uv run peel radar snapshot --week 2026-W28
-uv run peel radar snapshot --week 2026-W28 --no-write
-uv run peel radar liked --week 2026-W28
-uv run peel radar compare --week 2026-W28
 ```
 
 ### Affinity genre cache
@@ -290,18 +281,6 @@ foi possível ouvir e não conta como juízo musical sobre a source.
 
 `tracks_found` é calculado a partir dos dados persistidos: matches + unmatched. O comando também mostra telemetria real de `source_runs` (`Runs`, `Fetched/Fresh`, `Proc`, `Stale/Cap/Err`) para distinguir qualidade de fonte, backlog, caps e falhas.
 
-### Playlists temporárias por semana
-
-Para recriar uma semana numa playlist Spotify existente:
-
-```bash
-uv run peel playlist fill-week 2026-W22 --playlist-id <spotify_playlist_id>
-uv run peel playlist fill-week 2026-W22 --playlist-id <spotify_playlist_id> --unrated-only
-uv run peel playlist fill-week 2026-W22 --playlist-id <spotify_playlist_id> --dry-run
-```
-
-Uso típico: criar manualmente uma playlist privada vazia no Spotify, copiar o ID e preencher com uma semana antiga para ouvir/avaliar.
-
 ### Relatório local
 
 O Markdown continua a ser o artefacto canónico e versionado. Depois de avançar
@@ -366,13 +345,6 @@ PEEL_OFFLINE=1 uv run peel report --week 2026-W32
 `--offline` não torna uma DB antiga correcta: relatórios desde W29 exigem a
 snapshot canónica e falham em vez de recalcular uma fila divergente.
 
-### Roadmap (v2+)
-
-- [ ] Mais fontes: BBC 6 Music Recommends, NTS Radio scraping
-- [ ] Configuração de fontes dinâmica (via `config.yml`, não hardcoded)
-- [ ] Web UI para gérir playlists / fontes
-- [ ] Notificações (email / Discord) com resumo semanal
-- [ ] Recomendações personalizadas baseadas em escuta histórica
 
 ## Architecture Notes
 

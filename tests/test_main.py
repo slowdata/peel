@@ -12,12 +12,10 @@ from peel.albums import AlbumRecommendation
 from peel.db import DB, iso_week
 from peel.main import (
     ReviewCandidate,
-    _album_digest_items,
     _album_queue_snapshot_items,
     _filter_fresh_source_items,
     _load_review_candidate_metadata,
     _retry_unmatched,
-    _sort_track_digest_entries,
     run,
     select_review_playlist_uris,
     slots_for_source,
@@ -81,65 +79,6 @@ def _candidate(
         affinity=affinity,
         latest_at=latest_at,
     )
-
-
-def test_sort_track_digest_entries_uses_affinity_after_quality(tmp_path: Path) -> None:
-    db = DB(str(tmp_path / "test.db"))
-    try:
-        db.init_schema()
-        # Só para source_count_for_track_identity encontrar as identidades.
-        db.record_track("spotify:track:unknown", "good", "Unknown", "Track", None)
-        db.record_track("spotify:track:idles", "good", "IDLES", "Track", None)
-        entries = [
-            ("good", "Unknown", "Track", None),
-            ("good", "IDLES", "Track", None),
-        ]
-
-        sorted_entries = _sort_track_digest_entries(
-            db,
-            entries,
-            {"good": (1.0, 10.0)},
-            build_affinity_profile(),
-        )
-
-        assert sorted_entries[0][1] == "IDLES"
-    finally:
-        db.close()
-
-
-def test_album_digest_items_use_listen_url_and_source_url() -> None:
-    """Telegram: título abre onde se ouve; source fica como link secundário."""
-    recommendations = [
-        AlbumRecommendation(
-            artist="Direct Artist",
-            album="Direct Album",
-            source_count=1,
-            sources=("guardian_music_albums",),
-            source_urls=(("guardian_music_albums", "https://guardian/review"),),
-            spotify_album_uri="spotify:album:abc123",
-            latest_seen_at="2026-06-10T00:00:00+00:00",
-            best_avg_rating=0.0,
-            best_score=0.0,
-        ),
-        AlbumRecommendation(
-            artist="Bandcamp Artist",
-            album="Bandcamp Album",
-            source_count=1,
-            sources=("bandcamp_ghostly",),
-            source_urls=(("bandcamp_ghostly", "https://artist.bandcamp.com/album/x"),),
-            spotify_album_uri=None,
-            latest_seen_at="2026-06-10T00:00:00+00:00",
-            best_avg_rating=0.0,
-            best_score=0.0,
-        ),
-    ]
-
-    items = _album_digest_items(recommendations, album_resolver=lambda _artist, _album: None)
-
-    assert items[0][4] == "https://open.spotify.com/album/abc123"
-    assert items[0][5] == "https://guardian/review"
-    assert items[1][4] == "https://artist.bandcamp.com/album/x"
-    assert items[1][5] == "https://artist.bandcamp.com/album/x"
 
 
 def test_album_snapshot_skips_unplayable_and_backfills_direct_links() -> None:

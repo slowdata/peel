@@ -664,45 +664,6 @@ class TestCliStatus:
         assert "source-b" in result.stdout
 
 
-class TestCliTracks:
-    def test_tracks_lists_aggregated_rows(self, tmp_path: Path, monkeypatch) -> None:
-        db_path = tmp_path / "peel.db"
-        db = DB(str(db_path))
-        db.init_schema()
-        db.record_track("spotify:track:1", "source-a", "Artist A", "Track A", "https://a")
-        db.record_track("spotify:track:1", "source-b", "Artist A", "Track A", "https://b")
-        db.record_track("spotify:track:2", "source-c", "Artist B", "Track B", None)
-        db.upsert_feedback("spotify:track:1", "like", "bom groove")
-
-        monkeypatch.setattr(cli, "settings", _settings(db_path))
-
-        result = runner.invoke(cli.app, ["tracks"])
-
-        assert result.exit_code == 0
-        assert "Artist A" in result.stdout
-        assert "Track A" in result.stdout
-        assert "2" in result.stdout
-        assert "like" in result.stdout
-        assert "Artist B" in result.stdout
-
-    def test_tracks_sources_shows_source_details(self, tmp_path: Path, monkeypatch) -> None:
-        db_path = tmp_path / "peel.db"
-        db = DB(str(db_path))
-        db.init_schema()
-        db.record_track("spotify:track:1", "source-a", "Artist A", "Track A", "https://a")
-        db.record_track("spotify:track:1", "source-b", "Artist A", "Track A", "https://b")
-
-        monkeypatch.setattr(cli, "settings", _settings(db_path))
-
-        result = runner.invoke(cli.app, ["tracks", "--sources"])
-
-        assert result.exit_code == 0
-        assert "source-a" in result.stdout
-        assert "source-b" in result.stdout
-        assert "https://a" in result.stdout
-        assert "https://b" in result.stdout
-
-
 class TestCliFeedback:
     def test_feedback_non_interactive_upserts_rating(self, tmp_path: Path, monkeypatch) -> None:
         db_path = tmp_path / "peel.db"
@@ -1262,93 +1223,6 @@ class TestCliTriage:
         result = runner.invoke(cli.app, ["feedback"], input="q\n")
         assert result.exit_code == 0, result.output
         assert "#2 · [1/1] Artist B" in unstyle(result.output)
-
-
-class TestCliPlaylist:
-    def test_playlist_fill_week_dry_run_lists_tracks(
-        self,
-        tmp_path: Path,
-        monkeypatch,
-    ) -> None:
-        db_path = tmp_path / "peel.db"
-        db = DB(str(db_path))
-        db.init_schema()
-        _insert_week_track(db, "spotify:track:1", "Artist A", "Track A", "2026-W22")
-        db.close()
-        monkeypatch.setattr(cli, "settings", _settings(db_path))
-
-        result = runner.invoke(
-            cli.app,
-            ["playlist", "fill-week", "2026-w22", "--playlist-id", "playlist-id", "--dry-run"],
-        )
-
-        assert result.exit_code == 0
-        assert "Artist A" in result.stdout
-        assert "Track A" in result.stdout
-        assert "Dry run" in result.stdout
-
-    def test_playlist_fill_week_replaces_playlist_items(
-        self,
-        tmp_path: Path,
-        monkeypatch,
-    ) -> None:
-        db_path = tmp_path / "peel.db"
-        db = DB(str(db_path))
-        db.init_schema()
-        _insert_week_track(db, "spotify:track:1", "Artist A", "Track A", "2026-W22")
-        _insert_week_track(db, "spotify:track:2", "Artist B", "Track B", "2026-W22")
-        db.close()
-
-        mock_client = MagicMock()
-        monkeypatch.setattr(cli, "settings", _settings(db_path))
-        monkeypatch.setattr(cli, "SpotifyClient", lambda: mock_client)
-
-        result = runner.invoke(
-            cli.app,
-            ["playlist", "fill-week", "2026-W22", "--playlist-id", "playlist-id"],
-        )
-
-        assert result.exit_code == 0
-        mock_client.replace_playlist_items.assert_called_once_with(
-            "playlist-id",
-            ["spotify:track:2", "spotify:track:1"],
-        )
-
-    def test_playlist_fill_week_unrated_only_filters_known_feedback(
-        self,
-        tmp_path: Path,
-        monkeypatch,
-    ) -> None:
-        db_path = tmp_path / "peel.db"
-        db = DB(str(db_path))
-        db.init_schema()
-        _insert_week_track(db, "spotify:track:old", "Artist A", "Track A", "2026-W20")
-        _insert_week_track(db, "spotify:track:new", "Artist A", "Track A", "2026-W22")
-        _insert_week_track(db, "spotify:track:2", "Artist B", "Track B", "2026-W22")
-        db.upsert_feedback("spotify:track:old", "love", None)
-        db.close()
-
-        mock_client = MagicMock()
-        monkeypatch.setattr(cli, "settings", _settings(db_path))
-        monkeypatch.setattr(cli, "SpotifyClient", lambda: mock_client)
-
-        result = runner.invoke(
-            cli.app,
-            [
-                "playlist",
-                "fill-week",
-                "2026-W22",
-                "--playlist-id",
-                "playlist-id",
-                "--unrated-only",
-            ],
-        )
-
-        assert result.exit_code == 0
-        mock_client.replace_playlist_items.assert_called_once_with(
-            "playlist-id",
-            ["spotify:track:2"],
-        )
 
 
 class TestCliDoctor:

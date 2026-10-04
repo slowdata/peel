@@ -310,21 +310,6 @@ class TestRecordTrack:
 
         assert db.track_sources(uri) == [("source-a", "https://a"), ("source-b", "https://b")]
 
-    def test_recent_tracks_with_sources_aggregates_source_count(self, tmp_path: Path) -> None:
-        """recent_tracks_with_sources() agrega várias fontes na mesma URI."""
-        db_path = tmp_path / "test.db"
-        db = DB(str(db_path))
-        db.init_schema()
-
-        uri = "spotify:track:123"
-        db.record_track(uri, "source-a", "Artist", "Title", "https://a")
-        db.record_track(uri, "source-b", "Artist", "Title", "https://b")
-
-        rows = db.recent_tracks_with_sources(limit=10)
-        assert len(rows) == 1
-        assert rows[0][0] == uri
-        assert rows[0][4] == 2
-
 
 class TestRecordUnmatched:
     """Testa o registro de faixas não-emparelhadas."""

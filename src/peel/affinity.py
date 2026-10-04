@@ -166,10 +166,6 @@ class AffinityProfile:
             return _clamp01(artist_affinity)
         return _clamp01(0.75 * artist_affinity + 0.25 * genre_affinity)
 
-    def normalized_artist_scores(self) -> dict[str, float]:
-        """Mapa simples para APIs antigas/testes."""
-        return dict(self.artist_scores)
-
 
 def build_affinity_profile(db: Any | None = None) -> AffinityProfile:
     """Constrói perfil local a partir da DB, com prior estático como fallback."""

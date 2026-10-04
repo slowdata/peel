@@ -6,7 +6,7 @@ Decisões de design:
    dura segundos — é aceitável refrescar a cada run.
 3. search_track devolve list[dict] com múltiplos candidatos (não filtra nem
    normaliza aqui) — o matcher.py do Passo 5 faz a normalização e fuzzy match.
-4. add_to_playlist em chunks de 100: limite hard da API. Sem chunks, fails se >100 URIs.
+4. replace_playlist_items escreve em chunks de 100 (limite da API) e relê tudo para verificar.
 """
 
 from __future__ import annotations
@@ -271,48 +271,6 @@ class SpotifyClient:
         raise SpotifyPlaylistMismatch(
             f"Spotify não confirmou a fila: {len(expected)} pedidas, {len(actual)} lidas; "
             "URIs ou ordem diferentes. DB e Telegram não devem anunciar esta escrita."
-        )
-
-    def add_to_playlist(self, playlist_id: str, uris: list[str]) -> None:
-        """Adiciona faixas a uma playlist em chunks de 100 (limite da API).
-
-        Args:
-            playlist_id: ID ou URI da playlist (ex.: "spotify:playlist:37i9dQZF1DXcBWIGoYBM5M")
-            uris: Lista de Spotify track URIs (ex.: ["spotify:track:...", ...])
-
-        Levanta exceção se algo falhar — responsabilidade do caller tratar.
-        """
-        if not uris:
-            log.info("playlist.no_tracks_to_add")
-            return
-
-        # Parti em chunks de 100
-        chunk_size = 100
-        chunks = [uris[i : i + chunk_size] for i in range(0, len(uris), chunk_size)]
-
-        for i, chunk in enumerate(chunks, start=1):
-            try:
-                self.sp.playlist_add_items(playlist_id, chunk)
-                log.info(
-                    "playlist.chunk_added",
-                    chunk=i,
-                    total_chunks=len(chunks),
-                    chunk_size=len(chunk),
-                )
-            except Exception as e:
-                log.exception(
-                    "playlist.add_failed",
-                    chunk=i,
-                    total_chunks=len(chunks),
-                    error=str(e),
-                )
-                raise
-
-        log.info(
-            "playlist.updated",
-            playlist_id=playlist_id,
-            total_added=len(uris),
-            chunks=len(chunks),
         )
 
     def replace_playlist_items(self, playlist_id: str, uris: list[str]) -> None:
