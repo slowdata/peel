@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from peel.albums import is_archival_album_title
 from peel.db import DB
 from peel.playlists import canonical_playlist_id
 from peel.site_export import _snapshot_album_to_json, spotify_track_url
@@ -80,20 +82,7 @@ def prepare_publication(db: DB, plan: PublicationPlan) -> dict:
         feedback = db.album_feedback_for_identity(item.artist, item.album)
         if not feedback or feedback[1] not in {"love", "like"}:
             raise ValueError(f"Álbum sem avaliação positiva: {item.artist} — {item.album}")
-        parsed = urlparse(item.listen_url or "")
-        direct = (
-            parsed.scheme == "https"
-            and (
-                (item.listen_kind == "spotify" and parsed.hostname == "open.spotify.com")
-                or (
-                    item.listen_kind == "bandcamp"
-                    and (parsed.hostname or "").endswith(".bandcamp.com")
-                )
-            )
-            and parsed.path.startswith("/album/")
-            and bool(parsed.path.removeprefix("/album/"))
-        )
-        if not direct:
+        if not is_direct_album_link(item.listen_url, item.listen_kind):
             raise ValueError(f"Álbum sem link directo: {item.album}")
         selected_albums.append(_snapshot_album_to_json(item.model_copy(update={"position": rank})))
         album_positions.append(item.position)
@@ -107,3 +96,120 @@ def prepare_publication(db: DB, plan: PublicationPlan) -> dict:
         "album_queue_positions": album_positions,
         "plan": plan.model_dump(mode="json"),
     }
+
+
+MAX_PUBLIC_PICKS = 7
+_POSITIVE = ("love", "like")
+
+
+def is_direct_album_link(url: str | None, kind: str | None) -> bool:
+    """Only a playable Spotify/Bandcamp album page can be published."""
+    parsed = urlparse(url or "")
+    host = parsed.hostname or ""
+    platform = (kind == "spotify" and host == "open.spotify.com") or (
+        kind == "bandcamp" and host.endswith(".bandcamp.com")
+    )
+    return (
+        parsed.scheme == "https"
+        and platform
+        and parsed.path.startswith("/album/")
+        and bool(parsed.path.removeprefix("/album/"))
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class Candidate:
+    """A positively rated item, identified by its original queue position."""
+
+    position: int
+    key: str | tuple[str, str]
+    artist: str
+    title: str
+    rating: str
+
+
+def track_candidates(db: DB, review_playlist_id: str, week: str) -> list[Candidate]:
+    """Positive tracks of the confirmed listening queue, in queue order."""
+    candidates = []
+    for position, item in enumerate(db.review_queue_snapshot(review_playlist_id, week) or [], 1):
+        feedback = db.feedback_for_track_identity(item.spotify_uri)
+        if feedback and feedback[1] in _POSITIVE:
+            candidates.append(
+                Candidate(position, item.spotify_uri, item.artist, item.title, feedback[1])
+            )
+    return candidates
+
+
+def album_candidates(db: DB, week: str) -> list[Candidate]:
+    """Positive, playable, non-archival albums of the private queue."""
+    candidates = []
+    for item in db.album_queue(week) or []:
+        feedback = db.album_feedback_for_identity(item.artist, item.album)
+        if (
+            feedback
+            and feedback[1] in _POSITIVE
+            and not is_archival_album_title(item.album)
+            and is_direct_album_link(item.listen_url, item.listen_kind)
+        ):
+            key = (item.artist_key, item.album_key)
+            candidates.append(Candidate(item.position, key, item.artist, item.album, feedback[1]))
+    return candidates
+
+
+def default_picks(candidates: list[Candidate], limit: int = MAX_PUBLIC_PICKS) -> list[Candidate]:
+    """Loves before likes when there are too many; never pads; keeps queue order."""
+    ranked = sorted(candidates, key=lambda c: (_POSITIVE.index(c.rating), c.position))
+    return sorted(ranked[:limit], key=lambda c: c.position)
+
+
+def parse_positions(text: str, candidates: list[Candidate]) -> list[Candidate]:
+    """Positions typed by the editor, in the order typed (that is the public order)."""
+    by_position = {candidate.position: candidate for candidate in candidates}
+    tokens = text.replace(",", " ").split()
+    if not tokens:
+        return []
+    try:
+        positions = [int(token.lstrip("#")) for token in tokens]
+    except ValueError as exc:
+        raise ValueError("Usa números de posição, ex.: 5 13 28") from exc
+    if len(set(positions)) != len(positions):
+        raise ValueError("Posição repetida")
+    if len(positions) > MAX_PUBLIC_PICKS:
+        raise ValueError(f"No máximo {MAX_PUBLIC_PICKS}")
+    unknown = [position for position in positions if position not in by_position]
+    if unknown:
+        raise ValueError(f"Sem avaliação positiva nessa posição: {unknown}")
+    return [by_position[position] for position in positions]
+
+
+def build_plan(
+    db: DB,
+    *,
+    week: str,
+    playlist_id: str,
+    review_playlist_id: str,
+    tracks: list[Candidate],
+    albums: list[Candidate],
+    note: str = "",
+) -> PublicationPlan:
+    """Freeze the chosen identities against the exact snapshots that were heard."""
+    track_header = db.conn.execute(
+        "SELECT confirmed_at FROM review_queue_snapshots WHERE week=? AND playlist_id=?",
+        (week, review_playlist_id),
+    ).fetchone()
+    album_header = db.conn.execute(
+        "SELECT created_at FROM album_queue_weeks WHERE week=?", (week,)
+    ).fetchone()
+    if not track_header or not album_header:
+        raise ValueError(f"Sem snapshots confirmados para {week}")
+    album_keys = [album.key for album in albums if isinstance(album.key, tuple)]
+    return PublicationPlan(
+        week=week,
+        playlist_id=playlist_id,
+        review_playlist_id=review_playlist_id,
+        track_snapshot_at=track_header[0],
+        album_snapshot_at=album_header[0],
+        tracks=[str(track.key) for track in tracks],
+        albums=album_keys,
+        note=note,
+    )

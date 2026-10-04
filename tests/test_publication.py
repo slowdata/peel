@@ -294,3 +294,177 @@ def test_sync_preserves_full_selection_and_refuses_old_schema(sample):
     other.close()
     with pytest.raises(StateSyncError, match="novo schema"):
         _merge_user_state(remote, Path(db.path), changed_since="2020-01-01T00:00:00Z")
+
+
+# --- peel ouvir / peel publicar ---------------------------------------------
+
+from peel.publication import (  # noqa: E402
+    album_candidates,
+    default_picks,
+    parse_positions,
+    track_candidates,
+)
+
+
+def _no_sync(monkeypatch):
+    monkeypatch.setattr(cli, "_auto_sync_state", lambda _: None)
+
+
+def test_proposal_prefers_love_keeps_queue_order_and_never_pads(sample):
+    db, plan, _ = sample
+    candidates = track_candidates(db, "review", plan.week)
+    assert [c.position for c in candidates] == list(range(1, 10))
+    picks = default_picks(candidates)
+    assert [c.position for c in picks] == [1, 2, 3, 4, 5, 7, 9]  # 5 loves + 2 likes
+    assert default_picks(candidates[:3]) == candidates[:3]
+
+
+def test_album_candidates_drop_archival_and_unplayable(sample):
+    db, plan, _ = sample
+    db.conn.execute(
+        "UPDATE album_queue_items SET album='Album 2 (Deluxe Edition)' WHERE position=2"
+    )
+    db.conn.execute(
+        "UPDATE album_queue_items SET listen_url='https://example.com/review' WHERE position=3"
+    )
+    db.conn.commit()
+    db.upsert_album_feedback("Album Artist 2", "Album 2 (Deluxe Edition)", "love")
+    positions = [c.position for c in album_candidates(db, plan.week)]
+    assert 2 not in positions and 3 not in positions
+    assert positions == [1, 4, 5, 6, 7, 8, 9, 10, 11]
+
+
+def test_typed_positions_define_public_order(sample):
+    db, plan, _ = sample
+    candidates = track_candidates(db, "review", plan.week)
+    assert [c.position for c in parse_positions("9 1, #3", candidates)] == [9, 1, 3]
+    for bad in ("1 1", "42", "x", "1 2 3 4 5 6 7 8"):
+        with pytest.raises(ValueError):
+            parse_positions(bad, candidates)
+
+
+def test_numeric_rating_shortcuts(monkeypatch):
+    answers = iter(["1", "6"])
+    monkeypatch.setattr(cli.typer, "prompt", lambda *a, **k: next(answers))
+    assert cli._prompt_rating(default="like") == "love"
+    from peel.db import ALBUM_FEEDBACK_RATINGS
+
+    assert cli._prompt_rating(default="like", ratings=ALBUM_FEEDBACK_RATINGS) == "unavailable"
+
+
+def test_ouvir_rates_tracks_then_albums_and_pushes_once(sample, monkeypatch):
+    db, plan, _ = sample
+    db.conn.execute(
+        "DELETE FROM feedback WHERE spotify_uri IN ('spotify:track:t2','spotify:track:t4')"
+    )
+    db.conn.execute("DELETE FROM album_feedback WHERE album_key='album 1'")
+    db.conn.commit()
+    _no_sync(monkeypatch)
+    push = MagicMock(return_value=True)
+    monkeypatch.setattr(cli, "_push_state", push)
+    result = CliRunner().invoke(cli.app, ["ouvir"], input="1\n\n3\n\ny\n2\n\n")
+    assert result.exit_code == 0, result.output
+    assert db.feedback_for_track_identity("spotify:track:t2")[1] == "love"
+    assert db.feedback_for_track_identity("spotify:track:t4")[1] == "meh"
+    assert db.album_feedback_for_identity("Album Artist 1", "Album 1")[1] == "like"
+    push.assert_called_once()
+    assert "sync push" not in unstyle(result.output)
+
+
+def test_ouvir_without_new_ratings_does_not_push(sample, monkeypatch):
+    _no_sync(monkeypatch)
+    push = MagicMock()
+    monkeypatch.setattr(cli, "_push_state", push)
+    result = CliRunner().invoke(cli.app, ["ouvir"], input="y\n")
+    assert result.exit_code == 0, result.output
+    assert "Nada novo" in unstyle(result.output)
+    push.assert_not_called()
+
+
+def test_publicar_dry_run_writes_nothing(sample, monkeypatch):
+    db, plan, _ = sample
+    _no_sync(monkeypatch)
+    finalize = MagicMock()
+    monkeypatch.setattr(cli, "finalize", finalize)
+    before = Path(db.path).read_bytes()
+    result = CliRunner().invoke(cli.app, ["publicar", "--dry-run"], input="\n\n")
+    assert result.exit_code == 0, result.output
+    assert "Dry-run" in unstyle(result.output)
+    finalize.assert_not_called()
+    assert Path(db.path).read_bytes() == before
+
+
+def test_publicar_freezes_typed_choice_then_publishes_site_and_state(sample, monkeypatch):
+    db, plan, tmp = sample
+    _no_sync(monkeypatch)
+    captured = {}
+
+    def fake_finalize(**kwargs):
+        captured["plan"] = PublicationPlan.model_validate_json(kwargs["selection"].read_text())
+        captured["kwargs"] = kwargs
+
+    monkeypatch.setattr(cli, "finalize", fake_finalize)
+    prepare_site, publish_site, push = MagicMock(), MagicMock(), MagicMock()
+    monkeypatch.setattr(cli, "_prepare_site_checkout", prepare_site)
+    monkeypatch.setattr(cli, "_publish_site", publish_site)
+    monkeypatch.setattr(cli, "_push_state", push)
+    result = CliRunner().invoke(cli.app, ["publicar"], input="9 1 3\n\ny\n")
+    assert result.exit_code == 0, result.output
+    assert captured["plan"].tracks == ["spotify:track:t9", "spotify:track:t1", "spotify:track:t3"]
+    assert [key[1] for key in captured["plan"].albums] == [f"album {n}" for n in range(1, 8)]
+    assert captured["kwargs"]["export"] is True
+    prepare_site.assert_called_once()
+    publish_site.assert_called_once()
+    assert publish_site.call_args.args[1] == plan.week
+    push.assert_called_once()
+
+
+def test_publicar_refuses_already_published_week(sample, monkeypatch):
+    db, plan, _ = sample
+    _no_sync(monkeypatch)
+    payload = prepare_publication(db, plan)
+    db.replace_finalized_week_tracks(plan.week, "public", plan.tracks, selection=payload)
+    finalize = MagicMock()
+    monkeypatch.setattr(cli, "finalize", finalize)
+    result = CliRunner().invoke(cli.app, ["publicar"])
+    assert result.exit_code == 0
+    assert "já está publicada" in unstyle(result.output)
+    finalize.assert_not_called()
+
+
+def test_publish_site_commits_only_the_week_file(tmp_path, monkeypatch):
+    import subprocess
+
+    for key, value in {
+        "GIT_AUTHOR_NAME": "t",
+        "GIT_AUTHOR_EMAIL": "t@t",
+        "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@t",
+    }.items():
+        monkeypatch.setenv(key, value)
+    remote, site = tmp_path / "remote.git", tmp_path / "site"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(remote)], check=True)
+    subprocess.run(["git", "clone", "-q", str(remote), str(site)], check=True)
+    weeks = site / "src/data/weeks"
+    weeks.mkdir(parents=True)
+    (weeks / "2026-W31.json").write_text("{}\n")
+    subprocess.run(["git", "-C", str(site), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(site), "commit", "-qm", "init"], check=True)
+    subprocess.run(["git", "-C", str(site), "push", "-q", "origin", "HEAD:main"], check=True)
+    subprocess.run(["git", "-C", str(site), "branch", "-q", "-u", "origin/main"], check=True)
+    cli._prepare_site_checkout(site)
+    (weeks / "2026-W38.json").write_text('{"week": "2026-W38"}\n')
+    cli._publish_site(site, "2026-W38")
+    log = subprocess.run(
+        ["git", "--git-dir", str(remote), "log", "--name-only", "--format=%s", "-1"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "feat(data): publish 2026-W38" in log and "src/data/weeks/2026-W38.json" in log
+    (weeks / "stray.json").write_text("{}")
+    (weeks / "2026-W39.json").write_text("{}")
+    with pytest.raises(cli.typer.Exit):
+        cli._publish_site(site, "2026-W39")
+    with pytest.raises(cli.typer.Exit):
+        cli._prepare_site_checkout(site)

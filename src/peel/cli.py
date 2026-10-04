@@ -49,10 +49,19 @@ from peel.main import (
 )
 from peel.main import run as run_pipeline
 from peel.matcher import normalize
-from peel.models import ReviewQueueItem
+from peel.models import AlbumQueueItem, ReviewQueueItem
 from peel.musicbrainz import fetch_musicbrainz_artist_genres
 from peel.playlists import canonical_playlist_id
-from peel.publication import PublicationPlan, prepare_publication
+from peel.publication import (
+    Candidate,
+    PublicationPlan,
+    album_candidates,
+    build_plan,
+    default_picks,
+    parse_positions,
+    prepare_publication,
+    track_candidates,
+)
 from peel.release_radar import (
     DEFAULT_RELEASE_RADAR_URL,
     ReleaseRadarTrack,
@@ -79,6 +88,9 @@ from peel.state_sync import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+# Ordem dos atalhos numéricos: do mais positivo ao mais negativo.
+RATING_ORDER = ("love", "like", "meh", "skip", "ban", "unavailable")
+MAX_TRIAGE_SESSION = 100
 _OFFLINE_MODE = False
 
 
@@ -311,6 +323,161 @@ def finalize(
 
 
 @app.command()
+def ouvir(
+    push: Annotated[
+        bool, typer.Option("--push/--no-push", help="Enviar as avaliações no fim")
+    ] = True,
+) -> None:
+    """Avalia faixas e depois álbuns da fila activa, e envia tudo no fim."""
+    _auto_sync_state("ouvir")
+    db = DB(str(_resolve_path(settings.db_path)))
+    saved = 0
+    try:
+        db.init_schema()
+        console.print(
+            "[bold]Faixas[/bold] — Enter = like; 1 love · 2 like · 3 meh · 4 skip · 5 ban"
+        )
+        saved += _run_triage_feedback_session(db, limit=MAX_TRIAGE_SESSION, push_hint=False)
+        items = db.latest_album_queue(settings.peel_review_playlist_id or settings.peel_playlist_id)
+        if items and typer.confirm("Avaliar os álbuns agora?", default=True):
+            saved += _run_album_feedback_session(db, items, items[0].week, push_hint=False)
+    finally:
+        db.close()
+    if not saved:
+        console.print("Nada novo para enviar.")
+    elif not push:
+        console.print(f"{saved} avaliações guardadas. Corre uv run peel sync push.")
+    else:
+        console.print(f"A enviar {saved} avaliações…")
+        console.print("Enviado." if _push_state() else "Nada para enviar.")
+
+
+@app.command()
+def publicar(
+    site_dir: Annotated[
+        Path, typer.Option("--site-dir", help="Diretório do site peel-sept")
+    ] = Path("../peel-sept"),
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Só mostrar a proposta, sem publicar")
+    ] = False,
+) -> None:
+    """Escolhe e publica a edição da fila activa: Spotify, site e estado."""
+    _auto_sync_state("publicar")
+    review_id = settings.peel_review_playlist_id or settings.peel_playlist_id
+    db = DB(str(_resolve_path(settings.db_path)))
+    try:
+        db.init_schema()
+        week = db.active_review_week(review_id)
+        if week is None:
+            console.print("Sem fila activa confirmada.")
+            raise typer.Exit(code=1)
+        if db.finalized_week_selection(week, settings.peel_playlist_id) is not None:
+            console.print(f"{week} já está publicada.")
+            return
+        tracks = _choose_picks("Faixas", track_candidates(db, review_id, week))
+        if not tracks:
+            console.print("Sem faixas love/like nesta fila. Avalia primeiro com: uv run peel ouvir")
+            raise typer.Exit(code=1)
+        albums = _choose_picks("Álbuns", album_candidates(db, week))
+        plan = build_plan(
+            db,
+            week=week,
+            playlist_id=settings.peel_playlist_id,
+            review_playlist_id=review_id,
+            tracks=tracks,
+            albums=albums,
+            note="Selecção escolhida com peel publicar.",
+        )
+        prepare_publication(db, plan)  # validação completa antes de qualquer escrita
+    finally:
+        db.close()
+
+    console.print(f"\n[bold]{week}[/bold]: {len(tracks)} faixas · {len(albums)} álbuns")
+    if dry_run:
+        console.print("Dry-run: nada publicado.")
+        return
+    if not typer.confirm("Publicar no Spotify e no site?", default=False):
+        console.print("Cancelado; nada publicado.")
+        return
+    site_root = _resolve_path(str(site_dir))
+    _prepare_site_checkout(site_root)
+    with tempfile.TemporaryDirectory(prefix="peel-publicar-") as tmp:
+        plan_path = Path(tmp) / f"{week}.json"
+        plan_path.write_text(plan.model_dump_json(indent=2), encoding="utf-8")
+        finalize(week=week, site_dir=site_dir, export=True, selection=plan_path)
+    _publish_site(site_root, week)
+    _push_state()
+    console.print(f"{week} publicada: Spotify, site e estado.")
+
+
+def _choose_picks(title: str, candidates: list[Candidate]) -> list[Candidate]:
+    """Mostra os candidatos positivos e devolve a escolha, pela ordem pública."""
+    if not candidates:
+        console.print(f"\n[bold]{title}[/bold]: sem candidatos love/like.")
+        return []
+    proposal = default_picks(candidates)
+    chosen = {candidate.position for candidate in proposal}
+    console.print(f"\n[bold]{title}[/bold] — proposta ✓ (love antes de like, ordem da fila)")
+    for candidate in candidates:
+        mark = "✓" if candidate.position in chosen else " "
+        console.print(
+            f" {mark} #{candidate.position:<3} {candidate.rating:<4} "
+            f"{candidate.artist} — {candidate.title}"
+        )
+    while True:
+        answer = typer.prompt(
+            "Enter aceita ✓; ou escreve as posições pela ordem pública (ex.: 5 13 28)",
+            default="",
+            show_default=False,
+        )
+        if not answer.strip():
+            return proposal
+        try:
+            return parse_positions(answer, candidates)
+        except ValueError as exc:
+            console.print(str(exc))
+
+
+def _git(site_root: Path, *args: str, capture: bool = False) -> str:
+    result = subprocess.run(  # noqa: S603 - fixed git binary and arguments
+        ["git", "-C", str(site_root), *args],
+        check=True,
+        text=True,
+        capture_output=capture,
+    )
+    return result.stdout if capture else ""
+
+
+def _prepare_site_checkout(site_root: Path) -> None:
+    """Garante site limpo e actualizado antes de qualquer escrita no Spotify."""
+    if not (site_root / "src" / "data" / "weeks").is_dir():
+        raise typer.BadParameter(f"Site não encontrado em {site_root}", param_hint="--site-dir")
+    if _git(site_root, "status", "--porcelain", capture=True).strip():
+        console.print("O site tem alterações por publicar; resolve-as antes de continuar.")
+        raise typer.Exit(code=1)
+    _git(site_root, "pull", "--ff-only", "--quiet")
+
+
+def _publish_site(site_root: Path, week: str) -> None:
+    """Valida a build e publica apenas o JSON da semana no repositório do site."""
+    relative = f"src/data/weeks/{week}.json"
+    changed = {
+        line[3:] for line in _git(site_root, "status", "--porcelain", capture=True).splitlines()
+    }
+    if changed - {relative}:
+        console.print(f"Alterações inesperadas no site: {sorted(changed - {relative})}")
+        raise typer.Exit(code=1)
+    if not changed:
+        console.print("Site já actualizado.")
+        return
+    if (site_root / "node_modules").is_dir():
+        subprocess.run(["npm", "run", "build"], cwd=site_root, check=True)  # noqa: S607
+    _git(site_root, "add", relative)
+    _git(site_root, "commit", "--quiet", "-m", f"feat(data): publish {week}")
+    _git(site_root, "push", "--quiet")
+
+
+@app.command()
 def status() -> None:
     """Mostra estado da DB e das últimas runs."""
     db_path = _resolve_path(settings.db_path)
@@ -465,19 +632,19 @@ def _active_unrated_triage_items(db: DB) -> list[ReviewQueueItem]:
     ]
 
 
-def _run_triage_feedback_session(db: DB, *, limit: int) -> None:
-    """Sessão interactiva canónica da fila activa de triagem."""
+def _run_triage_feedback_session(db: DB, *, limit: int, push_hint: bool = True) -> int:
+    """Sessão interactiva canónica da fila activa de triagem; devolve avaliações gravadas."""
     playlist_id = settings.peel_review_playlist_id or settings.peel_playlist_id
     queue = db.review_queue(playlist_id)
     if not queue:
         console.print("Sem snapshot de triagem confirmado. Aguarda a próxima weekly.")
-        return
+        return 0
     positions = {item.spotify_uri: index for index, item in enumerate(queue, 1)}
 
     items = _active_unrated_triage_items(db)
     if not items:
         console.print("Triagem activa completa: todas as tracks já foram avaliadas.")
-        return
+        return 0
 
     interrupted = False
     saved_count = 0
@@ -502,8 +669,9 @@ def _run_triage_feedback_session(db: DB, *, limit: int) -> None:
         console.print(f"Sessão terminada. Faltam {remaining} tracks activas por avaliar.")
     else:
         console.print("Triagem activa completa: todas as tracks já foram avaliadas.")
-    if saved_count:
+    if saved_count and push_hint:
         console.print("Corre uv run peel sync push.")
+    return saved_count
 
 
 def _active_triage_identities(db: DB) -> set[tuple[str, str]]:
@@ -826,38 +994,44 @@ def albums_feedback(
                 return
             target_week = items[0].week
 
-        pending = [
-            item
-            for item in items
-            if db.album_feedback_for_identity(item.artist, item.album) is None
-        ]
-        if not pending:
-            console.print(f"Fila de álbuns {target_week} completa: todos foram avaliados.")
-            return
-
-        console.print(f"Feedback de álbuns: {target_week}")
-        saved = 0
-        for index, item in enumerate(pending, start=1):
-            console.print(f"[{index}/{len(pending)}] {item.artist} — {item.album}")
-            if item.listen_url:
-                console.print(item.listen_url)
-            rating = _prompt_rating(default="like", ratings=ALBUM_FEEDBACK_RATINGS)
-            if rating in {"q", "quit", "exit"}:
-                break
-            db.upsert_album_feedback(item.artist, item.album, rating, _prompt_comment(default=""))
-            saved += 1
-            console.print(f"Saved: {item.artist} — {item.album} [{rating}]")
-        remaining = sum(
-            db.album_feedback_for_identity(item.artist, item.album) is None for item in items
-        )
-        if remaining:
-            console.print(f"Sessão {target_week} terminada. Faltam {remaining} álbuns por avaliar.")
-        else:
-            console.print(f"Fila de álbuns {target_week} completa: todos foram avaliados.")
-        if saved:
-            console.print("Corre uv run peel sync push.")
+        _run_album_feedback_session(db, items, target_week)
     finally:
         db.close()
+
+
+def _run_album_feedback_session(
+    db: DB, items: list[AlbumQueueItem], week: str, *, push_hint: bool = True
+) -> int:
+    """Avalia os álbuns pendentes de uma fila; devolve avaliações gravadas."""
+    pending = [
+        item for item in items if db.album_feedback_for_identity(item.artist, item.album) is None
+    ]
+    if not pending:
+        console.print(f"Fila de álbuns {week} completa: todos foram avaliados.")
+        return 0
+
+    console.print(f"Feedback de álbuns: {week}")
+    saved = 0
+    for index, item in enumerate(pending, start=1):
+        console.print(f"[{index}/{len(pending)}] {item.artist} — {item.album}")
+        if item.listen_url:
+            console.print(item.listen_url)
+        rating = _prompt_rating(default="like", ratings=ALBUM_FEEDBACK_RATINGS)
+        if rating in {"q", "quit", "exit"}:
+            break
+        db.upsert_album_feedback(item.artist, item.album, rating, _prompt_comment(default=""))
+        saved += 1
+        console.print(f"Saved: {item.artist} — {item.album} [{rating}]")
+    remaining = sum(
+        db.album_feedback_for_identity(item.artist, item.album) is None for item in items
+    )
+    if remaining:
+        console.print(f"Sessão {week} terminada. Faltam {remaining} álbuns por avaliar.")
+    else:
+        console.print(f"Fila de álbuns {week} completa: todos foram avaliados.")
+    if saved and push_hint:
+        console.print("Corre uv run peel sync push.")
+    return saved
 
 
 @triage_app.callback(invoke_without_command=True)
@@ -1556,6 +1730,12 @@ def sync_pull() -> None:
 @sync_app.command("push")
 def sync_push() -> None:
     """Publica estado sobre o main remoto sem integrar código no checkout local."""
+    changed = _push_state()
+    console.print("Push completed." if changed else "Nothing to push.")
+
+
+def _push_state() -> bool:
+    """Envia feedback/estado local para o GitHub; ``Exit(1)`` se for inseguro."""
     db_path = _canonical_state_path()
     try:
         # Detecta primeiro o conflito real: feedback local + weekly remota nova.
@@ -1576,8 +1756,7 @@ def sync_push() -> None:
     except StateSyncError as exc:
         console.print(str(exc))
         raise typer.Exit(code=1) from exc
-
-    console.print("Push completed." if changed else "Nothing to push.")
+    return changed
 
 
 @doctor_app.callback(invoke_without_command=True)
@@ -1944,7 +2123,10 @@ def _prompt_rating(
     ratings: Mapping[str, int] | None = None,
 ) -> str:
     ratings = ratings or FEEDBACK_RATINGS
-    allowed = ", ".join(sorted(ratings))
+    ordered = [label for label in RATING_ORDER if label in ratings]
+    ordered += sorted(label for label in ratings if label not in RATING_ORDER)
+    shortcuts = {str(index): label for index, label in enumerate(ordered, start=1)}
+    allowed = " · ".join(f"{index} {label}" for index, label in shortcuts.items())
     while True:
         try:
             value = typer.prompt(f"Rating [{allowed} / q]", default=default).strip().lower()
@@ -1954,6 +2136,7 @@ def _prompt_rating(
             continue
         if value in {"q", "quit", "exit"}:
             return value
+        value = shortcuts.get(value, value)
         if value in ratings:
             return value
         console.print(f"Rating inválida: {value}")

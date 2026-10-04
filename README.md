@@ -58,6 +58,23 @@ Sem algoritmos, sem bolhas — apenas bom gosto humano, entregue.
    uv run peel run        # Executa uma run completa
    ```
 
+## Uso semanal (2 comandos)
+
+```bash
+uv run peel ouvir      # avalia faixas e depois álbuns; envia tudo no fim
+uv run peel publicar   # propõe a edição (love antes de like), confirmas, publica
+```
+
+No `ouvir`, Enter = like e os números são atalhos: `1 love · 2 like · 3 meh ·
+4 skip · 5 ban` (nos álbuns, `6 unavailable`). `q` pára e guarda o que já avaliaste.
+
+O `publicar` mostra só candidatos `love/like` com a posição original na fila.
+Enter aceita a proposta ✓; ou escreve as posições pela ordem pública, por
+exemplo `5 13 15 16 20 24 28`. Reedições e álbuns sem link directo não entram.
+Antes de escrever no Spotify confirma que o site está limpo e actualizado;
+depois finaliza com verificação, valida a build, publica o JSON da semana e
+envia o estado. `--dry-run` só mostra a proposta.
+
 ## Automated Weekly Run
 
 O projeto corre automaticamente à sexta-feira (17:17 UTC, fora do início da hora para reduzir atrasos do GitHub) via [GitHub Actions](/.github/workflows/weekly.yml).
