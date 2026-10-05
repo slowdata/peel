@@ -468,3 +468,138 @@ def test_publish_site_commits_only_the_week_file(tmp_path, monkeypatch):
         cli._publish_site(site, "2026-W39")
     with pytest.raises(cli.typer.Exit):
         cli._prepare_site_checkout(site)
+
+
+# --- peel / estado / musicas / help -------------------------------------------
+
+from datetime import UTC, datetime  # noqa: E402
+
+
+def test_bare_peel_shows_state_instead_of_an_error(sample, monkeypatch):
+    _no_sync(monkeypatch)
+    result = CliRunner().invoke(cli.app, [])
+    assert result.exit_code == 0, result.output
+    assert "Próximo passo" in unstyle(result.output)
+
+
+def test_estado_points_to_the_next_step(sample, monkeypatch):
+    db, plan, _ = sample
+    _no_sync(monkeypatch)
+    out = unstyle(CliRunner().invoke(cli.app, ["estado"]).output)
+    assert "por avaliar 0" in out and "Publicada: ainda não" in out
+    assert "uv run peel publicar" in out
+    db.conn.execute("DELETE FROM feedback WHERE spotify_uri='spotify:track:t2'")
+    db.conn.commit()
+    assert "uv run peel ouvir" in unstyle(CliRunner().invoke(cli.app, ["estado"]).output)
+    db.upsert_feedback("spotify:track:t2", "like")
+    payload = prepare_publication(db, plan)
+    db.replace_finalized_week_tracks(plan.week, "public", plan.tracks, selection=payload)
+    out = unstyle(CliRunner().invoke(cli.app, ["estado"]).output)
+    assert "nada até à próxima execução" in out
+    assert f"https://peel.sept.pt/pt/{plan.week}" in out
+
+
+@pytest.mark.parametrize(
+    ("now", "expected"),
+    [
+        (datetime(2026, 10, 4, 12, tzinfo=UTC), datetime(2026, 10, 9, 17, 17, tzinfo=UTC)),
+        (datetime(2026, 10, 9, 17, 0, tzinfo=UTC), datetime(2026, 10, 9, 17, 17, tzinfo=UTC)),
+        (datetime(2026, 10, 9, 17, 30, tzinfo=UTC), datetime(2026, 10, 16, 17, 17, tzinfo=UTC)),
+    ],
+)
+def test_next_weekly_run(now, expected):
+    assert cli.next_weekly_run(now) == expected
+
+
+def test_schedule_constant_matches_workflow_cron():
+    workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/weekly.yml").read_text()
+    cron = f'cron: "{cli.WEEKLY_RUN_MINUTE} {cli.WEEKLY_RUN_HOUR} * * 5"'
+    assert cron in workflow and cli.WEEKLY_RUN_WEEKDAY == 4  # Friday
+
+
+def test_estado_says_when_todays_run_is_late(sample, monkeypatch):
+    _no_sync(monkeypatch)
+
+    class LateFriday(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 10, 9, 19, 0, tzinfo=UTC)
+
+    monkeypatch.setattr(cli, "datetime", LateFriday)
+    out = unstyle(CliRunner().invoke(cli.app, ["estado"]).output)
+    assert "Execução de hoje" in out and "ainda não chegou" in out
+
+
+def test_help_groups_weekly_commands_and_hides_internals():
+    out = unstyle(CliRunner().invoke(cli.app, ["--help"]).output)
+    for visible in ("Semana", "estado", "ouvir", "publicar", "Consultar", "musicas", "albums"):
+        assert visible in out
+    for hidden in ("finalize", "triage", "affinity", "site", "status", "feedback"):
+        assert f"│ {hidden} " not in out
+    # Hidden commands keep working: GitHub runs `peel run`; publicar calls finalize.
+    for command in (["run", "--help"], ["finalize", "--help"], ["triage", "--help"]):
+        assert CliRunner().invoke(cli.app, command).exit_code == 0
+
+
+def test_musicas_lists_ratings_and_published_picks(sample, monkeypatch):
+    db, plan, _ = sample
+    _no_sync(monkeypatch)
+    payload = prepare_publication(db, plan)
+    db.replace_finalized_week_tracks(plan.week, "public", plan.tracks, selection=payload)
+    db.conn.execute("DELETE FROM feedback WHERE spotify_uri='spotify:track:t2'")
+    db.conn.commit()
+    out = unstyle(CliRunner(env={"COLUMNS": "200"}).invoke(cli.app, ["musicas"]).output)
+    assert f"Peel — {plan.week} (9 faixas)" in out
+    assert "por avaliar" in out and "Artist 9" in out and "✓" in out
+    weeks = unstyle(CliRunner().invoke(cli.app, ["musicas", "--semanas"]).output)
+    assert plan.week in weeks
+
+
+def test_musicas_opens_track_playlist_and_site(sample, monkeypatch):
+    db, plan, _ = sample
+    _no_sync(monkeypatch)
+    opened, browsed = [], []
+    monkeypatch.setattr(cli, "_open_listen_url", opened.append)
+    monkeypatch.setattr(cli.webbrowser, "open", browsed.append)
+    monkeypatch.setattr(cli, "_site_has_week", lambda week, site_dir=None: True)
+    result = CliRunner().invoke(cli.app, ["musicas", "--abrir", "3", "--playlist", "--site"])
+    assert result.exit_code == 0, result.output
+    assert opened == [
+        "https://open.spotify.com/track/t3",
+        "https://open.spotify.com/playlist/review",
+    ]
+    assert browsed == [f"https://peel.sept.pt/pt/{plan.week}"]
+    bad = CliRunner().invoke(cli.app, ["musicas", "--abrir", "42"])
+    assert bad.exit_code != 0
+
+
+def test_musicas_refuses_site_for_unpublished_week(sample, monkeypatch):
+    _no_sync(monkeypatch)
+    browsed = []
+    monkeypatch.setattr(cli.webbrowser, "open", browsed.append)
+    monkeypatch.setattr(cli, "_site_has_week", lambda week, site_dir=None: False)
+    result = CliRunner().invoke(cli.app, ["musicas", "--site"])
+    assert result.exit_code == 1
+    assert "ainda não está no site" in unstyle(result.output)
+    assert browsed == []
+
+
+def test_ouvir_o_opens_the_current_track(sample, monkeypatch):
+    db, plan, _ = sample
+    db.conn.execute("DELETE FROM feedback WHERE spotify_uri='spotify:track:t2'")
+    db.conn.commit()
+    _no_sync(monkeypatch)
+    monkeypatch.setattr(cli, "_push_state", MagicMock(return_value=True))
+    opened = []
+    monkeypatch.setattr(cli, "_open_listen_url", opened.append)
+    result = CliRunner().invoke(cli.app, ["ouvir"], input="o\n1\n\nn\n")
+    assert result.exit_code == 0, result.output
+    assert opened == ["https://open.spotify.com/track/t2"]
+    assert db.feedback_for_track_identity("spotify:track:t2")[1] == "love"
+    assert "o abrir" in unstyle(result.output)
+
+
+def test_spotify_app_uri_handles_tracks_and_playlists():
+    assert cli._spotify_app_uri("https://open.spotify.com/track/abc") == "spotify:track:abc"
+    assert cli._spotify_app_uri("https://open.spotify.com/playlist/xyz") == "spotify:playlist:xyz"
+    assert cli._spotify_web_url("spotify:track:abc") == "https://open.spotify.com/track/abc"

@@ -61,12 +61,29 @@ Sem algoritmos, sem bolhas — apenas bom gosto humano, entregue.
 ## Uso semanal (2 comandos)
 
 ```bash
+uv run peel            # estado: o que falta avaliar, publicação, próxima execução
 uv run peel ouvir      # avalia faixas e depois álbuns; envia tudo no fim
 uv run peel publicar   # propõe a edição (love antes de like), confirmas, publica
 ```
 
+Para consultar:
+
+```bash
+uv run peel musicas                     # faixas da semana activa, com avaliação e ✓ site
+uv run peel musicas --semanas           # semanas disponíveis
+uv run peel musicas --semana 2026-W38   # uma semana concreta
+uv run peel musicas --abrir 5           # abre a faixa nº 5 na app do Spotify
+uv run peel musicas --playlist          # abre a playlist da semana (activa ou última publicada)
+uv run peel musicas --site              # abre a semana em peel.sept.pt
+uv run peel albums --open 3             # abre o álbum nº 3
+```
+
+A ajuda (`peel --help`) mostra só estes comandos; os internos (`run`, `finalize`,
+`site`, `triage`, `feedback`, `status`, `affinity`) continuam a funcionar.
+
 No `ouvir`, Enter = like e os números são atalhos: `1 love · 2 like · 3 meh ·
-4 skip · 5 ban` (nos álbuns, `6 unavailable`). `q` pára e guarda o que já avaliaste.
+4 skip · 5 ban` (nos álbuns, `6 unavailable`). `o` abre a faixa ou o álbum actual
+no Spotify; `q` pára e guarda o que já avaliaste.
 
 O `publicar` mostra só candidatos `love/like` com a posição original na fila.
 Enter aceita a proposta ✓; ou escreve as posições pela ordem pública, por

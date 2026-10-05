@@ -20,13 +20,14 @@ import tempfile
 import time
 import tomllib
 import webbrowser
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import redirect_stdout
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 import typer
 from rich.console import Console
@@ -97,7 +98,11 @@ def _configure_stdin_decode_errors() -> None:
 _configure_stdin_decode_errors()
 
 console = Console(width=160)
-app = typer.Typer(add_completion=False, help="Peel — música curada, sincronizada e visível.")
+app = typer.Typer(
+    add_completion=False,
+    invoke_without_command=True,
+    help="Peel — música curada, sincronizada e visível. Sem comando, mostra o estado.",
+)
 sync_app = typer.Typer(add_completion=False, help="Sincronização local/GitHub.")
 doctor_app = typer.Typer(add_completion=False, help="Diagnósticos do Peel.")
 triage_app = typer.Typer(
@@ -110,12 +115,16 @@ affinity_app = typer.Typer(add_completion=False, help="Perfil local de afinidade
 albums_app = typer.Typer(
     add_completion=False, invoke_without_command=True, help="Fila semanal canónica de álbuns."
 )
-app.add_typer(sync_app, name="sync")
-app.add_typer(doctor_app, name="doctor")
-app.add_typer(triage_app, name="triage")
-app.add_typer(site_app, name="site")
-app.add_typer(affinity_app, name="affinity")
-app.add_typer(albums_app, name="albums")
+PANEL_WEEK = "Semana"
+PANEL_BROWSE = "Consultar"
+PANEL_MAINTENANCE = "Manutenção"
+app.add_typer(albums_app, name="albums", rich_help_panel=PANEL_BROWSE)
+app.add_typer(sync_app, name="sync", rich_help_panel=PANEL_MAINTENANCE)
+app.add_typer(doctor_app, name="doctor", rich_help_panel=PANEL_MAINTENANCE)
+# Internos: continuam a funcionar (GitHub, publicar, diagnóstico), mas fora da ajuda.
+app.add_typer(triage_app, name="triage", hidden=True)
+app.add_typer(site_app, name="site", hidden=True)
+app.add_typer(affinity_app, name="affinity", hidden=True)
 
 
 @app.callback()
@@ -134,6 +143,8 @@ def cli_callback(
     global _OFFLINE_MODE  # noqa: PLW0603 - Typer callback owns this process-wide option
     _OFFLINE_MODE = offline or _env_truthy("PEEL_OFFLINE")
     configure_logging(verbose=verbose, pipeline=ctx.invoked_subcommand == "run")
+    if ctx.invoked_subcommand is None:
+        estado()
 
 
 @dataclass(slots=True)
@@ -158,7 +169,7 @@ class GitSyncState:
     dirty_paths: list[str]
 
 
-@app.command("run")
+@app.command("run", hidden=True)
 def run_command(
     dry_run: Annotated[
         bool,
@@ -175,7 +186,7 @@ def run_command(
         _abort_spotify_reauth(exc)
 
 
-@app.command("finalize")
+@app.command("finalize", hidden=True)
 def finalize(
     week: Annotated[
         str | None, typer.Option("--week", help="Semana ISO a publicar (default: a atual)")
@@ -300,7 +311,247 @@ def finalize(
             temporary.cleanup()
 
 
-@app.command()
+SITE_URL = "https://peel.sept.pt/pt"
+LISBON = ZoneInfo("Europe/Lisbon")
+# Manter alinhado com o cron de .github/workflows/weekly.yml ("17 17 * * 5").
+WEEKLY_RUN_WEEKDAY, WEEKLY_RUN_HOUR, WEEKLY_RUN_MINUTE = 4, 17, 17
+_WEEKDAYS_PT = ("segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo")
+_MONTHS_PT = ("jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez")
+
+
+def next_weekly_run(now: datetime) -> datetime:
+    """Próximo agendamento da execução semanal (UTC), estritamente depois de ``now``."""
+    candidate = now.astimezone(UTC).replace(
+        hour=WEEKLY_RUN_HOUR, minute=WEEKLY_RUN_MINUTE, second=0, microsecond=0
+    )
+    candidate += timedelta(days=(WEEKLY_RUN_WEEKDAY - candidate.weekday()) % 7)
+    if candidate <= now:
+        candidate += timedelta(days=7)
+    return candidate
+
+
+def _when_pt(moment: datetime) -> str:
+    local = moment.astimezone(LISBON)
+    return (
+        f"{_WEEKDAYS_PT[local.weekday()]} {local.day} {_MONTHS_PT[local.month - 1]}, {local:%H:%M}"
+    )
+
+
+def _spotify_web_url(uri_or_url: str) -> str:
+    """``spotify:track:ID`` → ``https://open.spotify.com/track/ID``."""
+    if uri_or_url.startswith("spotify:"):
+        _, kind, value = uri_or_url.split(":", 2)
+        return f"https://open.spotify.com/{kind}/{value}"
+    return uri_or_url
+
+
+def _site_has_week(week: str, site_dir: Path | None = None) -> bool:
+    root = _resolve_path(str(site_dir or Path("../peel-sept")))
+    return (root / "src" / "data" / "weeks" / f"{week}.json").exists()
+
+
+@app.command(rich_help_panel=PANEL_WEEK)
+def estado() -> None:
+    """Resumo: semana activa, o que falta avaliar, publicação e próxima execução."""
+    _auto_sync_state("estado")
+    review_id = settings.peel_review_playlist_id or settings.peel_playlist_id
+    db = DB(str(_resolve_path(settings.db_path)))
+    try:
+        db.init_schema()
+        week = db.active_review_week(review_id)
+        if week is None:
+            console.print("Sem fila activa confirmada. Aguarda a próxima execução.")
+            return
+        queue = db.review_queue_snapshot(review_id, week) or []
+        albums = db.album_queue(week) or []
+        unrated_tracks = sum(db.feedback_for_track_identity(i.spotify_uri) is None for i in queue)
+        unrated_albums = sum(
+            db.album_feedback_for_identity(i.artist, i.album) is None for i in albums
+        )
+        selection = db.finalized_week_selection(week, settings.peel_playlist_id)
+        confirmed = db.conn.execute(
+            "SELECT confirmed_at FROM review_queue_snapshots WHERE week=? AND playlist_id=?",
+            (week, review_id),
+        ).fetchone()
+    finally:
+        db.close()
+
+    now = datetime.now(UTC)
+    console.print(f"[bold]Peel — {week}[/bold]")
+    if confirmed:
+        console.print(f"  Fila entregue: {_when_pt(datetime.fromisoformat(confirmed[0]))}")
+    console.print(f"  Faixas: {len(queue)} · por avaliar {unrated_tracks}")
+    console.print(f"  Álbuns: {len(albums)} · por avaliar {unrated_albums}")
+    if selection:
+        console.print(
+            f"  Publicada: {len(selection['tracks'])} faixas · {len(selection['albums'])} álbuns"
+            f" → {SITE_URL}/{week}"
+        )
+    else:
+        console.print("  Publicada: ainda não")
+    run_at = next_weekly_run(now)
+    today_run = run_at - timedelta(days=7)
+    if today_run.date() == now.date() and week < iso_week(now):
+        console.print(
+            f"  Execução de hoje ({_when_pt(today_run)}): ainda não chegou;"
+            " o GitHub pode atrasar até ~4h"
+        )
+    else:
+        console.print(f"  Próxima execução: {_when_pt(run_at)} (o GitHub pode atrasar)")
+    if unrated_tracks or unrated_albums:
+        step = "uv run peel ouvir"
+    elif not selection:
+        step = "uv run peel publicar"
+    else:
+        step = "nada até à próxima execução 🎧"
+    console.print(f"[bold]Próximo passo:[/bold] {step}")
+
+
+@dataclass(frozen=True, slots=True)
+class WeekTrack:
+    position: int
+    artist: str
+    title: str
+    spotify_uri: str
+    rating: str | None
+    published: bool
+    source_id: str | None
+
+
+def _week_tracks(db: DB, week: str) -> list[WeekTrack] | None:
+    """Faixas ouvidas numa semana (fila confirmada) ou, sem fila, as publicadas."""
+    review_id = settings.peel_review_playlist_id or settings.peel_playlist_id
+    published = set(db.finalized_week_uris(week, settings.peel_playlist_id) or [])
+    queue = db.review_queue_snapshot(review_id, week)
+    if queue:
+        return [
+            WeekTrack(
+                position,
+                item.artist,
+                item.title,
+                item.spotify_uri,
+                (db.feedback_for_track_identity(item.spotify_uri) or (None, None))[1],
+                item.spotify_uri in published,
+                item.source_id,
+            )
+            for position, item in enumerate(queue, 1)
+        ]
+    uris = db.finalized_week_uris(week, settings.peel_playlist_id)
+    if not uris:
+        return None
+    rows = []
+    for position, uri in enumerate(uris, 1):
+        row = db.conn.execute(
+            "SELECT artist, title, source_id FROM tracks WHERE spotify_uri=? LIMIT 1", (uri,)
+        ).fetchone()
+        artist, title, source_id = row if row else ("?", uri, None)
+        rating = (db.feedback_for_track_identity(uri) or (None, None))[1]
+        rows.append(WeekTrack(position, artist, title, uri, rating, True, source_id))
+    return rows
+
+
+def _listed_weeks(db: DB) -> list[str]:
+    review_id = settings.peel_review_playlist_id or settings.peel_playlist_id
+    rows = db.conn.execute(
+        "SELECT week FROM review_queue_snapshots WHERE playlist_id=? "
+        "UNION SELECT week FROM finalized_week_tracks WHERE playlist_id=? ORDER BY week DESC",
+        (canonical_playlist_id(review_id), canonical_playlist_id(settings.peel_playlist_id)),
+    ).fetchall()
+    return [str(row[0]) for row in rows]
+
+
+@app.command(rich_help_panel=PANEL_BROWSE)
+def musicas(
+    semana: Annotated[
+        str | None, typer.Option("--semana", "--week", help="Semana ISO (default: a activa)")
+    ] = None,
+    semanas: Annotated[
+        bool, typer.Option("--semanas", help="Lista as semanas disponíveis")
+    ] = False,
+    abrir: Annotated[
+        int | None, typer.Option("--abrir", "-o", min=1, help="Abre a faixa nº N no Spotify")
+    ] = None,
+    playlist: Annotated[
+        bool, typer.Option("--playlist", help="Abre a playlist desta semana no Spotify")
+    ] = False,
+    site: Annotated[bool, typer.Option("--site", help="Abre esta semana no site")] = False,
+) -> None:
+    """Faixas por semana: avaliação, publicação; abre faixa, playlist ou site."""
+    _auto_sync_state("musicas")
+    review_id = settings.peel_review_playlist_id or settings.peel_playlist_id
+    db = DB(str(_resolve_path(settings.db_path)))
+    try:
+        db.init_schema()
+        if semanas:
+            table = Table(title="Peel — semanas")
+            for column in ("Semana", "Faixas", "Avaliadas", "Publicadas"):
+                table.add_column(column, justify="right" if column != "Semana" else "left")
+            for week in _listed_weeks(db):
+                rows = _week_tracks(db, week) or []
+                rated = sum(row.rating is not None for row in rows)
+                public = sum(row.published for row in rows)
+                table.add_row(week, str(len(rows)), str(rated), str(public) if public else "—")
+            console.print(table)
+            return
+        week = _normalize_week_option(semana) if semana else db.active_review_week(review_id)
+        if week is None:
+            console.print("Sem fila activa confirmada.")
+            raise typer.Exit(code=1)
+        rows = _week_tracks(db, week)
+        active_week = db.active_review_week(review_id)
+        latest_published = db.conn.execute(
+            "SELECT MAX(week) FROM finalized_week_tracks WHERE playlist_id=?",
+            (canonical_playlist_id(settings.peel_playlist_id),),
+        ).fetchone()[0]
+    finally:
+        db.close()
+    if not rows:
+        console.print(f"Sem lista de faixas para {week}. Vê as semanas com: peel musicas --semanas")
+        raise typer.Exit(code=1)
+
+    table = Table(title=f"Peel — {week} ({len(rows)} faixas)")
+    table.add_column("#", justify="right")
+    table.add_column("Avaliação")
+    table.add_column("Site")
+    table.add_column("Artista", style="bold")
+    table.add_column("Título")
+    table.add_column("Fonte")
+    for row in rows:
+        table.add_row(
+            str(row.position),
+            row.rating or "por avaliar",
+            "✓" if row.published else "",
+            row.artist,
+            row.title,
+            source_label(row.source_id) if row.source_id else "",
+        )
+    console.print(table)
+
+    if abrir is not None:
+        match = next((row for row in rows if row.position == abrir), None)
+        if match is None:
+            raise typer.BadParameter(f"Não há faixa nº {abrir} em {week}", param_hint="--abrir")
+        _open_listen_url(_spotify_web_url(match.spotify_uri))
+    if playlist:
+        if week == active_week:
+            playlist_id = review_id
+        elif week == latest_published:
+            playlist_id = settings.peel_playlist_id
+        else:
+            console.print(
+                "A playlist do Spotify só tem a semana activa (triagem) e a última publicada."
+                " Para semanas antigas, usa --site."
+            )
+            raise typer.Exit(code=1)
+        _open_listen_url(f"https://open.spotify.com/playlist/{canonical_playlist_id(playlist_id)}")
+    if site:
+        if not _site_has_week(week):
+            console.print(f"{week} ainda não está no site. Publica com: uv run peel publicar")
+            raise typer.Exit(code=1)
+        webbrowser.open(f"{SITE_URL}/{week}")
+
+
+@app.command(rich_help_panel=PANEL_WEEK)
 def ouvir(
     push: Annotated[
         bool, typer.Option("--push/--no-push", help="Enviar as avaliações no fim")
@@ -330,7 +581,7 @@ def ouvir(
         console.print("Enviado." if _push_state() else "Nada para enviar.")
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_WEEK)
 def publicar(
     site_dir: Annotated[
         Path, typer.Option("--site-dir", help="Diretório do site peel-sept")
@@ -455,7 +706,7 @@ def _publish_site(site_root: Path, week: str) -> None:
     _git(site_root, "push", "--quiet")
 
 
-@app.command()
+@app.command(hidden=True)
 def status() -> None:
     """Mostra estado da DB e das últimas runs."""
     db_path = _resolve_path(settings.db_path)
@@ -507,7 +758,7 @@ def status() -> None:
         console.print(table)
 
 
-@app.command()
+@app.command(hidden=True)
 def feedback(
     uri: str | None = typer.Option(None, "--uri", help="Spotify URI a avaliar"),
     rating: str | None = typer.Option(None, "--rating", help="love|like|meh|skip|ban"),
@@ -586,7 +837,10 @@ def _run_triage_feedback_session(db: DB, *, limit: int, push_hint: bool = True) 
             f"{item.artist} — {item.title} "
             f"({source_label(item.source_id)})"
         )
-        chosen_rating = _prompt_rating(default="like")
+        chosen_rating = _prompt_rating(
+            default="like",
+            open_item=lambda uri=item.spotify_uri: _open_listen_url(_spotify_web_url(uri)),
+        )
         if chosen_rating in {"q", "quit", "exit"}:
             interrupted = True
             break
@@ -670,7 +924,7 @@ def _spotify_app_uri(url: str) -> str | None:
     if len(parts) != 2 or not parts[1]:
         return None
     kind, value = parts
-    if kind not in {"album", "search"}:
+    if kind not in {"album", "search", "track", "playlist"}:
         return None
     return f"spotify:{kind}:{value}"
 
@@ -949,7 +1203,12 @@ def _run_album_feedback_session(
         console.print(f"[{index}/{len(pending)}] {item.artist} — {item.album}")
         if item.listen_url:
             console.print(item.listen_url)
-        rating = _prompt_rating(default="like", ratings=ALBUM_FEEDBACK_RATINGS)
+        open_album = (
+            (lambda url=item.listen_url: _open_listen_url(url)) if item.listen_url else None
+        )
+        rating = _prompt_rating(
+            default="like", ratings=ALBUM_FEEDBACK_RATINGS, open_item=open_album
+        )
         if rating in {"q", "quit", "exit"}:
             break
         db.upsert_album_feedback(item.artist, item.album, rating, _prompt_comment(default=""))
@@ -1091,7 +1350,7 @@ def triage_bootstrap() -> None:
     console.print(f"Snapshot criado: {len(items)} tracks em {playlist_id}.")
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_BROWSE)
 def report(
     week: Annotated[str | None, typer.Option(help="Semana ISO a gerar")] = None,
     output_dir: Annotated[
@@ -1165,7 +1424,7 @@ def report(
         db.close()
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_MAINTENANCE)
 def sources(
     weeks: int = typer.Option(4, "--weeks", min=1, help="Janela em semanas"),
     min_tracks: int = typer.Option(
@@ -1780,12 +2039,15 @@ def _print_feedback_prompt(
 def _prompt_rating(
     default: str,
     ratings: Mapping[str, int] | None = None,
+    open_item: Callable[[], None] | None = None,
 ) -> str:
     ratings = ratings or FEEDBACK_RATINGS
     ordered = [label for label in RATING_ORDER if label in ratings]
     ordered += sorted(label for label in ratings if label not in RATING_ORDER)
     shortcuts = {str(index): label for index, label in enumerate(ordered, start=1)}
     allowed = " · ".join(f"{index} {label}" for index, label in shortcuts.items())
+    if open_item is not None:
+        allowed += " · o abrir"
     while True:
         try:
             value = typer.prompt(f"Rating [{allowed} / q]", default=default).strip().lower()
@@ -1795,6 +2057,9 @@ def _prompt_rating(
             continue
         if value in {"q", "quit", "exit"}:
             return value
+        if value == "o" and open_item is not None:
+            open_item()
+            continue
         value = shortcuts.get(value, value)
         if value in ratings:
             return value
