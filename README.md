@@ -92,6 +92,20 @@ Antes de escrever no Spotify confirma que o site está limpo e actualizado;
 depois finaliza com verificação, valida a build, publica o JSON da semana e
 envia o estado. `--dry-run` só mostra a proposta.
 
+Para corrigir depois:
+
+```bash
+uv run peel ouvir --rever              # lista as notas da semana; escreves f5 ou a11 para mudar
+uv run peel ouvir --rever --semana 2026-W38
+uv run peel publicar --refazer         # reabre a edição publicada (proposta = a actual)
+uv run peel publicar --refazer --semana 2026-W38
+```
+
+No `--rever`, Enter mantém a nota e o comentário actuais. No `--refazer`, Enter
+mantém a selecção publicada; itens que deixaram de ser love/like saem com aviso
+e as correcções de nome de artista mantêm-se. A republicação reescreve a playlist
+pública com verificação e actualiza o site.
+
 ## Automated Weekly Run
 
 O projeto corre automaticamente à sexta-feira (17:17 UTC, fora do início da hora para reduzir atrasos do GitHub) via [GitHub Actions](/.github/workflows/weekly.yml).

@@ -556,20 +556,30 @@ def ouvir(
     push: Annotated[
         bool, typer.Option("--push/--no-push", help="Enviar as avaliações no fim")
     ] = True,
+    rever: Annotated[
+        bool, typer.Option("--rever", help="Rever notas já dadas (ex.: f5, a11)")
+    ] = False,
+    semana: Annotated[
+        str | None, typer.Option("--semana", help="Semana a rever (default: a activa)")
+    ] = None,
 ) -> None:
     """Avalia faixas e depois álbuns da fila activa, e envia tudo no fim."""
+    if semana and not rever:
+        raise typer.BadParameter("--semana só se usa com --rever", param_hint="--semana")
     _auto_sync_state("ouvir")
     db = DB(str(_resolve_path(settings.db_path)))
-    saved = 0
     try:
         db.init_schema()
-        console.print(
-            "[bold]Faixas[/bold] — Enter = like; 1 love · 2 like · 3 meh · 4 skip · 5 ban"
-        )
-        saved += _run_triage_feedback_session(db, limit=MAX_TRIAGE_SESSION, push_hint=False)
-        items = db.latest_album_queue(settings.peel_review_playlist_id or settings.peel_playlist_id)
-        if items and typer.confirm("Avaliar os álbuns agora?", default=True):
-            saved += _run_album_feedback_session(db, items, items[0].week, push_hint=False)
+        if rever:
+            review_id = settings.peel_review_playlist_id or settings.peel_playlist_id
+            week = _normalize_week_option(semana) if semana else db.active_review_week(review_id)
+            if week is None:
+                console.print("Sem fila activa confirmada.")
+                saved = 0
+            else:
+                saved = _review_ratings(db, week)
+        else:
+            saved = _rate_unrated(db)
     finally:
         db.close()
     if not saved:
@@ -581,6 +591,87 @@ def ouvir(
         console.print("Enviado." if _push_state() else "Nada para enviar.")
 
 
+def _rate_unrated(db: DB) -> int:
+    """Sessão normal: faixas por avaliar, depois os álbuns."""
+    console.print("[bold]Faixas[/bold] — Enter = like; 1 love · 2 like · 3 meh · 4 skip · 5 ban")
+    saved = _run_triage_feedback_session(db, limit=MAX_TRIAGE_SESSION, push_hint=False)
+    items = db.latest_album_queue(settings.peel_review_playlist_id or settings.peel_playlist_id)
+    if items and typer.confirm("Avaliar os álbuns agora?", default=True):
+        saved += _run_album_feedback_session(db, items, items[0].week, push_hint=False)
+    return saved
+
+
+def _review_ratings(db: DB, week: str) -> int:
+    """Mostra as notas da semana e deixa mudar as escolhidas (f5 = faixa, a11 = álbum)."""
+    review_id = settings.peel_review_playlist_id or settings.peel_playlist_id
+    tracks = db.review_queue_snapshot(review_id, week) or []
+    albums = db.album_queue(week) or []
+    if not tracks and not albums:
+        console.print(f"Sem fila confirmada para {week}.")
+        return 0
+    table = Table(title=f"Notas — {week}")
+    for column in ("", "Nota", "Artista", "Título"):
+        table.add_column(column, style="bold" if column == "Artista" else None)
+    for position, item in enumerate(tracks, 1):
+        rating = db.feedback_for_track_identity(item.spotify_uri)
+        table.add_row(f"f{position}", rating[1] if rating else "—", item.artist, item.title)
+    for item in albums:
+        rating = db.album_feedback_for_identity(item.artist, item.album)
+        table.add_row(f"a{item.position}", rating[1] if rating else "—", item.artist, item.album)
+    console.print(table)
+    albums_by_position = {item.position: item for item in albums}
+    changed = 0
+    while True:
+        answer = typer.prompt(
+            "Mudar qual? (ex.: f5 ou a11; Enter termina)", default="", show_default=False
+        )
+        code = answer.strip().lower()
+        if not code:
+            return changed
+        kind, number = code[:1], code[1:]
+        if kind not in {"f", "a"} or not number.isdigit():
+            console.print("Usa f e o número da faixa, ou a e o número do álbum.")
+            continue
+        position = int(number)
+        if kind == "f":
+            if not 1 <= position <= len(tracks):
+                console.print(f"Não há faixa f{position}.")
+                continue
+            track = tracks[position - 1]
+            current = db.feedback_for_track_identity(track.spotify_uri)
+            console.print(f"{track.artist} — {track.title}")
+            label = _prompt_rating(
+                default=current[1] if current else "like",
+                open_item=lambda uri=track.spotify_uri: _open_listen_url(_spotify_web_url(uri)),
+            )
+            if label in {"q", "quit", "exit"}:
+                return changed
+            comment = _prompt_comment(default=(current[2] if current else None) or "")
+            db.upsert_feedback(track.spotify_uri, label, comment)
+        else:
+            album = albums_by_position.get(position)
+            if album is None:
+                console.print(f"Não há álbum a{position}.")
+                continue
+            current = db.album_feedback_for_identity(album.artist, album.album)
+            console.print(f"{album.artist} — {album.album}")
+            label = _prompt_rating(
+                default=current[1] if current else "like",
+                ratings=ALBUM_FEEDBACK_RATINGS,
+                open_item=(
+                    (lambda url=album.listen_url: _open_listen_url(url))
+                    if album.listen_url
+                    else None
+                ),
+            )
+            if label in {"q", "quit", "exit"}:
+                return changed
+            comment = _prompt_comment(default=(current[2] if current else None) or "")
+            db.upsert_album_feedback(album.artist, album.album, label, comment)
+        changed += 1
+        console.print(f"Guardado: {code} → {label}")
+
+
 @app.command(rich_help_panel=PANEL_WEEK)
 def publicar(
     site_dir: Annotated[
@@ -589,25 +680,43 @@ def publicar(
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Só mostrar a proposta, sem publicar")
     ] = False,
+    refazer: Annotated[
+        bool, typer.Option("--refazer", help="Reabrir uma edição já publicada")
+    ] = False,
+    semana: Annotated[
+        str | None, typer.Option("--semana", help="Semana a refazer (default: a activa)")
+    ] = None,
 ) -> None:
     """Escolhe e publica a edição da fila activa: Spotify, site e estado."""
+    if semana and not refazer:
+        raise typer.BadParameter("--semana só se usa com --refazer", param_hint="--semana")
     _auto_sync_state("publicar")
     review_id = settings.peel_review_playlist_id or settings.peel_playlist_id
     db = DB(str(_resolve_path(settings.db_path)))
     try:
         db.init_schema()
-        week = db.active_review_week(review_id)
+        week = _normalize_week_option(semana) if semana else db.active_review_week(review_id)
         if week is None:
             console.print("Sem fila activa confirmada.")
             raise typer.Exit(code=1)
-        if db.finalized_week_selection(week, settings.peel_playlist_id) is not None:
-            console.print(f"{week} já está publicada.")
+        published = db.finalized_week_selection(week, settings.peel_playlist_id)
+        if published is not None and not refazer:
+            console.print(f"{week} já está publicada. Para mudar: uv run peel publicar --refazer")
             return
-        tracks = _choose_picks("Faixas", track_candidates(db, review_id, week))
+        if published is None and refazer:
+            console.print(f"{week} ainda não foi publicada. Usa: uv run peel publicar")
+            raise typer.Exit(code=1)
+        track_pool = track_candidates(db, review_id, week)
+        album_pool = album_candidates(db, week)
+        current_tracks = current_albums = None
+        if published is not None:
+            current_tracks = _published_picks(published["plan"]["tracks"], track_pool, "faixa")
+            current_albums = _published_picks(published["plan"]["albums"], album_pool, "álbum")
+        tracks = _choose_picks("Faixas", track_pool, current=current_tracks)
         if not tracks:
             console.print("Sem faixas love/like nesta fila. Avalia primeiro com: uv run peel ouvir")
             raise typer.Exit(code=1)
-        albums = _choose_picks("Álbuns", album_candidates(db, week))
+        albums = _choose_picks("Álbuns", album_pool, current=current_albums)
         plan = build_plan(
             db,
             week=week,
@@ -615,8 +724,22 @@ def publicar(
             review_playlist_id=review_id,
             tracks=tracks,
             albums=albums,
-            note="Selecção escolhida com peel publicar.",
+            note=(
+                "Selecção refeita com peel publicar --refazer."
+                if refazer
+                else "Selecção escolhida com peel publicar."
+            ),
         )
+        if published is not None:
+            # Correcções de nome feitas na selecção original continuam válidas.
+            overrides = published["plan"].get("artist_overrides", {})
+            plan = plan.model_copy(
+                update={
+                    "artist_overrides": {
+                        uri: name for uri, name in overrides.items() if uri in plan.tracks
+                    }
+                }
+            )
         prepare_publication(db, plan)  # validação completa antes de qualquer escrita
     finally:
         db.close()
@@ -633,20 +756,37 @@ def publicar(
     with tempfile.TemporaryDirectory(prefix="peel-publicar-") as tmp:
         plan_path = Path(tmp) / f"{week}.json"
         plan_path.write_text(plan.model_dump_json(indent=2), encoding="utf-8")
-        finalize(week=week, site_dir=site_dir, export=True, selection=plan_path)
+        finalize(week=week, site_dir=site_dir, export=True, selection=plan_path, refresh=refazer)
     _publish_site(site_root, week)
     _push_state()
     console.print(f"{week} publicada: Spotify, site e estado.")
 
 
-def _choose_picks(title: str, candidates: list[Candidate]) -> list[Candidate]:
+def _published_picks(keys: list, candidates: list[Candidate], noun: str) -> list[Candidate]:
+    """Selecção publicada, na ordem pública; avisa do que deixou de ser positivo."""
+    by_key = {candidate.key: candidate for candidate in candidates}
+    picks = []
+    for raw in keys:
+        key = tuple(raw) if isinstance(raw, list) else raw
+        if key in by_key:
+            picks.append(by_key[key])
+        else:
+            label = " — ".join(key) if isinstance(key, tuple) else key
+            console.print(f"Aviso: {noun} publicada já não tem love/like e sai: {label}")
+    return picks
+
+
+def _choose_picks(
+    title: str, candidates: list[Candidate], current: list[Candidate] | None = None
+) -> list[Candidate]:
     """Mostra os candidatos positivos e devolve a escolha, pela ordem pública."""
     if not candidates:
         console.print(f"\n[bold]{title}[/bold]: sem candidatos love/like.")
         return []
-    proposal = default_picks(candidates)
+    proposal = current if current is not None else default_picks(candidates)
     chosen = {candidate.position for candidate in proposal}
-    console.print(f"\n[bold]{title}[/bold] — proposta ✓ (love antes de like, ordem da fila)")
+    origin = "publicada" if current is not None else "love antes de like, ordem da fila"
+    console.print(f"\n[bold]{title}[/bold] — proposta ✓ ({origin})")
     for candidate in candidates:
         mark = "✓" if candidate.position in chosen else " "
         console.print(

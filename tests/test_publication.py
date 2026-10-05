@@ -603,3 +603,86 @@ def test_spotify_app_uri_handles_tracks_and_playlists():
     assert cli._spotify_app_uri("https://open.spotify.com/track/abc") == "spotify:track:abc"
     assert cli._spotify_app_uri("https://open.spotify.com/playlist/xyz") == "spotify:playlist:xyz"
     assert cli._spotify_web_url("spotify:track:abc") == "https://open.spotify.com/track/abc"
+
+
+# --- ouvir --rever / publicar --refazer --------------------------------------
+
+
+def test_ouvir_rever_changes_chosen_ratings_and_pushes(sample, monkeypatch):
+    db, plan, _ = sample
+    _no_sync(monkeypatch)
+    db.upsert_album_feedback("Album Artist 11", "Album 11", "meh", "Não é mau!")
+    push = MagicMock(return_value=True)
+    monkeypatch.setattr(cli, "_push_state", push)
+    answers = "x9\nf99\na11\n2\n\nf2\n3\nmeh after all\n\n"
+    result = CliRunner().invoke(cli.app, ["ouvir", "--rever"], input=answers)
+    assert result.exit_code == 0, result.output
+    out = unstyle(result.output)
+    assert "Notas — 2026-W38" in out and "Não há faixa f99" in out
+    album = db.album_feedback_for_identity("Album Artist 11", "Album 11")
+    assert album[1:] == ("like", "Não é mau!")  # Enter keeps the comment
+    assert db.feedback_for_track_identity("spotify:track:t2")[1:] == ("meh", "meh after all")
+    push.assert_called_once()
+
+
+def test_semana_requires_rever_or_refazer(sample, monkeypatch):
+    _no_sync(monkeypatch)
+    assert CliRunner().invoke(cli.app, ["ouvir", "--semana", "2026-W38"]).exit_code == 2
+    assert CliRunner().invoke(cli.app, ["publicar", "--semana", "2026-W38"]).exit_code == 2
+
+
+def _publish(db, plan):
+    payload = prepare_publication(db, plan)
+    db.replace_finalized_week_tracks(plan.week, "public", plan.tracks, selection=payload)
+
+
+def _capture_finalize(monkeypatch):
+    captured = {}
+
+    def fake_finalize(**kwargs):
+        captured["plan"] = PublicationPlan.model_validate_json(kwargs["selection"].read_text())
+        captured["refresh"] = kwargs.get("refresh")
+
+    monkeypatch.setattr(cli, "finalize", fake_finalize)
+    for name in ("_prepare_site_checkout", "_publish_site", "_push_state"):
+        monkeypatch.setattr(cli, name, MagicMock())
+    return captured
+
+
+def test_publicar_refazer_starts_from_published_picks_and_keeps_overrides(sample, monkeypatch):
+    db, plan, _ = sample
+    _no_sync(monkeypatch)
+    _publish(db, plan)
+    db.upsert_album_feedback("Album Artist 11", "Album 11", "like")
+    captured = _capture_finalize(monkeypatch)
+    # Tracks: Enter keeps the published order; albums: add #11 after 1 and 2.
+    result = CliRunner().invoke(cli.app, ["publicar", "--refazer"], input="\n1 2 11\ny\n")
+    assert result.exit_code == 0, result.output
+    assert "proposta ✓ (publicada)" in unstyle(result.output)
+    assert captured["refresh"] is True
+    assert captured["plan"].tracks == plan.tracks
+    assert [key[1] for key in captured["plan"].albums] == ["album 1", "album 2", "album 11"]
+    assert captured["plan"].artist_overrides == plan.artist_overrides
+
+
+def test_publicar_refazer_drops_picks_no_longer_positive(sample, monkeypatch):
+    db, plan, _ = sample
+    _no_sync(monkeypatch)
+    _publish(db, plan)
+    db.upsert_feedback(plan.tracks[0], "meh")
+    captured = _capture_finalize(monkeypatch)
+    result = CliRunner().invoke(cli.app, ["publicar", "--refazer"], input="\n\ny\n")
+    assert result.exit_code == 0, result.output
+    assert "já não tem love/like e sai" in unstyle(result.output)
+    assert captured["plan"].tracks == plan.tracks[1:]
+    assert captured["plan"].artist_overrides == {}
+
+
+def test_publicar_refazer_needs_a_published_week(sample, monkeypatch):
+    _no_sync(monkeypatch)
+    finalize = MagicMock()
+    monkeypatch.setattr(cli, "finalize", finalize)
+    result = CliRunner().invoke(cli.app, ["publicar", "--refazer"])
+    assert result.exit_code == 1
+    assert "ainda não foi publicada" in unstyle(result.output)
+    finalize.assert_not_called()
