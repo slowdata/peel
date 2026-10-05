@@ -1,15 +1,22 @@
 """Sources Bandcamp filtradas por editora.
 
 A página ``https://<label>.bandcamp.com/music`` é server-rendered e inclui a
-lista de lançamentos no atributo ``data-client-items``. A label é o filtro de
-género/curadoria; por isso esta source devolve álbuns/contexto, não tracks para
-playlist.
+lista de lançamentos no atributo ``data-client-items``, mas sem datas e nem
+sempre do mais recente para o mais antigo. Por isso cada candidato é lido na
+sua própria página (``data-tralbum``):
+
+- pré-vendas ficam de fora até saírem;
+- a data de lançamento alimenta o filtro normal de novidade;
+- edições com menos de ``MIN_ALBUM_TRACKS`` faixas são singles: seguem para a
+  triagem de faixas (pela faixa principal), não para a fila de álbuns.
 """
 
 from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from html import unescape
 from urllib.parse import urljoin
 
@@ -21,6 +28,18 @@ from peel.sources.base import Source
 
 log = structlog.get_logger()
 
+# Uma Bandcamp ``/album/`` com 1–3 faixas é um single/EP curto, não um álbum.
+MIN_ALBUM_TRACKS = 4
+
+
+@dataclass(frozen=True, slots=True)
+class ReleaseDetails:
+    track_count: int
+    lead_track: str | None
+    released_at: datetime | None
+    preorder: bool
+
+
 _BROWSER_UA = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -28,12 +47,10 @@ _BROWSER_UA = (
 
 
 class BandcampLabel(Source):
-    """Bandcamp por editora.
+    """Bandcamp por editora: álbuns para a fila, singles para a triagem.
 
-    Estratégia: a página ``/music`` traz releases newest-first. Só ``album``
-    (e URLs ``/album/``) é elegível: singles ``/track/`` não são álbuns. O cap
-    é aplicado *depois* do filtro para não devolver menos álbuns por a página
-    começar com singles.
+    O cap ``max_items`` aplica-se aos lançamentos válidos (merch e itens
+    malformados não contam). Cada um custa um pedido extra à sua página.
     """
 
     kind = "album"
@@ -54,7 +71,44 @@ class BandcampLabel(Source):
             timeout=20,
         )
         response.raise_for_status()
-        return self._parse_music_html(response.text)
+        items = self._client_items(response.text)
+        self.last_raw_entries = len(items) if items is not None else 0
+        releases: list[Track] = []
+        for candidate in self._parse_music_html(response.text):
+            release = self._with_details(candidate)
+            if release is not None:
+                releases.append(release)
+        return releases
+
+    def _with_details(self, candidate: Track) -> Track | None:
+        """Classifica um lançamento pela sua página; falhas não inventam dados."""
+        try:
+            details = self._release_details(str(candidate.source_url))
+        except (httpx.HTTPError, ValueError) as exc:
+            log.warning(
+                "bandcamp.release_details_failed",
+                source_id=self.id,
+                url=candidate.source_url,
+                error=str(exc),
+            )
+            return None
+        if details.preorder:
+            log.info("bandcamp.preorder_skipped", source_id=self.id, title=candidate.title)
+            return None
+        if candidate.kind == "track" or details.track_count < MIN_ALBUM_TRACKS:
+            return candidate.model_copy(
+                update={
+                    "kind": "track",
+                    "title": details.lead_track or candidate.title,
+                    "published_at": details.released_at,
+                }
+            )
+        return candidate.model_copy(update={"kind": "album", "published_at": details.released_at})
+
+    def _release_details(self, url: str) -> ReleaseDetails:
+        response = httpx.get(url, headers=self.request_headers, follow_redirects=True, timeout=20)
+        response.raise_for_status()
+        return parse_release_details(response.text)
 
     def _parse_music_html(self, html: str) -> list[Track]:
         items = self._client_items(html)
@@ -85,7 +139,7 @@ class BandcampLabel(Source):
 
     def _parse_item(self, item: dict[str, object]) -> Track | None:
         release_type = str(item.get("type", "")).strip().lower()
-        if release_type != "album":
+        if release_type not in {"album", "track"}:
             log.warning(
                 "bandcamp.unsupported_release_type",
                 source_id=self.id,
@@ -96,7 +150,7 @@ class BandcampLabel(Source):
         artist = str(item.get("artist", "")).strip()
         title = str(item.get("title", "")).strip()
         page_url = str(item.get("page_url", "")).strip()
-        if not artist or not title or not page_url or "/album/" not in page_url:
+        if not artist or not title or not page_url or f"/{release_type}/" not in page_url:
             log.warning(
                 "bandcamp.item_malformed",
                 source_id=self.id,
@@ -112,9 +166,40 @@ class BandcampLabel(Source):
             title=title,
             source_url=self._resolve_page_url(page_url),
             raw_title=f"{artist} :: {title}",
+            kind="album" if release_type == "album" else "track",
         )
 
     def _resolve_page_url(self, page_url: str) -> str:
         if page_url.startswith("http://") or page_url.startswith("https://"):
             return page_url
         return urljoin(f"https://{self.subdomain}.bandcamp.com", page_url)
+
+
+def parse_release_details(html: str) -> ReleaseDetails:
+    """Lê ``data-tralbum`` de uma página de álbum/faixa Bandcamp."""
+    match = re.search(r'data-tralbum="([^"]+)"', html)
+    if match is None:
+        raise ValueError("Bandcamp release page without data-tralbum")
+    data = json.loads(unescape(match.group(1)))
+    if not isinstance(data, dict):
+        raise ValueError("Bandcamp data-tralbum is not an object")
+    tracks = [item for item in data.get("trackinfo") or [] if isinstance(item, dict)]
+    current = data.get("current") if isinstance(data.get("current"), dict) else {}
+    lead = next((str(t.get("title", "")).strip() for t in tracks if t.get("title")), None)
+    return ReleaseDetails(
+        track_count=len(tracks),
+        lead_track=lead or None,
+        released_at=_parse_bandcamp_date(
+            data.get("album_release_date") or current.get("release_date")
+        ),
+        preorder=bool(data.get("album_is_preorder") or data.get("is_preorder")),
+    )
+
+
+def _parse_bandcamp_date(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return datetime.strptime(value.strip(), "%d %b %Y %H:%M:%S GMT").replace(tzinfo=UTC)
+    except ValueError:
+        return None

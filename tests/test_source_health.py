@@ -95,3 +95,63 @@ def test_run_announces_broken_sources_but_keeps_quiet_filters_silent(
     assert "Broken Feed (erro)" in notice
     assert "Quiet Filter" not in notice and "Scraper" not in notice
     assert iso_week(datetime.now(UTC))  # run completed for the current week
+
+
+def test_album_source_routes_single_items_to_track_triage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A label single goes through Spotify matching; its albums stay albums."""
+    from peel import config as config_module
+    from peel.db import DB
+
+    monkeypatch.setattr(config_module.settings, "db_path", str(tmp_path / "route.db"))
+    monkeypatch.setattr(config_module.settings, "peel_playlist_id", "spotify:playlist:test")
+    now = datetime.now(UTC)
+
+    class Label(Source):
+        id, name, kind = "bandcamp_sub_pop", "Sub Pop (Bandcamp)", "album"
+
+        def fetch(self) -> list[Track]:
+            self.last_raw_entries = 3
+            base = {"source_id": self.id, "source_url": "https://x.bandcamp.com/album/y"}
+            return [
+                Track(artist="Band", title="Real Album", kind="album", published_at=now, **base),
+                Track(
+                    artist="Nation of Language",
+                    title="Tougher Than the Rest",
+                    kind="track",
+                    published_at=now,
+                    **base,
+                ),
+                Track(
+                    artist="Old",
+                    title="July Single",
+                    kind="track",
+                    published_at=datetime(2026, 7, 7, tzinfo=UTC),
+                    **base,
+                ),
+            ]
+
+    sp = MagicMock()
+    sp.search_track.return_value = [
+        {
+            "uri": "spotify:track:nol",
+            "name": "Tougher Than the Rest",
+            "artists": ["Nation of Language"],
+        }
+    ]
+    with (
+        patch("peel.main.active_sources", return_value=[Label()]),
+        patch("peel.main.SpotifyClient", return_value=sp),
+        patch("peel.main.select_album_queue", return_value=[]),
+        patch("peel.main._album_queue_snapshot_items", return_value=[]),
+        patch("peel.main.send_digest"),
+    ):
+        run()
+    searched = [call.args[:2] for call in sp.search_track.call_args_list]
+    assert searched == [("Nation of Language", "Tougher Than the Rest")]
+    db = DB(str(tmp_path / "route.db"))
+    assert db.conn.execute("SELECT source_id FROM tracks").fetchall() == [("bandcamp_sub_pop",)]
+    albums = db.conn.execute("SELECT album FROM album_mentions").fetchall()
+    assert albums == [("Real Album",)]
+    db.close()

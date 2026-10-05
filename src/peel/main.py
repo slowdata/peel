@@ -246,15 +246,17 @@ def run(dry_run: bool = False) -> None:
                     fresh_count=len(fresh_tracks),
                 )
 
-                # 2. Bifurca por source.kind
-                if source.kind == "album":
-                    albums_added += _process_album_items(db, source, fresh_tracks, source_stats)
-                elif source.kind == "track":
+                # 2. Bifurca por tipo: o do item, se o definir, senão o da source.
+                album_items = [t for t in fresh_tracks if (t.kind or source.kind) == "album"]
+                track_items = [t for t in fresh_tracks if (t.kind or source.kind) == "track"]
+                if album_items:
+                    albums_added += _process_album_items(db, source, album_items, source_stats)
+                if track_items:
                     added, unmatched, playlist_slots_used = _process_track_items(
                         db,
                         sp,
                         source,
-                        fresh_tracks,
+                        track_items,
                         source_stats,
                         source_slot_caps=source_slot_caps,
                         banned_track_keys=banned_track_keys,
@@ -264,7 +266,7 @@ def run(dry_run: bool = False) -> None:
                     )
                     tracks_added += added
                     tracks_unmatched += unmatched
-                else:
+                if not album_items and not track_items and fresh_tracks:
                     log.info(
                         "source.skipped_non_playlist_kind",
                         source_id=source.id,

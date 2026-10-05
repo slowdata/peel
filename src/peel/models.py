@@ -11,6 +11,7 @@ modifica um Track à passagem.
 """
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, field_validator
 
@@ -80,6 +81,13 @@ class Track(BaseModel):
     raw_title: str | None = None
     """Título original antes de split artist/title, em caso de parsing complexo.
     Útil para debugging quando o split foi mal feito."""
+
+    kind: Literal["album", "track"] | None = None
+    """Tipo deste item quando difere da source (``None`` = usa ``source.kind``).
+
+    Uma editora Bandcamp publica álbuns e singles: os singles vão para a
+    triagem de faixas, não para a fila de álbuns.
+    """
 
     spotify_album_uri: str | None = None
     """URI opcional de álbum Spotify quando uma source de álbuns o fornece.

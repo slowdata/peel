@@ -199,8 +199,11 @@ e remisturas não são álbuns novos; discos ao vivo e bandas sonoras continuam
 elegíveis. A primeira
 observação de cada `(artista, álbum, source)` é imutável; polling repetido só
 actualiza a última observação. Menções editoriais novas e consenso entram antes
-de pendentes sem feedback; labels Bandcamp são complementares e singles nunca
-são elegíveis. Os artigos `First Take` da Clash são encaminhados separadamente
+de pendentes sem feedback; labels Bandcamp são complementares. Como a página
+da editora não traz datas nem segue a ordem de lançamento, o Peel lê a página de
+cada edição: pré-vendas ficam de fora, a data de lançamento passa pelo filtro
+normal de novidade e edições com menos de 4 faixas são singles — seguem para a
+triagem de faixas, nunca para a fila de álbuns. Os artigos `First Take` da Clash são encaminhados separadamente
 para a triagem de faixas. CLI, Telegram e relatório local mostram a snapshot
 completa. A edição pública Sept tem uma selecção explícita separada, com até sete
 álbuns aprovados; não trunca automaticamente os primeiros sete da fila privada.
