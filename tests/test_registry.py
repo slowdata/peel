@@ -12,6 +12,7 @@ from peel.sources.registry import (
 )
 from peel.sources.rss import (
     AquariumDrunkard,
+    BeatsPerMinuteAlbumReviews,
     ClashAlbumReviews,
     ClashFirstTake,
     ConsequenceMusic,
@@ -69,6 +70,7 @@ def test_active_sources_registry_contains_expected_order() -> None:
         TheQuietusFeedbacker.id,
         GuardianMusicAlbums.id,
         DIYAlbumReviews.id,
+        BeatsPerMinuteAlbumReviews.id,
         ClashAlbumReviews.id,
         PitchforkBestAlbums.id,
         PitchforkAlbumReviews.id,
@@ -103,6 +105,10 @@ def test_consequence_is_registered_once_with_label_and_homepage() -> None:
 def test_diy_and_clash_have_labels_and_editorial_homepages() -> None:
     assert source_label(DIYAlbumReviews.id) == "DIY"
     assert source_homepage("DIY") == "https://diymag.com/review/album"
+    assert source_label(BeatsPerMinuteAlbumReviews.id) == "Beats Per Minute"
+    assert source_homepage("Beats Per Minute") == (
+        "https://beatsperminute.com/category/reviews/album-reviews/"
+    )
     assert source_label(ClashAlbumReviews.id) == "Clash"
     assert source_label(ClashFirstTake.id) == "Clash"
     assert source_homepage("Clash") == "https://www.clashmusic.com/reviews/"

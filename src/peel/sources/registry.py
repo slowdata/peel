@@ -15,6 +15,7 @@ from peel.sources.bandcamp import BandcampLabel
 from peel.sources.base import Source
 from peel.sources.rss import (
     AquariumDrunkard,
+    BeatsPerMinuteAlbumReviews,
     ClashAlbumReviews,
     ClashFirstTake,
     ConsequenceMusic,
@@ -93,6 +94,7 @@ SOURCE_LABEL_OVERRIDES: dict[str, str] = {
     "lineofbestfit_news": "The Line of Best Fit",
     "consequence_music": "Consequence",
     "diy_album_reviews": "DIY",
+    "beats_per_minute_album_reviews": "Beats Per Minute",
     "clash_album_reviews": "Clash",
     "clash_first_take": "Clash",
     "kexp_in_our_headphones": "KEXP",
@@ -131,6 +133,7 @@ ACTIVE_SOURCES: list[SourceSpec] = [
     SourceSpec(TheQuietusFeedbacker),
     SourceSpec(GuardianMusicAlbums),
     SourceSpec(DIYAlbumReviews),
+    SourceSpec(BeatsPerMinuteAlbumReviews),
     SourceSpec(ClashAlbumReviews),
     SourceSpec(PitchforkBestAlbums),
     SourceSpec(PitchforkAlbumReviews),
@@ -181,6 +184,7 @@ SOURCE_HOMEPAGE: dict[str, str] = {
     "The Line of Best Fit": "https://www.thelineofbestfit.com/news",
     "Consequence": "https://consequence.net/category/music/",
     "DIY": "https://diymag.com/review/album",
+    "Beats Per Minute": "https://beatsperminute.com/category/reviews/album-reviews/",
     "Clash": "https://www.clashmusic.com/reviews/",
     "Stereogum": "https://www.stereogum.com",
     "The Quietus": "https://thequietus.com",

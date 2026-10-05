@@ -1266,10 +1266,12 @@ def albums_refresh(
             table.add_row(str(item.position), item.artist, item.album, item.listen_url or "")
         console.print(table)
         if len(items) < MAX_ALBUM_QUEUE_ITEMS:
-            console.print(
-                f"Fila incompleta: {len(items)}/{MAX_ALBUM_QUEUE_ITEMS}; "
-                "os restantes candidatos não têm link directo confirmado."
+            reason = (
+                "dry-run sem pesquisa Spotify; a execução pode resolver mais links."
+                if dry_run
+                else "os restantes candidatos não têm link directo confirmado."
             )
+            console.print(f"Fila incompleta: {len(items)}/{MAX_ALBUM_QUEUE_ITEMS}; {reason}")
         if dry_run:
             console.print("Dry run: snapshot não escrita.")
             return

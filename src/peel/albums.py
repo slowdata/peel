@@ -122,7 +122,7 @@ def select_album_queue(
     source_quality: Mapping[str, SourceQuality] | None = None,
     affinity: Callable[[str], float] | None = None,
 ) -> list[tuple[AlbumRecommendation, bool]]:
-    """Select current new mentions first, then any unrated pending albums.
+    """Select current new mentions first, then recently mentioned unrated albums.
 
     A repeat from one source is not new because ``first_seen_week`` remains
     fixed. A *new* source for an old album is current editorial consensus and
@@ -144,7 +144,12 @@ def select_album_queue(
         item for item in ranked if db.album_feedback_for_identity(item.artist, item.album) is None
     ]
     fresh = [item for item in eligible if item.newest_source_week == current_week]
-    pending = [item for item in eligible if item.newest_source_week != current_week]
+    # An old discovery can resurface when another publication covers it now;
+    # otherwise don't use months-old unrated albums just to fill the queue.
+    pending_cutoff = _cutoff_week(current_week, 6)
+    pending = [
+        item for item in eligible if pending_cutoff <= item.newest_source_week < current_week
+    ]
     selected = _softly_diverse(fresh, adjusted_quality, limit, affinity=affinity)
     if len(selected) < limit:
         selected.extend(
@@ -220,6 +225,7 @@ def spotify_album_url(spotify_album_uri: str) -> str:
 EDITORIAL_ALBUM_SOURCES = {
     "guardian_music_albums",
     "diy_album_reviews",
+    "beats_per_minute_album_reviews",
     "clash_album_reviews",
     "thequietus",
     "thequietus_feedbacker",

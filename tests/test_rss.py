@@ -8,6 +8,7 @@ import pytest
 
 from peel.sources.rss import (
     AquariumDrunkard,
+    BeatsPerMinuteAlbumReviews,
     ClashAlbumReviews,
     ClashFirstTake,
     ConsequenceMusic,
@@ -664,6 +665,31 @@ class TestAquariumDrunkard:
 
 
 class TestDIYAndClashAlbumReviews:
+    def test_beats_per_minute_accepts_only_album_reviews(self) -> None:
+        source = BeatsPerMinuteAlbumReviews()
+        valid = {
+            "title": "Album Review: Protomartyr – Hotel Usona",
+            "link": "https://beatsperminute.com/album-review-protomartyr-hotel-usona/",
+        }
+        parsed = source._parse_entry(valid)
+        assert parsed is not None
+        assert (parsed.artist, parsed.title, parsed.source_id) == (
+            "Protomartyr",
+            "Hotel Usona",
+            "beats_per_minute_album_reviews",
+        )
+        assert source._parse_entry({**valid, "title": "Album Review: Some vague headline"}) is None
+        assert (
+            source._parse_entry({**valid, "title": "Track Review: Protomartyr – Hotel Usona"})
+            is None
+        )
+        assert (
+            source._parse_entry(
+                {**valid, "link": "https://beatsperminute.com/track-review-protomartyr/"}
+            )
+            is None
+        )
+
     def test_diy_requires_album_path_and_tag(self) -> None:
         source = DIYAlbumReviews()
         valid = {

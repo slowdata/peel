@@ -608,6 +608,36 @@ class DIYAlbumReviews(RSSSource):
         return _split_artist_title_dash(title)
 
 
+class BeatsPerMinuteAlbumReviews(RSSSource):
+    """Beats Per Minute — feed dedicado às críticas de álbuns.
+
+    Exige o prefixo editorial e o título ``Artist – Album``; evita tratar
+    listas, notícias ou críticas de faixas como álbuns.
+    """
+
+    id = "beats_per_minute_album_reviews"
+    name = "Beats Per Minute — Album Reviews"
+    url = "https://beatsperminute.com/category/reviews/album-reviews/feed/"
+    kind = "album"
+    lookback_days = 14
+
+    def _parse_entry(self, entry: dict) -> Track | None:
+        link = str(entry.get("link", "")).strip()
+        try:
+            path = urlparse(link).path
+        except ValueError:
+            return None
+        if not path.startswith("/album-review-"):
+            return None
+        return super()._parse_entry(entry)
+
+    def _extract_artist_title(self, entry: dict) -> tuple[str, str] | None:
+        title = _strip_html_tags(unescape(str(entry.get("title", "")))).strip()
+        if not title.startswith("Album Review: "):
+            return None
+        return _split_artist_title_dash(title[len("Album Review: ") :])
+
+
 class ClashAlbumReviews(RSSSource):
     """Clash — críticas de álbuns do feed dedicado de reviews.
 

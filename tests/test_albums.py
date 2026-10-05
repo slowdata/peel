@@ -207,6 +207,45 @@ def test_fresh_items_fill_from_unrated_pending_and_exclude_rated(tmp_path: Path)
     db.close()
 
 
+def test_pending_window_drops_old_mentions_but_new_editorial_coverage_revives_them(
+    tmp_path: Path,
+) -> None:
+    db = DB(str(tmp_path / "peel.db"))
+    db.init_schema()
+    for artist, week, seen_at in (
+        ("Old", "2026-W33", "2026-08-14T10:00:00+00:00"),
+        ("Recent", "2026-W36", "2026-09-04T10:00:00+00:00"),
+        ("Revived", "2026-W33", "2026-08-14T11:00:00+00:00"),
+    ):
+        db._record_album_mention(
+            artist=artist,
+            album="Album",
+            source_id="review_a",
+            source_url="https://review.example/album",
+            spotify_album_uri=None,
+            seen_at=seen_at,
+            added_at_week=week,
+        )
+    db._record_album_mention(
+        artist="Revived",
+        album="Album",
+        source_id="review_b",
+        source_url="https://another.example/album",
+        spotify_album_uri=None,
+        seen_at="2026-10-09T10:00:00+00:00",
+        added_at_week="2026-W41",
+    )
+    db.conn.commit()
+
+    selected = select_album_queue(db, "2026-W41")
+
+    assert {(item.artist, fresh) for item, fresh in selected} == {
+        ("Recent", False),
+        ("Revived", True),
+    }
+    db.close()
+
+
 def test_diversity_prefers_editorial_then_allows_label_after_repeat_penalty(tmp_path: Path) -> None:
     db = DB(str(tmp_path / "peel.db"))
     db.init_schema()
