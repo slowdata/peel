@@ -1617,6 +1617,106 @@ class NprNewMusicFridayStarting5(Source):
             return None
 
 
+class WeeklyListSource(Source):
+    """Lista semanal curada publicada num feed já conhecido (ex.: «5 Best Songs»).
+
+    Lê o feed, escolhe o artigo mais recente cujo título corresponde a
+    ``title_pattern`` e extrai as faixas do corpo. Uma semana sem lista não é
+    erro: o feed respondeu, só não houve artigo novo.
+    """
+
+    kind = "track"
+    feed_url: str
+    title_pattern: re.Pattern[str]
+    request_headers = {"User-Agent": _BROWSER_UA}
+
+    def fetch(self) -> list[Track]:
+        feed = feedparser.parse(self.feed_url, request_headers=self.request_headers)
+        entries = list(feed.entries)
+        self.last_raw_entries = len(entries)
+        entry = next(
+            (e for e in entries if self.title_pattern.search(str(e.get("title", "")))), None
+        )
+        if entry is None:
+            log.info("weekly_list.not_in_feed", source_id=self.id)
+            return []
+        link = str(entry.get("link", "")).strip()
+        response = httpx.get(link, headers=self.request_headers, follow_redirects=True, timeout=20)
+        response.raise_for_status()
+        published_at = None
+        if entry.get("published_parsed"):
+            published_at = datetime(*entry.published_parsed[:6], tzinfo=UTC)
+        tracks = [
+            Track(
+                source_id=self.id,
+                artist=artist,
+                title=title,
+                source_url=link,
+                published_at=published_at,
+                raw_title=f"{artist} — {title}",
+            )
+            for artist, title in self._parse_list(response.text)
+        ]
+        if not tracks:
+            log.warning("weekly_list.no_tracks_parsed", source_id=self.id, url=link)
+        return tracks
+
+    @abstractmethod
+    def _parse_list(self, html: str) -> list[tuple[str, str]]: ...
+
+
+_QUOTED_TITLE = r"[\"\u201c](?P<title>[^\"\u201d]+)[\"\u201d]"
+
+
+def _clean_list_text(value: str) -> str:
+    return re.sub(r"\s+", " ", unescape(value)).strip(" \t\u00a0-\u2013\u2014:")
+
+
+class StereogumBestSongs(WeeklyListSource):
+    """Stereogum — «The 5 Best Songs Of The Week» (sexta-feira)."""
+
+    id = "stereogum_best_songs"
+    name = "Stereogum — 5 Best Songs"
+    feed_url = "https://www.stereogum.com/feed/"
+    title_pattern = re.compile(r"\b5 best songs of the week\b", re.IGNORECASE)
+
+    def _parse_list(self, html: str) -> list[tuple[str, str]]:
+        pairs = []
+        root = HTMLParser(html).root
+        headings = [node for node in root.traverse() if node.tag in {"h2", "h3"}] if root else []
+        for heading in headings:  # document order, so the list keeps its ranking
+            match = re.match(
+                r"^(?P<artist>.+?)\s+[-\u2013\u2014]\s+" + _QUOTED_TITLE,
+                _clean_list_text(heading.text()),
+            )
+            if match:
+                artist = re.sub(r"^\d+\.\s*", "", _clean_list_text(match["artist"]))
+                pairs.append((artist, _clean_list_text(match["title"])))
+        return pairs
+
+
+class PitchforkSelects(WeeklyListSource):
+    """Pitchfork — playlist semanal «Pitchfork Selects» (uma linha por faixa)."""
+
+    id = "pitchfork_selects"
+    name = "Pitchfork Selects"
+    feed_url = "https://pitchfork.com/feed/feed-news/rss"
+    title_pattern = re.compile(r"pitchfork selects playlist", re.IGNORECASE)
+
+    def _parse_list(self, html: str) -> list[tuple[str, str]]:
+        pairs = []
+        for paragraph in HTMLParser(html).css("p"):
+            for line in re.split(r"<br\s*/?>", paragraph.html or "", flags=re.IGNORECASE):
+                text = _clean_list_text(HTMLParser(line).text())
+                # Lily Konigsberg: “Free Byrd” —Marissa Lorusso
+                match = re.match(r"^(?P<artist>[^:\u201c\"]+):\s*" + _QUOTED_TITLE, text)
+                if match:
+                    pairs.append(
+                        (_clean_list_text(match["artist"]), _clean_list_text(match["title"]))
+                    )
+        return pairs
+
+
 class TheQuietusTracksOfMonth(Source):
     """The Quietus — Music of the Month / TRACKS.
 

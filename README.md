@@ -167,13 +167,21 @@ uv run peel doctor sources
 uv run peel doctor sources --json
 ```
 
-### Source scoring
+### Fontes
 
 ```bash
-uv run peel sources
-uv run peel sources --weeks 4
+uv run peel sources               # por fonte: volume/semana, % love/like, estado (12 semanas)
+uv run peel sources --semanas 4   # outra janela
+uv run peel sources --detalhe     # tabela técnica de scoring
 uv run peel sources --json
 ```
+
+A ordem do registo conta: quando a triagem enche, ficam de fora as últimas.
+Por isso as escolhas curadas — Pitchfork Best New Tracks, Stereogum *5 Best
+Songs of the Week*, *Pitchfork Selects*, Gorilla vs Bear, KEXP, NPR, Quietus —
+vêm antes dos feeds de notícias de grande volume (Stereogum New Music,
+Consequence, Pitchfork News). Consenso conta publicações, não feeds: Stereogum
+duas vezes continua a ser uma só voz (`src/peel/sources/families.py`).
 
 ### Affinity genre cache
 

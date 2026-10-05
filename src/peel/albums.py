@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from peel.db import SourceQuality
+from peel.sources.families import source_family
 
 CANONICAL_ALBUM_QUEUE_SINCE = "2026-W29"
 
@@ -228,14 +229,6 @@ EDITORIAL_ALBUM_SOURCES = {
 }
 LABEL_SOURCE_PREFIX = "bandcamp_"
 SOURCE_REPEAT_PENALTY = 2.0
-_SOURCE_FAMILIES = {
-    "pitchfork_best_albums": "pitchfork",
-    "pitchfork_album_reviews": "pitchfork",
-    "thequietus": "thequietus",
-    "thequietus_feedbacker": "thequietus",
-    "diy_album_reviews": "diy",
-    "clash_album_reviews": "clash",
-}
 _ARCHIVAL_TITLE_RE = re.compile(
     r"(?:\b(?:deluxe|expanded|remaster(?:ed)?|reissue|anniversary|archive|archival)\b|"
     r"\b\d{1,3}(?:st|nd|rd|th)\s+anniversary\b)",
@@ -281,11 +274,6 @@ def _affinity_tier(affinity: Callable[[str], float] | None, artist: str) -> int:
     return 0
 
 
-def _source_family(source_id: str) -> str:
-    """Publication-level identity prevents two feeds from faking consensus."""
-    return _SOURCE_FAMILIES.get(source_id, source_id)
-
-
 def _source_tier(source_id: str) -> int:
     """Editorial reviews beat label/release feeds when other signals tie."""
     if source_id in EDITORIAL_ALBUM_SOURCES:
@@ -321,12 +309,12 @@ def _softly_diverse(
         return []
     remaining = list(candidates)
     selected: list[AlbumRecommendation] = []
-    counts = Counter(_source_family(item.sources[0]) for item in (already or []) if item.sources)
+    counts = Counter(source_family(item.sources[0]) for item in (already or []) if item.sources)
     while remaining and len(selected) < limit:
 
         def key(item: AlbumRecommendation) -> tuple[float, int, float, int, float, str, str]:
             source = item.sources[0] if item.sources else ""
-            family = _source_family(source)
+            family = source_family(source)
             # One scalar means feedback quality and repeat penalty genuinely
             # compete. Avg rating is already reflected in score and is never a
             # lexicographic tier that makes diversity unreachable.
@@ -347,7 +335,7 @@ def _softly_diverse(
         remaining.remove(chosen)
         selected.append(chosen)
         if chosen.sources:
-            counts[_source_family(chosen.sources[0])] += 1
+            counts[source_family(chosen.sources[0])] += 1
     return selected
 
 
@@ -402,7 +390,7 @@ class _AlbumBucket:
                 ),
             )
         )
-        source_count = len({_source_family(source) for source in sources})
+        source_count = len({source_family(source) for source in sources})
         return AlbumRecommendation(
             self.artist,
             self.album,

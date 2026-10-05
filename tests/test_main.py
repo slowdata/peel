@@ -44,6 +44,7 @@ from peel.sources.rss import (
     TheQuietus,
     TheQuietusFeedbacker,
     TheQuietusTracksOfMonth,
+    WeeklyListSource,
 )
 
 
@@ -62,6 +63,7 @@ def _disable_network_album_sources(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ClashAlbumReviews, "fetch", lambda self: [])
     monkeypatch.setattr(ClashFirstTake, "fetch", lambda self: [])
     monkeypatch.setattr(BandcampLabel, "fetch", lambda self: [])
+    monkeypatch.setattr(WeeklyListSource, "fetch", lambda self: [])
 
 
 def _candidate(
@@ -1575,11 +1577,13 @@ class TestConsensusAttribution:
         )
         count = cursor.fetchone()[0]
         assert count == 4
+        # Registry order: curated picks (Pitchfork BNT, Gorilla vs Bear) before
+        # high-volume news (Stereogum), then album sources (Quietus, as track here).
         assert db.track_sources(shared_uri) == [
             ("pitchfork_bnt", "https://example.com/pitchfork"),
+            ("gorillavsbear", "https://example.com/gvb"),
             ("stereogum_new_music", "https://example.com/stereogum"),
             ("thequietus", "https://example.com/quietus"),
-            ("gorillavsbear", "https://example.com/gvb"),
         ]
 
         called_uris = mock_sp.replace_playlist_items.call_args.args[1]

@@ -285,3 +285,98 @@ def _window_bounds(reference_dt: datetime, weeks: int) -> tuple[datetime, dateti
     start = current_start - timedelta(weeks=weeks - 1)
     end = current_start + timedelta(days=7)
     return start, end
+
+
+@dataclass(frozen=True, slots=True)
+class SourceOverview:
+    """Vista simples de uma source: volume, acerto e saúde."""
+
+    source_id: str
+    name: str
+    kind: str
+    runs: int
+    per_week: float
+    rated: int
+    positive: int
+    status: str
+
+    @property
+    def positive_rate(self) -> float | None:
+        return self.positive / self.rated if self.rated else None
+
+
+def build_source_overview(
+    db: DB,
+    sources: list[tuple[str, str, str]],
+    weeks: int = 12,
+    reference_dt: datetime | None = None,
+) -> list[SourceOverview]:
+    """Uma linha por source activa ``(id, nome, kind)``, mesmo sem actividade.
+
+    - Por semana: faixas novas (ou álbuns novos) por execução.
+    - Gostei: love/like entre as avaliações das suas descobertas na janela
+      (``unavailable`` não é juízo musical e não conta).
+    - Estado: ``erro`` na última execução; ``sem resultados`` se nunca trouxe
+      nada na janela; ``pouco volume`` abaixo de 1 por semana; senão ``ok``.
+    """
+    start, end = _window_bounds(reference_dt or datetime.now(UTC), weeks)
+    window = (start.isoformat(), end.isoformat())
+    rows = []
+    for source_id, name, kind in sources:
+        runs, new_tracks, new_albums, fetched = db.conn.execute(
+            """
+            SELECT COUNT(*), COALESCE(SUM(new_unique_count), 0), COALESCE(SUM(album_count), 0),
+                   COALESCE(SUM(fetched_count), 0)
+            FROM source_runs WHERE source_id = ? AND run_at >= ? AND run_at < ?
+            """,
+            (source_id, *window),
+        ).fetchone()
+        last = db.conn.execute(
+            "SELECT status FROM source_runs WHERE source_id = ? ORDER BY run_at DESC LIMIT 1",
+            (source_id,),
+        ).fetchone()
+        if kind == "album":
+            labels = db.conn.execute(
+                """
+                SELECT f.label FROM album_mentions m
+                JOIN album_feedback f ON f.artist_key = m.artist_key AND f.album_key = m.album_key
+                WHERE m.source_id = ? AND f.label != 'unavailable'
+                  AND COALESCE(m.first_seen_at, m.seen_at) >= ?
+                  AND COALESCE(m.first_seen_at, m.seen_at) < ?
+                """,
+                (source_id, *window),
+            ).fetchall()
+            volume = new_albums
+        else:
+            labels = db.conn.execute(
+                """
+                SELECT f.label FROM tracks t JOIN feedback f ON f.spotify_uri = t.spotify_uri
+                WHERE t.source_id = ? AND t.added_at >= ? AND t.added_at < ?
+                """,
+                (source_id, *window),
+            ).fetchall()
+            volume = new_tracks
+        per_week = volume / runs if runs else 0.0
+        if not runs:
+            status = "sem execuções"
+        elif last and last[0] == "error":
+            status = "erro"
+        elif not fetched:
+            status = "sem resultados"
+        elif per_week < 1:
+            status = "pouco volume"
+        else:
+            status = "ok"
+        rows.append(
+            SourceOverview(
+                source_id=source_id,
+                name=name,
+                kind=kind,
+                runs=int(runs),
+                per_week=per_week,
+                rated=len(labels),
+                positive=sum(label in ("love", "like") for (label,) in labels),
+                status=status,
+            )
+        )
+    return rows

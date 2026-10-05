@@ -342,7 +342,9 @@ class TestSourcesCli:
 
         monkeypatch.setattr(cli, "settings", _settings(db_path))
 
-        result = runner.invoke(cli.app, ["sources", "--weeks", "4", "--min-tracks", "2"])
+        result = runner.invoke(
+            cli.app, ["sources", "--weeks", "4", "--min-tracks", "2", "--detalhe"]
+        )
 
         assert result.exit_code == 0
         assert "source-b" in result.stdout
@@ -366,7 +368,9 @@ class TestSourcesCli:
 
         monkeypatch.setattr(cli, "settings", _settings(db_path))
 
-        result = runner.invoke(cli.app, ["sources", "--weeks", "4", "--min-data-tracks", "1"])
+        result = runner.invoke(
+            cli.app, ["sources", "--weeks", "4", "--min-data-tracks", "1", "--detalhe"]
+        )
 
         assert result.exit_code == 0
         assert "Source scores" in result.stdout
@@ -395,7 +399,7 @@ class TestSourcesCli:
 
         monkeypatch.setattr(cli, "settings", _settings(db_path))
 
-        result = runner.invoke(cli.app, ["sources", "--weeks", "4"])
+        result = runner.invoke(cli.app, ["sources", "--weeks", "4", "--detalhe"])
 
         assert result.exit_code == 0
         assert "source-a" in result.stdout
@@ -451,3 +455,110 @@ def _settings(db_path: Path) -> SimpleNamespace:
         spotify_refresh_token="refresh-token",
         peel_playlist_id="playlist-id",
     )
+
+
+def test_source_overview_reports_volume_hit_rate_and_health(tmp_path: Path) -> None:
+    from peel.scoring import build_source_overview
+
+    db = DB(str(tmp_path / "peel.db"))
+    db.init_schema()
+    now = datetime.now(UTC)
+    for i in range(3):
+        _insert_track(
+            db,
+            uri=f"spotify:track:{i}",
+            source_id="volume",
+            artist=f"A{i}",
+            title=f"T{i}",
+            added_at=now.isoformat(),
+        )
+    db.upsert_feedback("spotify:track:0", "love")
+    db.upsert_feedback("spotify:track:1", "meh")
+    runs = [
+        ("volume", 10, 3, 0, "ok"),
+        ("volume", 9, 3, 0, "ok"),
+        ("tiny", 4, 0, 0, "ok"),
+        ("dead", 0, 0, 0, "ok"),
+        ("broken", 5, 1, 0, "error"),
+        ("albums", 6, 0, 2, "ok"),
+    ]
+    for source_id, fetched, new, albums, status in runs:
+        db.conn.execute(
+            "INSERT INTO source_runs (source_id, run_at, fetched_count, fresh_count,"
+            " processed_count, matched_count, new_unique_count, unmatched_count, album_count,"
+            " skipped_stale_count, skipped_cap_count, status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                source_id,
+                now.isoformat(),
+                fetched,
+                fetched,
+                fetched,
+                new,
+                new,
+                0,
+                albums,
+                0,
+                0,
+                status,
+            ),
+        )
+    db._record_album_mention(
+        artist="Band",
+        album="LP",
+        source_id="albums",
+        source_url=None,
+        spotify_album_uri=None,
+        seen_at=now.isoformat(),
+        added_at_week=iso_week(now),
+    )
+    db._record_album_mention(
+        artist="Other",
+        album="EP",
+        source_id="albums",
+        source_url=None,
+        spotify_album_uri=None,
+        seen_at=now.isoformat(),
+        added_at_week=iso_week(now),
+    )
+    db.conn.commit()
+    db.upsert_album_feedback("Band", "LP", "like")
+    db.upsert_album_feedback("Other", "EP", "unavailable")
+    rows = {
+        row.source_id: row
+        for row in build_source_overview(
+            db,
+            [
+                ("volume", "Volume", "track"),
+                ("tiny", "Tiny", "track"),
+                ("dead", "Dead", "track"),
+                ("broken", "Broken", "track"),
+                ("new", "New", "track"),
+                ("albums", "Albums", "album"),
+            ],
+            weeks=4,
+        )
+    }
+    assert rows["volume"].per_week == 3.0 and rows["volume"].status == "ok"
+    assert (rows["volume"].rated, rows["volume"].positive) == (2, 1)
+    assert rows["tiny"].status == "pouco volume"
+    assert rows["dead"].status == "sem resultados"
+    assert rows["broken"].status == "erro"
+    assert rows["new"].status == "sem execuções"
+    assert rows["albums"].per_week == 2.0
+    # 'unavailable' is not a musical judgement and is not counted.
+    assert (rows["albums"].rated, rows["albums"].positive) == (1, 1)
+    db.close()
+
+
+def test_sources_command_defaults_to_the_plain_overview(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    db_path = tmp_path / "peel.db"
+    DB(str(db_path)).init_schema()
+    monkeypatch.setattr(cli, "settings", _settings(db_path))
+    result = runner.invoke(cli.app, ["sources"])
+    assert result.exit_code == 0, result.output
+    assert "Faixas — últimas 12 semanas" in result.stdout
+    assert "Álbuns — últimas 12 semanas" in result.stdout
+    assert "Stereogum — 5 Best Songs" in result.stdout
+    assert "Fnd" not in result.stdout

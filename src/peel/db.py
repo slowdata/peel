@@ -31,6 +31,7 @@ import structlog
 from peel.matcher import normalize
 from peel.models import AlbumQueueItem, ReviewQueueItem
 from peel.playlists import canonical_playlist_id
+from peel.sources.families import source_family
 
 FEEDBACK_RATINGS: dict[str, int] = {
     "love": 2,
@@ -129,7 +130,7 @@ def rank_window_uris(
         assert isinstance(sources, set)
         affinity = affinity_scorer(str(bucket["artist"])) if affinity_scorer else 0.0
         return (
-            -len(sources),
+            -len({source_family(str(source)) for source in sources}),
             -float(bucket["best_avg"] or 0.0),
             -float(bucket["best_score"] or 0.0),
             -float(affinity),
@@ -1914,7 +1915,7 @@ class DB:
         return keepers[:limit]
 
     def source_count_for_track_identity(self, artist: str, title: str) -> int:
-        """Nº distinto de sources para uma identidade normalizada de faixa."""
+        """Nº de publicações distintas para uma identidade normalizada de faixa."""
         target = (normalize(artist), normalize(title))
         rows = self.conn.execute(
             """
@@ -1922,12 +1923,12 @@ class DB:
             FROM tracks
             """
         ).fetchall()
-        sources = {
-            str(source_id)
+        publications = {
+            source_family(str(source_id))
             for row_artist, row_title, source_id in rows
             if (normalize(str(row_artist)), normalize(str(row_title))) == target
         }
-        return max(1, len(sources))
+        return max(1, len(publications))
 
     def _filtered_window_track_rows(self, current_week: str, window: int) -> list[WindowTrackRow]:
         cutoff_week = self._cutoff_week(current_week, window)

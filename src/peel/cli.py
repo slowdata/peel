@@ -64,9 +64,9 @@ from peel.publication import (
     track_candidates,
 )
 from peel.report import generate_weekly_html_report, generate_weekly_report
-from peel.scoring import SourceScore, build_source_scores
+from peel.scoring import SourceScore, build_source_overview, build_source_scores
 from peel.site_export import CANONICAL_PUBLIC_SELECTION_SINCE, export_site, make_album_resolver
-from peel.sources.registry import source_label
+from peel.sources.registry import ACTIVE_SOURCES, source_label
 from peel.spotify_client import SpotifyClient, SpotifyReauthRequired
 from peel.state_sync import (
     STATE_CLONE_URL,
@@ -1426,7 +1426,8 @@ def report(
 
 @app.command(rich_help_panel=PANEL_MAINTENANCE)
 def sources(
-    weeks: int = typer.Option(4, "--weeks", min=1, help="Janela em semanas"),
+    weeks: int = typer.Option(12, "--semanas", "--weeks", min=1, help="Janela em semanas"),
+    detalhe: bool = typer.Option(False, "--detalhe", help="Tabela técnica de scoring"),
     min_tracks: int = typer.Option(
         0,
         "--min-tracks",
@@ -1441,7 +1442,10 @@ def sources(
     ),
     json_output: bool = typer.Option(False, "--json", help="Saída JSON"),
 ) -> None:
-    """Mostra scoring das sources com base nos dados existentes."""
+    """Fontes: quanto trazem por semana, quanto acertam e se estão saudáveis."""
+    if not json_output and not detalhe:
+        _print_source_overview(weeks)
+        return
     if json_output:
         with redirect_stdout(sys.stderr):
             rows = _source_score_rows(weeks, min_tracks)
@@ -1498,6 +1502,39 @@ def sources(
         )
 
     console.print(table)
+
+
+def _print_source_overview(weeks: int) -> None:
+    db = DB(str(_resolve_path(settings.db_path)))
+    try:
+        db.init_schema()
+        specs = [(spec.source_id, spec.source_name, spec.create().kind) for spec in ACTIVE_SOURCES]
+        rows = build_source_overview(db, specs, weeks=weeks)
+    finally:
+        db.close()
+    styles = {"ok": "green", "pouco volume": "yellow"}
+    for kind, title, unit in (("track", "Faixas", "faixas"), ("album", "Álbuns", "álbuns")):
+        table = Table(title=f"{title} — últimas {weeks} semanas", title_justify="left")
+        table.add_column("Fonte", style="bold")
+        table.add_column(f"{unit}/semana", justify="right")
+        table.add_column("Avaliadas", justify="right")
+        table.add_column("Gostei", justify="right")
+        table.add_column("Estado")
+        for row in (r for r in rows if r.kind == kind):
+            rate = f"{row.positive_rate:.0%}" if row.positive_rate is not None else "—"
+            style = styles.get(row.status, "red")
+            table.add_row(
+                row.name,
+                f"{row.per_week:.1f}",
+                str(row.rated),
+                rate,
+                f"[{style}]{row.status}[/{style}]",
+            )
+        console.print(table)
+    console.print(
+        "Gostei = love/like nas avaliações das descobertas de cada fonte. "
+        "Detalhe técnico: peel sources --detalhe"
+    )
 
 
 @site_app.command("export")

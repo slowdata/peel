@@ -28,6 +28,8 @@ from peel.sources.rss import (
     PitchforkBestAlbums,
     PitchforkBNT,
     PitchforkNews,
+    PitchforkSelects,
+    StereogumBestSongs,
     StereogumNewMusic,
     TheQuietus,
     TheQuietusFeedbacker,
@@ -87,6 +89,7 @@ SOURCE_LABEL_OVERRIDES: dict[str, str] = {
     "pitchfork_best_albums": "Pitchfork",
     "pitchfork_album_reviews": "Pitchfork",
     "pitchfork_news": "Pitchfork News",
+    "pitchfork_selects": "Pitchfork",
     "lineofbestfit_news": "The Line of Best Fit",
     "consequence_music": "Consequence",
     "diy_album_reviews": "DIY",
@@ -94,6 +97,7 @@ SOURCE_LABEL_OVERRIDES: dict[str, str] = {
     "clash_first_take": "Clash",
     "kexp_in_our_headphones": "KEXP",
     "stereogum_new_music": "Stereogum",
+    "stereogum_best_songs": "Stereogum",
     "thequietus": "The Quietus",
     "thequietus_feedbacker": "The Quietus",
     "thequietus_tracks_of_month": "The Quietus",
@@ -104,22 +108,30 @@ SOURCE_LABEL_OVERRIDES: dict[str, str] = {
 }
 
 
+# A ordem importa: quando a triagem enche (28 novidades), quem fica de fora são
+# as últimas. Por isso as escolhas curadas — listas semanais e picks editoriais —
+# vêm primeiro, e os feeds de notícias de grande volume depois.
 ACTIVE_SOURCES: list[SourceSpec] = [
+    # Faixas — escolhas curadas
     SourceSpec(PitchforkBNT),
-    SourceSpec(StereogumNewMusic),
-    SourceSpec(PitchforkNews),
-    SourceSpec(LineOfBestFitNews),
-    SourceSpec(ConsequenceMusic),
-    SourceSpec(TheQuietus),
-    SourceSpec(TheQuietusFeedbacker),
-    SourceSpec(TheQuietusTracksOfMonth),
+    SourceSpec(StereogumBestSongs),
+    SourceSpec(PitchforkSelects),
     SourceSpec(GorillaVsBear),
     SourceSpec(KexpInOurHeadphones),
+    SourceSpec(NprNewMusicFridayStarting5),
+    SourceSpec(TheQuietusTracksOfMonth),
+    SourceSpec(ClashFirstTake),
+    SourceSpec(LineOfBestFitNews),
+    # Faixas — notícias de grande volume
+    SourceSpec(StereogumNewMusic),
+    SourceSpec(ConsequenceMusic),
+    SourceSpec(PitchforkNews),
+    # Álbuns
+    SourceSpec(TheQuietus),
+    SourceSpec(TheQuietusFeedbacker),
     SourceSpec(GuardianMusicAlbums),
     SourceSpec(DIYAlbumReviews),
     SourceSpec(ClashAlbumReviews),
-    SourceSpec(ClashFirstTake),
-    SourceSpec(NprNewMusicFridayStarting5),
     SourceSpec(PitchforkBestAlbums),
     SourceSpec(PitchforkAlbumReviews),
     SourceSpec(AquariumDrunkard),
