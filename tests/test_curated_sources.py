@@ -77,6 +77,7 @@ def test_weekly_list_without_this_weeks_article_is_quiet_not_broken(monkeypatch)
 
 def test_weekly_list_fetches_the_article_and_dates_tracks(monkeypatch):
     source = StereogumBestSongs()
+    monkeypatch.setattr(source, "_now", lambda: datetime(2026, 10, 3, tzinfo=UTC))
     monkeypatch.setattr(
         "peel.sources.rss.feedparser.parse",
         lambda *a, **k: _feed("News", "The 5 Best Songs Of The Week"),
@@ -88,6 +89,66 @@ def test_weekly_list_fetches_the_article_and_dates_tracks(monkeypatch):
     assert tracks[-1].artist == "Phoebe Bridgers" and tracks[-1].title == "On Video"
     assert tracks[0].published_at == datetime(2026, 10, 2, 18, 36, 31, tzinfo=UTC)
     assert tracks[0].source_url == "https://x/The 5 Best Songs Of The Week"
+
+
+def test_weekly_list_from_an_earlier_week_is_skipped(monkeypatch):
+    source = StereogumBestSongs()
+    monkeypatch.setattr(source, "_now", lambda: datetime(2026, 10, 16, tzinfo=UTC))
+    monkeypatch.setattr(
+        "peel.sources.rss.feedparser.parse",
+        lambda *a, **k: _feed("The 5 Best Songs Of The Week"),
+    )
+    monkeypatch.setattr(
+        "peel.sources.rss.httpx.get", MagicMock(return_value=MagicMock(text=STEREOGUM_HTML))
+    )
+    assert source.fetch() == []
+
+
+SELECTS_URL = "https://pitchfork.com/story/a-b-and-more-this-weeks-pitchfork-selects-playlist/"
+SELECTS_TAG_HTML = (
+    '<script type="application/ld+json">{"itemListElement":['
+    f'{{"url":"{SELECTS_URL}","position":1}},'
+    '{"url":"https://pitchfork.com/story/older-this-weeks-pitchfork-selects-playlist/"}]}'
+    "</script>"
+)
+
+
+def test_pitchfork_selects_finds_monday_list_on_tag_page_not_news_feed(monkeypatch):
+    """Published Monday; by the Friday run it has left the 4-day news feed."""
+    source = PitchforkSelects()
+    monkeypatch.setattr(source, "_now", lambda: datetime(2026, 10, 9, 21, tzinfo=UTC))
+    article = (
+        '<meta property="article:published_time" content="2026-10-06T14:43:47.890Z"/>'
+        + SELECTS_HTML
+    )
+    pages = {source.tag_url: SELECTS_TAG_HTML, SELECTS_URL: article}
+    get = MagicMock(side_effect=lambda url, **_: MagicMock(text=pages[url]))
+    monkeypatch.setattr("peel.sources.rss.httpx.get", get)
+    feed = MagicMock()
+    monkeypatch.setattr("peel.sources.rss.feedparser.parse", feed)
+
+    tracks = source.fetch()
+
+    assert [(t.artist, t.title) for t in tracks][:2] == [
+        ("Lily Konigsberg", "Free Byrd"),
+        ("Krill", "Dominate"),
+    ]
+    assert tracks[0].source_url == SELECTS_URL
+    assert tracks[0].published_at == datetime(2026, 10, 6, 14, 43, 47, 890000, tzinfo=UTC)
+    feed.assert_not_called()
+
+
+def test_pitchfork_selects_falls_back_to_feed_when_tag_page_fails(monkeypatch):
+    import httpx
+
+    source = PitchforkSelects()
+    monkeypatch.setattr(
+        "peel.sources.rss.httpx.get", MagicMock(side_effect=httpx.ConnectError("down"))
+    )
+    monkeypatch.setattr("peel.sources.rss.feedparser.parse", lambda *a, **k: _feed("News"))
+
+    assert source.fetch() == []
+    assert source.last_raw_entries == 1
 
 
 def test_same_publication_is_not_consensus():

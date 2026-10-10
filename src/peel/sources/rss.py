@@ -1659,23 +1659,29 @@ class WeeklyListSource(Source):
     feed_url: str
     title_pattern: re.Pattern[str]
     request_headers = {"User-Agent": _BROWSER_UA}
+    max_age_days = 8
+    """Uma lista mais antiga do que isto pertence a uma semana anterior."""
 
     def fetch(self) -> list[Track]:
-        feed = feedparser.parse(self.feed_url, request_headers=self.request_headers)
-        entries = list(feed.entries)
-        self.last_raw_entries = len(entries)
-        entry = next(
-            (e for e in entries if self.title_pattern.search(str(e.get("title", "")))), None
-        )
-        if entry is None:
+        latest = self._latest_list()
+        if latest is None:
             log.info("weekly_list.not_in_feed", source_id=self.id)
             return []
-        link = str(entry.get("link", "")).strip()
+        link, published_at = latest
         response = httpx.get(link, headers=self.request_headers, follow_redirects=True, timeout=20)
         response.raise_for_status()
-        published_at = None
-        if entry.get("published_parsed"):
-            published_at = datetime(*entry.published_parsed[:6], tzinfo=UTC)
+        if published_at is None:
+            published_at = _html_published_at(response.text)
+        if published_at is not None and published_at < self._now() - timedelta(
+            days=self.max_age_days
+        ):
+            log.info(
+                "weekly_list.stale",
+                source_id=self.id,
+                url=link,
+                published_at=published_at.isoformat(),
+            )
+            return []
         tracks = [
             Track(
                 source_id=self.id,
@@ -1691,8 +1697,45 @@ class WeeklyListSource(Source):
             log.warning("weekly_list.no_tracks_parsed", source_id=self.id, url=link)
         return tracks
 
+    def _latest_list(self) -> tuple[str, datetime | None] | None:
+        """Artigo mais recente da lista no feed: (link, data) ou None."""
+        feed = feedparser.parse(self.feed_url, request_headers=self.request_headers)
+        entries = list(feed.entries)
+        self.last_raw_entries = len(entries)
+        entry = next(
+            (e for e in entries if self.title_pattern.search(str(e.get("title", "")))), None
+        )
+        if entry is None:
+            return None
+        published_at = None
+        if entry.get("published_parsed"):
+            published_at = datetime(*entry.published_parsed[:6], tzinfo=UTC)
+        return str(entry.get("link", "")).strip(), published_at
+
+    def _now(self) -> datetime:
+        return datetime.now(UTC)
+
     @abstractmethod
     def _parse_list(self, html: str) -> list[tuple[str, str]]: ...
+
+
+_PUBLISHED_META_RE = re.compile(
+    r'(?:property|name)="article:published_time"\s+content="(?P<value>[^"]+)"'
+    r'|"datePublished"\s*:\s*"(?P<ld>[^"]+)"'
+)
+
+
+def _html_published_at(html: str) -> datetime | None:
+    """Data de publica\u00e7\u00e3o do artigo (meta Open Graph ou JSON-LD)."""
+    match = _PUBLISHED_META_RE.search(html)
+    if not match:
+        return None
+    raw = (match["value"] or match["ld"]).replace("Z", "+00:00")
+    try:
+        value = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    return value if value.tzinfo else value.replace(tzinfo=UTC)
 
 
 _QUOTED_TITLE = r"[\"\u201c](?P<title>[^\"\u201d]+)[\"\u201d]"
@@ -1731,7 +1774,30 @@ class PitchforkSelects(WeeklyListSource):
     id = "pitchfork_selects"
     name = "Pitchfork Selects"
     feed_url = "https://pitchfork.com/feed/feed-news/rss"
+    tag_url = "https://pitchfork.com/tags/pitchfork-selects/"
     title_pattern = re.compile(r"pitchfork selects playlist", re.IGNORECASE)
+    _TAG_LINK_RE = re.compile(
+        r"https://pitchfork\.com/(?:news|story)/[a-z0-9-]*pitchfork-selects-playlist/"
+    )
+
+    def _latest_list(self) -> tuple[str, datetime | None] | None:
+        """A lista sai \u00e0 segunda e o feed de not\u00edcias s\u00f3 guarda ~4 dias.
+
+        A p\u00e1gina da etiqueta lista as edi\u00e7\u00f5es da mais recente para a mais
+        antiga; a data vem do pr\u00f3prio artigo. O feed fica como alternativa.
+        """
+        try:
+            response = httpx.get(
+                self.tag_url, headers=self.request_headers, follow_redirects=True, timeout=20
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            log.warning("weekly_list.tag_page_failed", source_id=self.id, error=str(exc))
+        else:
+            match = self._TAG_LINK_RE.search(response.text)
+            if match:
+                return match.group(0), None
+        return super()._latest_list()
 
     def _parse_list(self, html: str) -> list[tuple[str, str]]:
         pairs = []
