@@ -86,6 +86,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RATING_ORDER = ("love", "like", "meh", "skip", "ban", "unavailable")
 MAX_TRIAGE_SESSION = 100
 _OFFLINE_MODE = False
+# Set by `peel ouvir`: play each item in the running Spotify app as it is shown.
+_AUTOPLAY = False
 
 
 def _configure_stdin_decode_errors() -> None:
@@ -604,26 +606,32 @@ def ouvir(
         bool, typer.Option("--rever", help="Rever notas já dadas (ex.: f5, a11)")
     ] = False,
     semana: Annotated[
-        str | None, typer.Option("--semana", help="Semana a rever (default: a activa)")
+        str | None,
+        typer.Option("--semana", help="Semana a avaliar ou rever (default: a activa)"),
     ] = None,
+    tocar: Annotated[
+        bool,
+        typer.Option("--tocar/--sem-tocar", help="Tocar cada faixa/álbum no Spotify ao aparecer"),
+    ] = True,
 ) -> None:
     """Avalia faixas e depois álbuns da fila activa, e envia tudo no fim."""
-    if semana and not rever:
-        raise typer.BadParameter("--semana só se usa com --rever", param_hint="--semana")
+    global _AUTOPLAY
+    _AUTOPLAY = tocar
+    week_option = _normalize_week_option(semana) if semana else None
     _auto_sync_state("ouvir")
     db = DB(str(_resolve_path(settings.db_path)))
     try:
         db.init_schema()
         if rever:
             review_id = settings.peel_review_playlist_id or settings.peel_playlist_id
-            week = _normalize_week_option(semana) if semana else db.active_review_week(review_id)
+            week = week_option or db.active_review_week(review_id)
             if week is None:
                 console.print("Sem fila activa confirmada.")
                 saved = 0
             else:
                 saved = _review_ratings(db, week)
         else:
-            saved = _rate_unrated(db)
+            saved = _rate_unrated(db, week_option)
     finally:
         db.close()
     if not saved:
@@ -635,14 +643,49 @@ def ouvir(
         console.print("Enviado." if _push_state() else "Nada para enviar.")
 
 
-def _rate_unrated(db: DB) -> int:
-    """Sessão normal: faixas por avaliar, depois os álbuns."""
+def _rate_unrated(db: DB, week: str | None = None) -> int:
+    """Sessão normal: faixas por avaliar, depois os álbuns (da activa ou de ``week``)."""
     console.print("[bold]Faixas[/bold] — Enter = like; 1 love · 2 like · 3 meh · 4 skip · 5 ban")
-    saved = _run_triage_feedback_session(db, limit=MAX_TRIAGE_SESSION, push_hint=False)
-    items = db.latest_album_queue(settings.peel_review_playlist_id or settings.peel_playlist_id)
-    if items and typer.confirm("Avaliar os álbuns agora?", default=True):
+    if _AUTOPLAY:
+        console.print("Cada faixa toca no Spotify ao aparecer (--sem-tocar desliga).")
+    saved = _run_triage_feedback_session(db, limit=MAX_TRIAGE_SESSION, push_hint=False, week=week)
+    if week:
+        items = db.album_queue(week) or []
+    else:
+        items = db.latest_album_queue(settings.peel_review_playlist_id or settings.peel_playlist_id)
+    pending = [i for i in items if db.album_feedback_for_identity(i.artist, i.album) is None]
+    if pending and typer.confirm("Avaliar os álbuns agora?", default=True):
         saved += _run_album_feedback_session(db, items, items[0].week, push_hint=False)
     return saved
+
+
+def _play_in_spotify(uri_or_url: str | None) -> bool:
+    """Toca já no Spotify aberto (MPRIS OpenUri). Sem Spotify ou sem dbus: não faz nada."""
+    if not _AUTOPLAY or not uri_or_url:
+        return False
+    uri = _spotify_app_uri(uri_or_url) if not uri_or_url.startswith("spotify:") else uri_or_url
+    dbus_send = shutil.which("dbus-send")
+    if not uri or not dbus_send:
+        return False
+    try:
+        result = subprocess.run(  # noqa: S603 - fixed local executable, no shell
+            [
+                dbus_send,
+                "--session",
+                "--type=method_call",
+                "--dest=org.mpris.MediaPlayer2.spotify",
+                "/org/mpris/MediaPlayer2",
+                "org.mpris.MediaPlayer2.Player.OpenUri",
+                f"string:{uri}",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=3,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0
 
 
 def _review_ratings(db: DB, week: str) -> int:
@@ -684,6 +727,7 @@ def _review_ratings(db: DB, week: str) -> int:
             track = tracks[position - 1]
             current = db.feedback_for_track_identity(track.spotify_uri)
             console.print(f"{track.artist} — {track.title}")
+            _play_in_spotify(track.spotify_uri)
             label = _prompt_rating(
                 default=current[1] if current else "like",
                 open_item=lambda uri=track.spotify_uri: _open_listen_url(_spotify_web_url(uri)),
@@ -699,6 +743,7 @@ def _review_ratings(db: DB, week: str) -> int:
                 continue
             current = db.album_feedback_for_identity(album.artist, album.album)
             console.print(f"{album.artist} — {album.album}")
+            _play_in_spotify(album.listen_url)
             label = _prompt_rating(
                 default=current[1] if current else "like",
                 ratings=ALBUM_FEEDBACK_RATINGS,
@@ -999,16 +1044,31 @@ def _active_unrated_triage_items(db: DB) -> list[ReviewQueueItem]:
     ]
 
 
-def _run_triage_feedback_session(db: DB, *, limit: int, push_hint: bool = True) -> int:
-    """Sessão interactiva canónica da fila activa de triagem; devolve avaliações gravadas."""
+def _run_triage_feedback_session(
+    db: DB, *, limit: int, push_hint: bool = True, week: str | None = None
+) -> int:
+    """Sessão interactiva da triagem (activa ou de ``week``); devolve avaliações gravadas."""
     playlist_id = settings.peel_review_playlist_id or settings.peel_playlist_id
-    queue = db.review_queue(playlist_id)
+    queue = (
+        (db.review_queue_snapshot(playlist_id, week) or [])
+        if week
+        else db.review_queue(playlist_id)
+    )
     if not queue:
-        console.print("Sem snapshot de triagem confirmado. Aguarda a próxima weekly.")
+        console.print(
+            f"Sem fila confirmada para {week}."
+            if week
+            else "Sem snapshot de triagem confirmado. Aguarda a próxima weekly."
+        )
         return 0
     positions = {item.spotify_uri: index for index, item in enumerate(queue, 1)}
 
-    items = _active_unrated_triage_items(db)
+    def unrated() -> list[ReviewQueueItem]:
+        if not week:
+            return _active_unrated_triage_items(db)
+        return [i for i in queue if db.feedback_for_track_identity(i.spotify_uri) is None]
+
+    items = unrated()
     if not items:
         console.print("Triagem activa completa: todas as tracks já foram avaliadas.")
         return 0
@@ -1021,6 +1081,7 @@ def _run_triage_feedback_session(db: DB, *, limit: int, push_hint: bool = True) 
             f"{item.artist} — {item.title} "
             f"({source_label(item.source_id)})"
         )
+        _play_in_spotify(item.spotify_uri)
         chosen_rating = _prompt_rating(
             default="like",
             open_item=lambda uri=item.spotify_uri: _open_listen_url(_spotify_web_url(uri)),
@@ -1032,7 +1093,7 @@ def _run_triage_feedback_session(db: DB, *, limit: int, push_hint: bool = True) 
         saved_count += 1
         console.print(f"Saved: {item.artist} — {item.title} [{chosen_rating}]")
 
-    remaining = len(_active_unrated_triage_items(db))
+    remaining = len(unrated())
     if interrupted:
         console.print(f"Sessão interrompida. Faltam {remaining} tracks activas por avaliar.")
     elif remaining:
@@ -1392,6 +1453,7 @@ def _run_album_feedback_session(
         open_album = (
             (lambda url=item.listen_url: _open_listen_url(url)) if item.listen_url else None
         )
+        _play_in_spotify(item.listen_url)
         rating = _prompt_rating(
             default="like", ratings=ALBUM_FEEDBACK_RATINGS, open_item=open_album
         )

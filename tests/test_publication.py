@@ -19,6 +19,8 @@ from peel.site_export import build_site_week_payload, export_site
 from peel.spotify_client import SpotifyPlaylistMismatch
 from peel.state_sync import StateSyncError, _merge_user_state
 
+REAL_PLAY = cli._play_in_spotify  # captured before the autouse no-playback fixture
+
 
 @pytest.fixture
 def sample(tmp_path, monkeypatch):
@@ -644,10 +646,53 @@ def test_ouvir_rever_changes_chosen_ratings_and_pushes(sample, monkeypatch):
     push.assert_called_once()
 
 
-def test_semana_requires_rever_or_refazer(sample, monkeypatch):
+def test_publicar_semana_requires_refazer(sample, monkeypatch):
     _no_sync(monkeypatch)
-    assert CliRunner().invoke(cli.app, ["ouvir", "--semana", "2026-W38"]).exit_code == 2
     assert CliRunner().invoke(cli.app, ["publicar", "--semana", "2026-W38"]).exit_code == 2
+
+
+def test_ouvir_semana_walks_unrated_items_of_that_week_and_plays_them(
+    sample, monkeypatch, _no_real_spotify_playback
+):
+    db, plan, _ = sample
+    db.conn.execute(
+        "DELETE FROM feedback WHERE spotify_uri IN ('spotify:track:t2','spotify:track:t4')"
+    )
+    db.conn.execute("DELETE FROM album_feedback WHERE album_key='album 1'")
+    db.conn.commit()
+    _no_sync(monkeypatch)
+    monkeypatch.setattr(cli, "_push_state", MagicMock(return_value=True))
+    result = CliRunner().invoke(
+        cli.app, ["ouvir", "--semana", plan.week], input="1\n\n3\n\ny\n2\n\n"
+    )
+    assert result.exit_code == 0, result.output
+    assert db.feedback_for_track_identity("spotify:track:t2")[1] == "love"
+    assert db.feedback_for_track_identity("spotify:track:t4")[1] == "meh"
+    assert db.album_feedback_for_identity("Album Artist 1", "Album 1")[1] == "like"
+    played = _no_real_spotify_playback
+    assert played[:2] == ["spotify:track:t2", "spotify:track:t4"]
+
+
+def test_ouvir_semana_without_a_queue_is_explicit(sample, monkeypatch):
+    _no_sync(monkeypatch)
+    result = CliRunner().invoke(cli.app, ["ouvir", "--semana", "2020-W01"], input="")
+    assert result.exit_code == 0, result.output
+    assert "Sem fila confirmada para 2020-W01" in unstyle(result.output)
+
+
+def test_play_in_spotify_uses_mpris_only_when_enabled(monkeypatch):
+    calls = []
+    monkeypatch.setattr(cli.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(
+        cli.subprocess, "run", lambda argv, **_: calls.append(argv) or MagicMock(returncode=0)
+    )
+    monkeypatch.setattr(cli, "_AUTOPLAY", False)
+    assert REAL_PLAY("spotify:track:abc") is False and calls == []
+    monkeypatch.setattr(cli, "_AUTOPLAY", True)
+    assert REAL_PLAY("https://open.spotify.com/album/xyz") is True
+    assert calls[0][-2:] == ["org.mpris.MediaPlayer2.Player.OpenUri", "string:spotify:album:xyz"]
+    assert REAL_PLAY("https://label.bandcamp.com/album/x") is False  # no Spotify URI
+    assert len(calls) == 1
 
 
 def _publish(db, plan):
