@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -515,6 +516,24 @@ def test_schedule_constant_matches_workflow_cron():
     workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/weekly.yml").read_text()
     cron = f'cron: "{cli.WEEKLY_RUN_MINUTE} {cli.WEEKLY_RUN_HOUR} * * 5"'
     assert cron in workflow and cli.WEEKLY_RUN_WEEKDAY == 4  # Friday
+
+
+def test_estado_json_is_clean_and_never_syncs(sample, monkeypatch):
+    db, plan, _ = sample
+    sync = MagicMock()
+    monkeypatch.setattr(cli, "_auto_sync_state", sync)
+    result = CliRunner().invoke(cli.app, ["estado", "--json"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    sync.assert_not_called()
+    assert data["week"] == plan.week
+    assert data["unrated_tracks"] == 0 and data["published"] is None
+    assert data["next_step"] == "publish"
+    assert datetime.fromisoformat(data["next_run"]).tzinfo is not None
+    db.conn.execute("DELETE FROM feedback WHERE spotify_uri='spotify:track:t2'")
+    db.conn.commit()
+    data = json.loads(CliRunner().invoke(cli.app, ["estado", "--json"]).output)
+    assert data["unrated_tracks"] == 1 and data["next_step"] == "rate"
 
 
 def test_estado_says_when_todays_run_is_late(sample, monkeypatch):

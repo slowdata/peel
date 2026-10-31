@@ -351,15 +351,29 @@ def _site_has_week(week: str, site_dir: Path | None = None) -> bool:
 
 
 @app.command(rich_help_panel=PANEL_WEEK)
-def estado() -> None:
+def estado(
+    as_json: Annotated[
+        bool, typer.Option("--json", help="Saída JSON estável para integrações (sem sync)")
+    ] = False,
+) -> None:
     """Resumo: semana activa, o que falta avaliar, publicação e próxima execução."""
-    _auto_sync_state("estado")
+    if not as_json:
+        # JSON is read by integrations (e.g. a Herdr board) on a timer: it must
+        # never pull state or print anything but the payload.
+        _auto_sync_state("estado")
     review_id = settings.peel_review_playlist_id or settings.peel_playlist_id
     db = DB(str(_resolve_path(settings.db_path)))
     try:
         db.init_schema()
         week = db.active_review_week(review_id)
         if week is None:
+            if as_json:
+                typer.echo(
+                    json.dumps(
+                        {"week": None, "next_run": next_weekly_run(datetime.now(UTC)).isoformat()}
+                    )
+                )
+                return
             console.print("Sem fila activa confirmada. Aguarda a próxima execução.")
             return
         queue = db.review_queue_snapshot(review_id, week) or []
@@ -377,6 +391,38 @@ def estado() -> None:
         db.close()
 
     now = datetime.now(UTC)
+    run_at = next_weekly_run(now)
+    today_run = run_at - timedelta(days=7)
+    run_late = today_run.date() == now.date() and week < iso_week(now)
+    if as_json:
+        if unrated_tracks or unrated_albums:
+            next_step = "rate"
+        elif not selection:
+            next_step = "publish"
+        else:
+            next_step = "none"
+        payload = {
+            "week": week,
+            "delivered_at": confirmed[0] if confirmed else None,
+            "tracks": len(queue),
+            "unrated_tracks": unrated_tracks,
+            "albums": len(albums),
+            "unrated_albums": unrated_albums,
+            "published": (
+                {
+                    "tracks": len(selection["tracks"]),
+                    "albums": len(selection["albums"]),
+                    "url": f"{SITE_URL}/{week}",
+                }
+                if selection
+                else None
+            ),
+            "next_run": (today_run if run_late else run_at).isoformat(),
+            "run_late": run_late,
+            "next_step": next_step,
+        }
+        typer.echo(json.dumps(payload))
+        return
     console.print(f"[bold]Peel — {week}[/bold]")
     if confirmed:
         console.print(f"  Fila entregue: {_when_pt(datetime.fromisoformat(confirmed[0]))}")
@@ -389,9 +435,7 @@ def estado() -> None:
         )
     else:
         console.print("  Publicada: ainda não")
-    run_at = next_weekly_run(now)
-    today_run = run_at - timedelta(days=7)
-    if today_run.date() == now.date() and week < iso_week(now):
+    if run_late:
         console.print(
             f"  Execução de hoje ({_when_pt(today_run)}): ainda não chegou;"
             " o GitHub pode atrasar até ~4h"
