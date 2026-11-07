@@ -35,6 +35,7 @@ from peel.sources.rss import (
     TheQuietus,
     TheQuietusFeedbacker,
     TheQuietusTracksOfMonth,
+    TrebleAlbumReviews,
 )
 
 SourceFactory = type[Source] | Callable[[], Source]
@@ -95,6 +96,7 @@ SOURCE_LABEL_OVERRIDES: dict[str, str] = {
     "consequence_music": "Consequence",
     "diy_album_reviews": "DIY",
     "beats_per_minute_album_reviews": "Beats Per Minute",
+    "treble_album_reviews": "Treble",
     "clash_album_reviews": "Clash",
     "clash_first_take": "Clash",
     "kexp_in_our_headphones": "KEXP",
@@ -136,6 +138,7 @@ ACTIVE_SOURCES: list[SourceSpec] = [
     SourceSpec(GuardianMusicAlbums),
     SourceSpec(DIYAlbumReviews),
     SourceSpec(BeatsPerMinuteAlbumReviews),
+    SourceSpec(TrebleAlbumReviews),
     SourceSpec(ClashAlbumReviews),
     SourceSpec(PitchforkBestAlbums),
     SourceSpec(PitchforkAlbumReviews),
@@ -187,6 +190,7 @@ SOURCE_HOMEPAGE: dict[str, str] = {
     "Consequence": "https://consequence.net/category/music/",
     "DIY": "https://diymag.com/review/album",
     "Beats Per Minute": "https://beatsperminute.com/category/reviews/album-reviews/",
+    "Treble": "https://www.treblezine.com/category/reviews/",
     "Clash": "https://www.clashmusic.com/reviews/",
     "Stereogum": "https://www.stereogum.com",
     "The Quietus": "https://thequietus.com",

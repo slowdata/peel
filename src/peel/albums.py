@@ -226,6 +226,7 @@ EDITORIAL_ALBUM_SOURCES = {
     "guardian_music_albums",
     "diy_album_reviews",
     "beats_per_minute_album_reviews",
+    "treble_album_reviews",
     "clash_album_reviews",
     "thequietus",
     "thequietus_feedbacker",

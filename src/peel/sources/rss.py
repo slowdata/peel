@@ -638,6 +638,35 @@ class BeatsPerMinuteAlbumReviews(RSSSource):
         return _split_artist_title_dash(title[len("Album Review: ") :])
 
 
+class TrebleAlbumReviews(RSSSource):
+    """Treble — album reviews from the general feed.
+
+    The feed mixes news, lists and columns; reviews carry the ``Album Reviews``
+    category and an ``Artist : Album`` title. Both are required.
+    """
+
+    id = "treble_album_reviews"
+    name = "Treble — Album Reviews"
+    url = "https://www.treblezine.com/feed/"
+    pagination_url_template = "{url}?paged={page}"
+    max_pages = 4
+    kind = "album"
+    lookback_days = 14
+
+    def _parse_entry(self, entry: dict) -> Track | None:
+        terms = {str(tag.get("term", "")).strip().casefold() for tag in entry.get("tags", [])}
+        if "album reviews" not in terms:
+            return None
+        return super()._parse_entry(entry)
+
+    def _extract_artist_title(self, entry: dict) -> tuple[str, str] | None:
+        title = _strip_html_tags(unescape(str(entry.get("title", "")))).strip()
+        match = re.match(r"^(?P<artist>.+?)\s+:\s+(?P<album>.+)$", title)
+        if not match:
+            return None
+        return match["artist"].strip(), match["album"].strip()
+
+
 class ClashAlbumReviews(RSSSource):
     """Clash — críticas de álbuns do feed dedicado de reviews.
 

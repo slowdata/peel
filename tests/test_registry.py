@@ -32,6 +32,7 @@ from peel.sources.rss import (
     TheQuietus,
     TheQuietusFeedbacker,
     TheQuietusTracksOfMonth,
+    TrebleAlbumReviews,
 )
 
 
@@ -71,6 +72,7 @@ def test_active_sources_registry_contains_expected_order() -> None:
         GuardianMusicAlbums.id,
         DIYAlbumReviews.id,
         BeatsPerMinuteAlbumReviews.id,
+        TrebleAlbumReviews.id,
         ClashAlbumReviews.id,
         PitchforkBestAlbums.id,
         PitchforkAlbumReviews.id,

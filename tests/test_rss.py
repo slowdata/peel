@@ -27,6 +27,7 @@ from peel.sources.rss import (
     TheQuietus,
     TheQuietusFeedbacker,
     TheQuietusTracksOfMonth,
+    TrebleAlbumReviews,
     _slugify_pitchfork,
     _split_artist_title_dash,
     _strip_html_tags,
@@ -665,6 +666,25 @@ class TestAquariumDrunkard:
 
 
 class TestDIYAndClashAlbumReviews:
+    def test_treble_requires_album_review_category_and_colon_title(self) -> None:
+        source = TrebleAlbumReviews()
+        valid = {
+            "title": "Dis Fig : What to Make of These Mortal Hands",
+            "link": "https://www.treblezine.com/dis-fig-what-to-make-of-these-mortal-hands-review/",
+            "tags": [{"term": "Album Reviews"}, {"term": "experimental"}],
+        }
+        parsed = source._parse_entry(valid)
+        assert parsed is not None
+        assert (parsed.artist, parsed.title, parsed.source_id) == (
+            "Dis Fig",
+            "What to Make of These Mortal Hands",
+            "treble_album_reviews",
+        )
+        news = {**valid, "tags": [{"term": "News"}]}
+        assert source._parse_entry(news) is None
+        column = {**valid, "title": "10 Great Punk Albums from Fall 2026"}
+        assert source._parse_entry(column) is None
+
     def test_beats_per_minute_accepts_only_album_reviews(self) -> None:
         source = BeatsPerMinuteAlbumReviews()
         valid = {
