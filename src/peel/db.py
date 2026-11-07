@@ -77,7 +77,7 @@ def rank_window_uris(
     buckets: dict[tuple[str, str], dict[str, object]] = {}
     for spotify_uri, artist, title, source_id, added_at in rows:
         uri = str(spotify_uri)
-        key = (normalize(str(artist)), normalize(str(title)))
+        key = (_fold_quotes(normalize(str(artist))), _fold_quotes(normalize(str(title))))
         bucket = buckets.setdefault(
             key,
             {
@@ -138,7 +138,20 @@ def rank_window_uris(
             str(bucket["uri"]),
         )
 
-    return [str(bucket["uri"]) for bucket in sorted(buckets.values(), key=sort_key)]
+    # One URI can still represent two identities (e.g. different spellings that
+    # both matched the same Spotify track); a playlist must list it once.
+    ranked = [str(bucket["uri"]) for bucket in sorted(buckets.values(), key=sort_key)]
+    return list(dict.fromkeys(ranked))
+
+
+_QUOTE_FOLD = str.maketrans(
+    {"\u2019": "'", "\u2018": "'", "\u02bc": "'", "`": "'", "\u201c": '"', "\u201d": '"'}
+)
+
+
+def _fold_quotes(value: str) -> str:
+    """Typographic and straight quotes spell the same track (he’s == he's)."""
+    return value.translate(_QUOTE_FOLD)
 
 
 def _timestamp_sort_value(value: str) -> float:

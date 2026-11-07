@@ -808,7 +808,9 @@ def select_review_playlist_uris(
         return new_uris[:limit]
 
     selected_set = set(new_uris)
-    pending_uris = [uri for uri in ranked_uris if uri not in selected_set and is_unrated(uri)]
+    pending_uris = [
+        uri for uri in dict.fromkeys(ranked_uris) if uri not in selected_set and is_unrated(uri)
+    ]
     selected_pending = _select_diverse_pending_uris(
         pending_uris,
         candidate_metadata,

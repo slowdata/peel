@@ -180,3 +180,44 @@ def test_curated_sources_belong_to_their_publications():
     assert source_label("stereogum_best_songs") == "Stereogum"
     assert source_label("pitchfork_selects") == "Pitchfork"
     assert source_family("bandcamp_sub_pop") != source_family("bandcamp_dfa")
+
+
+def test_same_uri_with_different_spellings_is_listed_once():
+    """W45 incident: he’s vs he's split one track in two and duplicated its URI."""
+    uri = "spotify:track:5KJwFcJc0m1u4F8mVkwT5Y"
+    rows = [
+        (
+            uri,
+            "Slayyyter",
+            "i think he\u2019s got a girl",
+            "consequence_music",
+            "2026-10-09T21:43:07+00:00",
+        ),
+        (
+            uri,
+            "Slayyyter",
+            "i think he's got a girl",
+            "stereogum_best_songs",
+            "2026-10-16T19:59:51+00:00",
+        ),
+        (
+            uri,
+            "Slayyyter",
+            "I Think He\u2019s Got A Girl",
+            "thequietus_tracks_of_month",
+            "2026-10-30T21:31:50+00:00",
+        ),
+        ("spotify:track:other", "B", "Tune", "gorillavsbear", "2026-10-30T10:00:00+00:00"),
+    ]
+    ranked = rank_window_uris(rows)
+    assert ranked.count(uri) == 1
+    # The spellings are one track, so its three publications count as consensus.
+    assert ranked[0] == uri
+
+
+def test_triage_selection_never_repeats_a_uri():
+    from peel.main import select_review_playlist_uris
+
+    ranked = ["spotify:track:a", "spotify:track:b", "spotify:track:b", "spotify:track:c"]
+    selected = select_review_playlist_uris(ranked, [], [], lambda _uri: True, limit=28)
+    assert selected == ["spotify:track:a", "spotify:track:b", "spotify:track:c"]
