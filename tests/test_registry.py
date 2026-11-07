@@ -52,11 +52,10 @@ class DisabledSource(Source):
 
 
 def test_active_sources_registry_contains_expected_order() -> None:
-    # Curated track picks first, high-volume news after, then album sources.
+    # Small curated picks, then volume sources by hit rate, news, then albums.
     assert [spec.source_id for spec in ACTIVE_SOURCES] == [
         PitchforkBNT.id,
         StereogumBestSongs.id,
-        PitchforkSelects.id,
         GorillaVsBear.id,
         KexpInOurHeadphones.id,
         NprNewMusicFridayStarting5.id,
@@ -64,6 +63,7 @@ def test_active_sources_registry_contains_expected_order() -> None:
         ClashFirstTake.id,
         LineOfBestFitNews.id,
         StereogumNewMusic.id,
+        PitchforkSelects.id,
         ConsequenceMusic.id,
         PitchforkNews.id,
         TheQuietus.id,

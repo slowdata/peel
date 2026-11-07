@@ -110,22 +110,24 @@ SOURCE_LABEL_OVERRIDES: dict[str, str] = {
 }
 
 
-# A ordem importa: quando a triagem enche (28 novidades), quem fica de fora são
-# as últimas. Por isso as escolhas curadas — listas semanais e picks editoriais —
-# vêm primeiro, e os feeds de notícias de grande volume depois.
+# Order matters: when triage fills up (28 new tracks), the last ones are left out.
+# Small curated picks come first (a handful each), then the high-volume sources
+# ranked by measured hit rate: Stereogum news (W42–W43: 19/20 positive) before
+# Pitchfork Selects (12/22), then the news feeds.
 ACTIVE_SOURCES: list[SourceSpec] = [
-    # Faixas — escolhas curadas
+    # Tracks — small curated picks
     SourceSpec(PitchforkBNT),
     SourceSpec(StereogumBestSongs),
-    SourceSpec(PitchforkSelects),
     SourceSpec(GorillaVsBear),
     SourceSpec(KexpInOurHeadphones),
     SourceSpec(NprNewMusicFridayStarting5),
     SourceSpec(TheQuietusTracksOfMonth),
     SourceSpec(ClashFirstTake),
     SourceSpec(LineOfBestFitNews),
-    # Faixas — notícias de grande volume
+    # Tracks — high volume, best measured first
     SourceSpec(StereogumNewMusic),
+    SourceSpec(PitchforkSelects),
+    # Tracks — news feeds
     SourceSpec(ConsequenceMusic),
     SourceSpec(PitchforkNews),
     # Álbuns
