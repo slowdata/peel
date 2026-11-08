@@ -52,6 +52,7 @@ from peel.main import run as run_pipeline
 from peel.matcher import normalize
 from peel.models import AlbumQueueItem, ReviewQueueItem
 from peel.musicbrainz import fetch_musicbrainz_artist_genres
+from peel.novelty import NoveltyCheck
 from peel.playlists import canonical_playlist_id
 from peel.publication import (
     Candidate,
@@ -1345,9 +1346,11 @@ def albums_refresh(
             console.print("Sem álbuns elegíveis; snapshot existente preservada.")
             return
         resolver = None
+        spotify = None
         if not dry_run:
             try:
-                resolver = make_album_resolver(SpotifyClient())
+                spotify = SpotifyClient()
+                resolver = make_album_resolver(spotify)
             except SpotifyReauthRequired as exc:
                 _abort_spotify_reauth(exc)
         existing = db.album_queue(target_week) or []
@@ -1361,6 +1364,7 @@ def albums_refresh(
             selected,
             resolver,
             cached_listen_urls=listen_cache,
+            novelty=NoveltyCheck(spotify_album=spotify.sp.album if spotify else None),
         )
         table = Table(title=f"Peel — Álbuns {target_week}")
         table.add_column("#", justify="right")

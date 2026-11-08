@@ -138,6 +138,24 @@ def test_album_snapshot_skips_unplayable_and_backfills_direct_links() -> None:
     ]
     assert all(item.listen_kind != "search" for item in items)
 
+    rejected: list[str] = []
+
+    def novelty(artist, _album, _url, week):
+        assert week == "2026-W32"
+        if artist == "Spotify Artist":
+            rejected.append(artist)
+            return "artista terminou em 1967 (gravação de arquivo)"
+        return None
+
+    items = _album_queue_snapshot_items(
+        "2026-W32",
+        [(item, True) for item in recommendations],
+        album_resolver=lambda _artist, _album: None,
+        novelty=novelty,
+    )
+    assert rejected == ["Spotify Artist"]
+    assert [(item.position, item.artist) for item in items] == [(1, "Bandcamp Artist")]
+
 
 def _album_queue_item(week: str, position: int, album: str) -> AlbumQueueItem:
     return AlbumQueueItem(

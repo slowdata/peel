@@ -38,6 +38,7 @@ from peel.config import settings
 from peel.db import DB, iso_week
 from peel.matcher import best_match, normalize
 from peel.models import AlbumQueueItem, Track
+from peel.novelty import NoveltyCheck, NoveltyFilter
 from peel.scoring import SourceScore, build_source_scores
 from peel.site_export import make_album_resolver
 from peel.sources.base import Source
@@ -156,6 +157,7 @@ def run(dry_run: bool = False) -> None:
     db = DB(db_path)
     sp = SpotifyClient()
     album_resolver = make_album_resolver(sp)
+    novelty = NoveltyCheck(spotify_album=sp.sp.album)
 
     # Contadores
     sources_processed = 0
@@ -324,7 +326,7 @@ def run(dry_run: bool = False) -> None:
             raise RuntimeError("Triagem não seleccionada; entrega cancelada") from e
         try:
             album_queue_items = _select_album_queue_items(
-                db, current_week, source_quality, affinity_profile, album_resolver
+                db, current_week, source_quality, affinity_profile, album_resolver, novelty
             )
             album_queue_ready = True
         except Exception as e:
@@ -518,6 +520,7 @@ def _select_album_queue_items(
     source_quality: dict[str, tuple[float, float]],
     affinity_profile: AffinityProfile,
     album_resolver: Callable[[str, str], str | None],
+    novelty: NoveltyFilter | None = None,
 ) -> list[AlbumQueueItem]:
     """Fila privada de álbuns já resolvida para links directos."""
     selected_albums = select_album_queue(
@@ -529,7 +532,9 @@ def _select_album_queue_items(
     )
     # Resolve uma pool limitada para poder substituir candidatos sem
     # link directo; nunca escala para todo o universo de menções.
-    album_queue_items = _album_queue_snapshot_items(current_week, selected_albums, album_resolver)
+    album_queue_items = _album_queue_snapshot_items(
+        current_week, selected_albums, album_resolver, novelty=novelty
+    )
     if len(album_queue_items) < MAX_ALBUM_QUEUE_ITEMS:
         log.warning(
             "albums.queue_underfilled",
@@ -1067,6 +1072,7 @@ def _album_queue_snapshot_items(
     *,
     cached_listen_urls: Mapping[tuple[str, str], tuple[str, str]] | None = None,
     limit: int = MAX_ALBUM_QUEUE_ITEMS,
+    novelty: NoveltyFilter | None = None,
 ) -> list[AlbumQueueItem]:
     """Freeze a bounded listening queue, backfilling directly playable picks."""
     snapshots: list[AlbumQueueItem] = []
@@ -1099,6 +1105,10 @@ def _album_queue_snapshot_items(
                     listen_url, listen_kind = resolved, "spotify"
         if not listen_url:
             log.info("albums.unplayable_skipped", artist=item.artist, album=item.album)
+            continue
+        reason = novelty(item.artist, item.album, listen_url, week) if novelty else None
+        if reason:
+            log.info("albums.not_new_skipped", artist=item.artist, album=item.album, reason=reason)
             continue
         editorial_url = _first_album_source_url(urls)
         snapshots.append(

@@ -18,3 +18,14 @@ def _no_real_spotify_playback(monkeypatch: pytest.MonkeyPatch) -> list[str | Non
 
     monkeypatch.setattr(cli, "_play_in_spotify", record)
     return played
+
+
+@pytest.fixture(autouse=True)
+def _no_real_musicbrainz(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The album novelty check queries MusicBrainz; tests stay offline."""
+    from peel import novelty
+
+    def offline(_artist: str) -> dict:
+        raise RuntimeError("network disabled in tests")
+
+    monkeypatch.setattr(novelty, "_search_musicbrainz", offline)
