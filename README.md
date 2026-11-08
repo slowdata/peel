@@ -81,9 +81,31 @@ uv run peel albums --open 3             # abre o álbum nº 3
 A ajuda (`peel --help`) mostra só estes comandos; os internos (`run`, `finalize`,
 `site`, `triage`, `feedback`, `status`, `affinity`) continuam a funcionar.
 
-No `ouvir`, Enter = like e os números são atalhos: `1 love · 2 like · 3 meh ·
-4 skip · 5 ban` (nos álbuns, `6 unavailable`). `o` abre a faixa ou o álbum actual
-no Spotify; `q` pára e guarda o que já avaliaste.
+No `ouvir`, a escala é igual para faixas e álbuns:
+
+| Tecla | Rating | Significado | Valor |
+|---|---|---|---:|
+| 1 | Love | Adorei; quero voltar a ouvir | +2 |
+| 2 | Like | Gostei | +1 |
+| 3 | Meh | Não me disse grande coisa; neutro | 0 |
+| 4 | Dislike | Não gostei | −1 |
+| 5 | Hate | Detestei | −2 |
+
+`Enter`, `s` ou `skip` passa ao seguinte **sem gravar uma avaliação**; o item
+continua pendente. `u` marca indisponível (sem juízo musical). `b`/`ban` bloqueia
+só o item, pede confirmação e não conta como opinião sobre o artista ou a fonte;
+ao rever, substitui a nota desse item. **Hate não bloqueia.** `o` abre a faixa
+ou o álbum; `q` pára e guarda o que já avaliaste. O Spotify aberto toca cada item
+automaticamente (`--sem-tocar` desliga).
+
+Podes retomar uma semana antiga por ordem:
+`uv run peel ouvir --semana 2026-W43`. Salta o que já tem nota, sem alterar a
+playlist activa.
+
+As notas antigas não são convertidas: `skip` histórico continua a significar −1
+e os antigos `ban` continuam a bloquear. Os bloqueios e `unavailable` ficam fora
+das médias musicais; `meh` deixa de penalizar a afinidade. As comparações entre
+semanas devem ter em conta que o Dias afinou a distinção Love/Like durante o uso.
 
 O `publicar` mostra só candidatos `love/like` com a posição original na fila.
 Enter aceita a proposta ✓; ou escreve as posições pela ordem pública, por
@@ -101,7 +123,8 @@ uv run peel publicar --refazer         # reabre a edição publicada (proposta =
 uv run peel publicar --refazer --semana 2026-W38
 ```
 
-No `--rever`, Enter mantém a nota e o comentário actuais. No `--refazer`, Enter
+No `--rever`, Enter não grava nada: mantém a nota, o comentário e a data actuais.
+Para mudar apenas o comentário, escolhe explicitamente a mesma nota. No `--refazer`, Enter
 mantém a selecção publicada; itens que deixaram de ser love/like saem com aviso
 e as correcções de nome de artista mantêm-se. A republicação reescreve a playlist
 pública com verificação e actualiza o site.
@@ -252,7 +275,7 @@ uv run peel albums                 # fila activa e links de escuta
 uv run peel albums --unrated       # apenas pendentes da fila activa
 uv run peel albums --week 2026-W32 # lista uma snapshot histórica explícita
 uv run peel albums --week 2026-W32 --open 1  # abre um rank histórico
-uv run peel albums feedback        # fila activa; love|like|meh|skip|ban|unavailable
+uv run peel albums feedback        # fila activa; love|like|meh|dislike|hate; controlos s/u/b
 uv run peel albums feedback --week 2026-W32  # avalia a snapshot histórica
 uv run peel albums refresh --week 2026-W29 --dry-run
 uv run peel albums refresh --week 2026-W29  # reconstrói explicitamente a snapshot

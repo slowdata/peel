@@ -38,17 +38,17 @@ class TestAffinityScore:
 
             assert profile.score("Artist Love") > profile.score("Artist Like")
             assert profile.score("Artist Like") > profile.score("Unknown")
-            assert profile.score("Artist Meh") < profile.score("Unknown")
-            assert profile.score("Artist Ban") < profile.score("Artist Meh")
+            assert profile.score("Artist Meh") == profile.score("Unknown")
+            assert profile.score("Artist Ban") == profile.score("Unknown")
         finally:
             db.close()
 
-    def test_feedback_overrides_static_seed(self, tmp_path: Path) -> None:
+    def test_negative_feedback_overrides_static_seed(self, tmp_path: Path) -> None:
         db = _db(tmp_path)
         try:
             assert affinity_score("IDLES") > 0.5
             db.record_track("spotify:track:idles", "s", "IDLES", "Bad Fit", None)
-            db.upsert_feedback("spotify:track:idles", "ban")
+            db.upsert_feedback("spotify:track:idles", "hate")
 
             profile = build_affinity_profile(db)
 

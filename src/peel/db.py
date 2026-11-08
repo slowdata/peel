@@ -37,9 +37,15 @@ FEEDBACK_RATINGS: dict[str, int] = {
     "love": 2,
     "like": 1,
     "meh": 0,
+    "dislike": -1,
+    "hate": -2,
+    # Legacy scores stay readable; new interactive skips never create a row.
     "skip": -1,
-    "ban": -2,
+    "ban": -2,  # delivery control, excluded from musical averages
+    "unavailable": 0,  # availability, not musical feedback
 }
+# Historical `skip` was a negative vote; do not silently reinterpret old rows.
+MUSICAL_FEEDBACK_LABELS = frozenset({"love", "like", "meh", "dislike", "hate", "skip"})
 ALBUM_FEEDBACK_RATINGS: dict[str, int] = {
     **FEEDBACK_RATINGS,
     # Availability is delivery metadata, not a musical judgement.
@@ -900,10 +906,10 @@ class DB:
             """
             SELECT 1
             FROM feedback
-            WHERE spotify_uri = ? AND rating = ?
+            WHERE spotify_uri = ? AND label = 'ban'
             LIMIT 1
             """,
-            (spotify_uri, FEEDBACK_RATINGS["ban"]),
+            (spotify_uri,),
         )
         return cursor.fetchone() is not None
 
@@ -918,9 +924,8 @@ class DB:
             SELECT DISTINCT t.artist, t.title
             FROM tracks t
             JOIN feedback f ON f.spotify_uri = t.spotify_uri
-            WHERE f.rating = ?
-            """,
-            (FEEDBACK_RATINGS["ban"],),
+            WHERE f.label = 'ban'
+            """
         ).fetchall()
         return {(normalize(str(artist)), normalize(str(title))) for artist, title in rows}
 
@@ -929,9 +934,8 @@ class DB:
             """
             SELECT spotify_uri
             FROM feedback
-            WHERE rating = ?
-            """,
-            (FEEDBACK_RATINGS["ban"],),
+            WHERE label = 'ban'
+            """
         ).fetchall()
         return {str(row[0]) for row in rows}
 

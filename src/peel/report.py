@@ -20,7 +20,7 @@ from peel.albums import (
     top_album_recommendations,
 )
 from peel.config import settings
-from peel.db import DB, iso_week
+from peel.db import DB, MUSICAL_FEEDBACK_LABELS, iso_week
 from peel.matcher import normalize
 from peel.models import AlbumQueueItem, ReviewQueueItem
 from peel.scoring import build_source_scores
@@ -362,7 +362,7 @@ def _build_source_summaries(
                 summary.new += 1
             if consensus:
                 summary.consensus += 1
-            if feedback is not None:
+            if feedback is not None and feedback[1] in MUSICAL_FEEDBACK_LABELS:
                 summary.rating_total += feedback[0]
                 summary.rating_count += 1
 

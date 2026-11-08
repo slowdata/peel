@@ -115,7 +115,7 @@ def test_selection_is_exact_includes_pending_and_preserves_private_queues(sample
     assert [x.week for x in exported] == ["2026-W38"]
 
 
-@pytest.mark.parametrize("label", ["meh", "skip", "ban", None])
+@pytest.mark.parametrize("label", ["meh", "skip", "dislike", "hate", "ban", "unavailable", None])
 def test_nonpositive_track_aborts_before_publication(sample, label):
     db, plan, _ = sample
     if label is None:
@@ -128,7 +128,7 @@ def test_nonpositive_track_aborts_before_publication(sample, label):
     assert db.finalized_week_selection(plan.week, "public") is None
 
 
-@pytest.mark.parametrize("label", ["meh", "skip", "ban", "unavailable"])
+@pytest.mark.parametrize("label", ["meh", "skip", "dislike", "hate", "ban", "unavailable"])
 def test_nonpositive_album_aborts(sample, label):
     db, plan, _ = sample
     db.upsert_album_feedback("Album Artist 1", "Album 1", label)
@@ -347,7 +347,7 @@ def test_typed_positions_define_public_order(sample):
 
 
 def test_numeric_rating_shortcuts(monkeypatch):
-    answers = iter(["1", "6"])
+    answers = iter(["1", "u"])
     monkeypatch.setattr(cli.typer, "prompt", lambda *a, **k: next(answers))
     assert cli._prompt_rating(default="like") == "love"
     from peel.db import ALBUM_FEEDBACK_RATINGS
@@ -372,6 +372,87 @@ def test_ouvir_rates_tracks_then_albums_and_pushes_once(sample, monkeypatch):
     assert db.album_feedback_for_identity("Album Artist 1", "Album 1")[1] == "like"
     push.assert_called_once()
     assert "sync push" not in unstyle(result.output)
+
+
+def test_ouvir_skip_keeps_pending_and_hate_never_blocks(sample, monkeypatch):
+    db, plan, _ = sample
+    db.conn.execute(
+        "DELETE FROM feedback WHERE spotify_uri IN ('spotify:track:t2','spotify:track:t4')"
+    )
+    db.conn.commit()
+    _no_sync(monkeypatch)
+    push = MagicMock(return_value=True)
+    monkeypatch.setattr(cli, "_push_state", push)
+    result = CliRunner().invoke(
+        cli.app, ["ouvir", "--semana", plan.week], input="\n4\nnot for me\n"
+    )
+    assert result.exit_code == 0, result.output
+    assert db.feedback_for_track_identity("spotify:track:t2") is None
+    assert db.feedback_for_track_identity("spotify:track:t4")[1:] == ("dislike", "not for me")
+    push.assert_called_once()
+    result = CliRunner().invoke(cli.app, ["ouvir", "--semana", plan.week], input="5\n\n")
+    assert result.exit_code == 0, result.output
+    assert db.feedback_for_track_identity("spotify:track:t2")[:2] == (-2, "hate")
+    assert not db.is_banned_uri("spotify:track:t2")
+
+
+@pytest.mark.parametrize("code", ["f2", "a1"])
+def test_review_enter_preserves_existing_rating_comment_and_timestamp(sample, monkeypatch, code):
+    db, plan, _ = sample
+    _no_sync(monkeypatch)
+    push = MagicMock()
+    monkeypatch.setattr(cli, "_push_state", push)
+    before = {
+        table: db.conn.execute(f"SELECT * FROM {table}").fetchall()
+        for table in ("feedback", "album_feedback")
+    }
+    result = CliRunner().invoke(cli.app, ["ouvir", "--rever"], input=f"{code}\n\n\n")
+    assert result.exit_code == 0, result.output
+    assert before == {
+        table: db.conn.execute(f"SELECT * FROM {table}").fetchall() for table in before
+    }
+    push.assert_not_called()
+
+
+def test_album_skip_does_not_create_feedback_and_next_album_can_be_disliked(sample, monkeypatch):
+    db, plan, _ = sample
+    db.conn.execute("DELETE FROM album_feedback WHERE album_key IN ('album 1','album 2')")
+    db.conn.commit()
+    _no_sync(monkeypatch)
+    monkeypatch.setattr(cli, "_push_state", MagicMock(return_value=True))
+    result = CliRunner().invoke(cli.app, ["ouvir"], input="y\nskip\n4\n\n")
+    assert result.exit_code == 0, result.output
+    assert db.album_feedback_for_identity("Album Artist 1", "Album 1") is None
+    assert db.album_feedback_for_identity("Album Artist 2", "Album 2")[:2] == (-1, "dislike")
+
+
+@pytest.mark.parametrize("confirm", ["y", "n"])
+def test_ban_action_requires_confirmation_before_saving(sample, monkeypatch, confirm):
+    db, plan, _ = sample
+    _no_sync(monkeypatch)
+    push = MagicMock(return_value=True)
+    monkeypatch.setattr(cli, "_push_state", push)
+    before = db.feedback_for_track_identity("spotify:track:t2")
+    answers = f"f2\nb\n{confirm}\n\n\n" if confirm == "y" else "f2\nb\nn\nskip\n\n"
+    result = CliRunner().invoke(cli.app, ["ouvir", "--rever"], input=answers)
+    assert result.exit_code == 0, result.output
+    if confirm == "y":
+        assert db.is_banned_uri("spotify:track:t2")
+        push.assert_called_once()
+    else:
+        assert db.feedback_for_track_identity("spotify:track:t2") == before
+        push.assert_not_called()
+
+
+def test_direct_feedback_skip_does_not_save_a_negative_rating(sample, monkeypatch):
+    db, plan, _ = sample
+    _no_sync(monkeypatch)
+    before = db.feedback_for_track_identity("spotify:track:t2")
+    result = CliRunner().invoke(
+        cli.app, ["feedback", "--uri", "spotify:track:t2", "--rating", "skip"]
+    )
+    assert result.exit_code == 0, result.output
+    assert db.feedback_for_track_identity("spotify:track:t2") == before
 
 
 def test_ouvir_without_new_ratings_does_not_push(sample, monkeypatch):
@@ -617,7 +698,7 @@ def test_ouvir_o_opens_the_current_track(sample, monkeypatch):
     assert result.exit_code == 0, result.output
     assert opened == ["https://open.spotify.com/track/t2"]
     assert db.feedback_for_track_identity("spotify:track:t2")[1] == "love"
-    assert "o abrir" in unstyle(result.output)
+    assert "o Open" in unstyle(result.output)
 
 
 def test_spotify_app_uri_handles_tracks_and_playlists():

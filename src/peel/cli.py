@@ -84,7 +84,7 @@ from peel.state_sync import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 # Ordem dos atalhos numéricos: do mais positivo ao mais negativo.
-RATING_ORDER = ("love", "like", "meh", "skip", "ban", "unavailable")
+RATING_ORDER = ("love", "like", "meh", "dislike", "hate")
 MAX_TRIAGE_SESSION = 100
 _OFFLINE_MODE = False
 # Set by `peel ouvir`: play each item in the running Spotify app as it is shown.
@@ -646,7 +646,11 @@ def ouvir(
 
 def _rate_unrated(db: DB, week: str | None = None) -> int:
     """Sessão normal: faixas por avaliar, depois os álbuns (da activa ou de ``week``)."""
-    console.print("[bold]Faixas[/bold] — Enter = like; 1 love · 2 like · 3 meh · 4 skip · 5 ban")
+    console.print("[bold]Tracks[/bold] — 1 Love · 2 Like · 3 Meh · 4 Dislike · 5 Hate")
+    console.print("Adorei · gostei · indiferente · não gostei · detestei.")
+    console.print(
+        "Enter/s passa sem avaliar; u indisponível; b bloqueia só este item (confirmação)."
+    )
     if _AUTOPLAY:
         console.print("Cada faixa toca no Spotify ao aparecer (--sem-tocar desliga).")
     saved = _run_triage_feedback_session(db, limit=MAX_TRIAGE_SESSION, push_hint=False, week=week)
@@ -730,11 +734,13 @@ def _review_ratings(db: DB, week: str) -> int:
             console.print(f"{track.artist} — {track.title}")
             _play_in_spotify(track.spotify_uri)
             label = _prompt_rating(
-                default=current[1] if current else "like",
+                default=current[1] if current else None,
                 open_item=lambda uri=track.spotify_uri: _open_listen_url(_spotify_web_url(uri)),
             )
             if label in {"q", "quit", "exit"}:
                 return changed
+            if label is None:
+                continue
             comment = _prompt_comment(default=(current[2] if current else None) or "")
             db.upsert_feedback(track.spotify_uri, label, comment)
         else:
@@ -746,7 +752,7 @@ def _review_ratings(db: DB, week: str) -> int:
             console.print(f"{album.artist} — {album.album}")
             _play_in_spotify(album.listen_url)
             label = _prompt_rating(
-                default=current[1] if current else "like",
+                default=current[1] if current else None,
                 ratings=ALBUM_FEEDBACK_RATINGS,
                 open_item=(
                     (lambda url=album.listen_url: _open_listen_url(url))
@@ -756,6 +762,8 @@ def _review_ratings(db: DB, week: str) -> int:
             )
             if label in {"q", "quit", "exit"}:
                 return changed
+            if label is None:
+                continue
             comment = _prompt_comment(default=(current[2] if current else None) or "")
             db.upsert_album_feedback(album.artist, album.album, label, comment)
         changed += 1
@@ -991,7 +999,9 @@ def status() -> None:
 @app.command(hidden=True)
 def feedback(
     uri: str | None = typer.Option(None, "--uri", help="Spotify URI a avaliar"),
-    rating: str | None = typer.Option(None, "--rating", help="love|like|meh|skip|ban"),
+    rating: str | None = typer.Option(
+        None, "--rating", help="love|like|meh|dislike|hate|unavailable (ban requires confirmation)"
+    ),
     comment: str | None = typer.Option(None, "--comment", help="Comentário opcional"),
     history: bool = typer.Option(
         False, "--history", help="Avalia backlog histórico fora da triagem"
@@ -1022,7 +1032,12 @@ def feedback(
         db.init_schema()
 
         if uri is not None:
-            chosen_rating = rating or _prompt_rating(default="like")
+            chosen_rating = rating.strip().lower() if rating else _prompt_rating()
+            if chosen_rating is None or chosen_rating in {"skip", "q", "quit", "exit"}:
+                console.print("Sem avaliação; nada alterado.")
+                return
+            if rating and chosen_rating == "ban" and not _confirm_block():
+                return
             _save_feedback(db, uri, chosen_rating, comment)
             console.print(f"Saved feedback: {uri} -> {chosen_rating}")
             return
@@ -1084,12 +1099,14 @@ def _run_triage_feedback_session(
         )
         _play_in_spotify(item.spotify_uri)
         chosen_rating = _prompt_rating(
-            default="like",
             open_item=lambda uri=item.spotify_uri: _open_listen_url(_spotify_web_url(uri)),
         )
         if chosen_rating in {"q", "quit", "exit"}:
             interrupted = True
             break
+        if chosen_rating is None:
+            console.print("Sem avaliação; continua pendente.")
+            continue
         _save_feedback(db, item.spotify_uri, chosen_rating, _prompt_comment(default=""))
         saved_count += 1
         console.print(f"Saved: {item.artist} — {item.title} [{chosen_rating}]")
@@ -1130,10 +1147,13 @@ def _run_history_feedback_session(db: DB, *, week: str | None, limit: int) -> No
     saved_count = 0
     for index, row in enumerate(rows, start=1):
         _print_feedback_prompt(db, row, index, len(rows))
-        chosen_rating = _prompt_rating(default="like")
+        chosen_rating = _prompt_rating()
         if chosen_rating in {"q", "quit", "exit"}:
             interrupted = True
             break
+        if chosen_rating is None:
+            console.print("Sem avaliação; continua pendente.")
+            continue
         chosen_comment = _prompt_comment(default="")
         _save_feedback(db, row[0], chosen_rating, chosen_comment)
         saved_count += 1
@@ -1458,11 +1478,12 @@ def _run_album_feedback_session(
             (lambda url=item.listen_url: _open_listen_url(url)) if item.listen_url else None
         )
         _play_in_spotify(item.listen_url)
-        rating = _prompt_rating(
-            default="like", ratings=ALBUM_FEEDBACK_RATINGS, open_item=open_album
-        )
+        rating = _prompt_rating(ratings=ALBUM_FEEDBACK_RATINGS, open_item=open_album)
         if rating in {"q", "quit", "exit"}:
             break
+        if rating is None:
+            console.print("Sem avaliação; continua pendente.")
+            continue
         db.upsert_album_feedback(item.artist, item.album, rating, _prompt_comment(default=""))
         saved += 1
         console.print(f"Saved: {item.artist} — {item.album} [{rating}]")
@@ -2325,32 +2346,57 @@ def _print_feedback_prompt(
     console.print(table)
 
 
+def _confirm_block() -> bool:
+    console.print("Bloquear este item impede novas sugestões dele; não bloqueia o artista.")
+    console.print("É um bloqueio, não uma nota de gosto. Ao rever, substitui a nota deste item.")
+    return typer.confirm("Block this item?", default=False)
+
+
 def _prompt_rating(
-    default: str,
+    default: str | None = None,
     ratings: Mapping[str, int] | None = None,
     open_item: Callable[[], None] | None = None,
-) -> str:
+) -> str | None:
+    """Five taste levels; Skip returns None, Ban requires explicit confirmation.
+
+    The existing rating is displayed for review, never preselected by Enter.
+    Legacy `skip` scores remain in the DB but are not offered as new votes.
+    """
     ratings = ratings or FEEDBACK_RATINGS
     ordered = [label for label in RATING_ORDER if label in ratings]
-    ordered += sorted(label for label in ratings if label not in RATING_ORDER)
     shortcuts = {str(index): label for index, label in enumerate(ordered, start=1)}
-    allowed = " · ".join(f"{index} {label}" for index, label in shortcuts.items())
+    allowed = " · ".join(f"{index} {label.title()}" for index, label in shortcuts.items())
+    allowed += " · Enter/s Skip · u Unavailable · b Ban"
     if open_item is not None:
-        allowed += " · o abrir"
+        allowed += " · o Open"
+    if default is not None:
+        console.print(f"Current: {default} — Enter mantém sem alterações.")
     while True:
         try:
-            value = typer.prompt(f"Rating [{allowed} / q]", default=default).strip().lower()
+            value = (
+                typer.prompt(f"Rating [{allowed} / q Quit]", default="", show_default=False)
+                .strip()
+                .lower()
+            )
         except UnicodeDecodeError:
             _configure_stdin_decode_errors()
             console.print("Input inválido recebido. Tenta outra vez.")
             continue
         if value in {"q", "quit", "exit"}:
             return value
+        if value in {"", "s", "skip"}:
+            return None
         if value == "o" and open_item is not None:
             open_item()
             continue
+        if value in {"b", "ban"}:
+            if "ban" in ratings and _confirm_block():
+                return "ban"
+            continue
+        if value == "u":
+            value = "unavailable"
         value = shortcuts.get(value, value)
-        if value in ratings:
+        if value in ratings and value in {*RATING_ORDER, "unavailable"}:
             return value
         console.print(f"Rating inválida: {value}")
 

@@ -897,13 +897,13 @@ class TestCliFeedback:
         db.close()
         monkeypatch.setattr(cli, "settings", _settings(db_path))
 
-        result = runner.invoke(cli.app, ["triage", "feedback"], input="skip\n\n")
+        result = runner.invoke(cli.app, ["triage", "feedback"], input="dislike\n\n")
 
         assert result.exit_code == 0
         assert "Active Artist" in result.stdout
         assert "Historic Artist" not in result.stdout
         db = DB(str(db_path))
-        assert db.feedback_for_track(active.spotify_uri) == (-1, "skip", None)
+        assert db.feedback_for_track(active.spotify_uri) == (-1, "dislike", None)
         assert db.feedback_for_track("spotify:track:historic") is None
         db.close()
 

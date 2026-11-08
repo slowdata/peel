@@ -177,7 +177,7 @@ def _album_feedback_quality(
         FROM album_mentions m
         JOIN album_feedback f
           ON f.artist_key = m.artist_key AND f.album_key = m.album_key
-        WHERE f.label != 'unavailable'
+        WHERE f.label NOT IN ('unavailable', 'ban')
         GROUP BY m.source_id
         """
     ).fetchall()

@@ -21,14 +21,14 @@ from peel.matcher import normalize
 
 DEFAULT_AFFINITY = 0.5
 
-# Spec do Dias/Claude: meh conta como sinal negativo suave, mesmo que o valor
-# histórico em `FEEDBACK_RATINGS` seja 0 para retrocompatibilidade.
+# Match the musical scale. Meh is neutral; blocking/availability are not taste.
 FEEDBACK_AFFINITY_WEIGHTS = {
     "love": 2.0,
     "like": 1.0,
-    "meh": -1.0,
-    "skip": -1.0,
-    "ban": -2.0,
+    "meh": 0.0,
+    "dislike": -1.0,
+    "hate": -2.0,
+    "skip": -1.0,  # legacy negative vote, never created by the new Skip action
 }
 
 # Prior estático vindo do proxy de playlists longas (ver conversa 2026-07-06).
@@ -199,6 +199,7 @@ def _artist_feedback_weights(db: Any) -> dict[str, float]:
         SELECT t.spotify_uri, MIN(t.artist) AS artist, f.label, f.rating
         FROM tracks t
         JOIN feedback f ON f.spotify_uri = t.spotify_uri
+        WHERE f.label NOT IN ('ban', 'unavailable')
         GROUP BY t.spotify_uri, f.label, f.rating
         """
     ).fetchall()
@@ -210,6 +211,8 @@ def _artist_feedback_weights(db: Any) -> dict[str, float]:
         weight = FEEDBACK_AFFINITY_WEIGHTS.get(str(label).lower())
         if weight is None:
             weight = _weight_from_numeric_rating(int(rating))
+        if weight == 0:
+            continue  # a neutral opinion must not erase a seed/genre prior
         totals[artist_key] = totals.get(artist_key, 0.0) + weight
     return totals
 
@@ -220,7 +223,7 @@ def _weight_from_numeric_rating(rating: int) -> float:
     if rating == 1:
         return 1.0
     if rating == 0:
-        return -1.0
+        return 0.0
     if rating <= -2:
         return -2.0
     return -1.0

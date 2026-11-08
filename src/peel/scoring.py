@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from peel.db import DB, iso_week
+from peel.db import DB, MUSICAL_FEEDBACK_LABELS, iso_week
 
 
 @dataclass(slots=True)
@@ -164,7 +164,7 @@ def build_source_scores(
             if global_source_count > 1:
                 item.consensus_hits += 1
                 item.duplicate_mentions += global_source_count - 1
-            if feedback is not None:
+            if feedback is not None and feedback[1] in MUSICAL_FEEDBACK_LABELS:
                 rating = feedback[0]
                 item.rating_total += rating
                 item.rating_count += 1
@@ -315,7 +315,7 @@ def build_source_overview(
 
     - Por semana: faixas novas (ou álbuns novos) por execução.
     - Gostei: love/like entre as avaliações das suas descobertas na janela
-      (``unavailable`` não é juízo musical e não conta).
+      (``unavailable`` e ``ban`` são controlos, não juízos musicais).
     - Estado: ``erro`` na última execução; ``sem resultados`` se nunca trouxe
       nada na janela; ``pouco volume`` abaixo de 1 por semana; senão ``ok``.
     """
@@ -340,7 +340,7 @@ def build_source_overview(
                 """
                 SELECT f.label FROM album_mentions m
                 JOIN album_feedback f ON f.artist_key = m.artist_key AND f.album_key = m.album_key
-                WHERE m.source_id = ? AND f.label != 'unavailable'
+                WHERE m.source_id = ? AND f.label NOT IN ('unavailable', 'ban')
                   AND COALESCE(m.first_seen_at, m.seen_at) >= ?
                   AND COALESCE(m.first_seen_at, m.seen_at) < ?
                 """,
@@ -351,7 +351,8 @@ def build_source_overview(
             labels = db.conn.execute(
                 """
                 SELECT f.label FROM tracks t JOIN feedback f ON f.spotify_uri = t.spotify_uri
-                WHERE t.source_id = ? AND t.added_at >= ? AND t.added_at < ?
+                WHERE t.source_id = ? AND f.label NOT IN ('unavailable', 'ban')
+                  AND t.added_at >= ? AND t.added_at < ?
                 """,
                 (source_id, *window),
             ).fetchall()

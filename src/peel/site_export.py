@@ -23,7 +23,7 @@ from peel.albums import (
     spotify_album_url,
     top_album_recommendations,
 )
-from peel.db import DB, FEEDBACK_RATINGS, SourceQuality, iso_week, rank_window_uris
+from peel.db import DB, SourceQuality, iso_week, rank_window_uris
 from peel.matcher import normalize, score
 from peel.models import AlbumQueueItem
 from peel.playlists import canonical_playlist_id
@@ -336,9 +336,8 @@ def _export_tracks(
     # "Peel 7" público: SEMPRE o top 7 dos críticos pelo teu ranking, excluindo
     # apenas bans (rejeição dura). meh/skip ficam — o ranking já os afunda — para
     # a marca "7" não esvaziar. O filtro estrito (meh/skip) vive no finalize/playlist.
-    ban = FEEDBACK_RATINGS["ban"]
     ranked_uris = [
-        uri for uri in ranked_uris if (fb := db.feedback_for_track(uri)) is None or fb[0] > ban
+        uri for uri in ranked_uris if (fb := db.feedback_for_track(uri)) is None or fb[1] != "ban"
     ]
     tracks: list[dict[str, Any]] = []
     for rank, uri in enumerate(ranked_uris[:SITE_TRACK_LIMIT], start=1):
@@ -577,9 +576,8 @@ def _banned_uris(db: DB) -> set[str]:
         """
         SELECT spotify_uri
         FROM feedback
-        WHERE rating = ?
-        """,
-        (FEEDBACK_RATINGS["ban"],),
+        WHERE label = 'ban'
+        """
     ).fetchall()
     return {str(row[0]) for row in rows}
 
