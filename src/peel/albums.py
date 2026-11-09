@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from peel.db import SourceQuality
+from peel.matcher import artist_identity_key, normalize
 from peel.sources.families import source_family
 
 CANONICAL_ALBUM_QUEUE_SINCE = "2026-W29"
@@ -167,25 +168,18 @@ def _album_feedback_quality(
     """Blend album feedback into source quality with a conservative prior.
 
     Three observations are needed to move halfway from the track-derived
-    baseline to album feedback. A single love/ban therefore cannot crown or
-    sink a source, while repeated feedback remains a useful soft signal.
+    baseline to album feedback. A single vote cannot crown or sink a source.
+    Aliases credit all sources once without rewriting the original feedback.
     """
     quality = dict(base or {})
-    rows = db.conn.execute(
-        """
-        SELECT m.source_id, AVG(f.rating), COUNT(*)
-        FROM album_mentions m
-        JOIN album_feedback f
-          ON f.artist_key = m.artist_key AND f.album_key = m.album_key
-        WHERE f.label NOT IN ('unavailable', 'ban')
-        GROUP BY m.source_id
-        """
-    ).fetchall()
-    for source_id, average, count in rows:
-        prior_avg, prior_score = quality.get(str(source_id), (0.0, 0.0))
-        weight = int(count) / (int(count) + 3)
-        blended = (prior_avg * (1 - weight)) + (float(average) * weight)
-        quality[str(source_id)] = (blended, prior_score)
+    ratings: dict[str, list[int]] = defaultdict(list)
+    for source_id, rating, _ in db.album_source_feedback():
+        ratings[source_id].append(rating)
+    for source_id, votes in ratings.items():
+        prior_avg, prior_score = quality.get(source_id, (0.0, 0.0))
+        weight = len(votes) / (len(votes) + 3)
+        blended = (prior_avg * (1 - weight)) + ((sum(votes) / len(votes)) * weight)
+        quality[source_id] = (blended, prior_score)
     return quality
 
 
@@ -206,7 +200,7 @@ def rank_album_recommendations(
             or is_compilation_release(row.artist, row.album)
         ):
             continue
-        key = (row.artist_key, row.album_key)
+        key = (artist_identity_key(row.artist_key), row.album_key)
         buckets.setdefault(key, _AlbumBucket(row.artist, row.album, *key)).add(row, quality)
     ranked = [bucket.to_recommendation(quality) for bucket in buckets.values()]
     ranked.sort(key=_recommendation_sort_key)
@@ -235,7 +229,9 @@ EDITORIAL_ALBUM_SOURCES = {
     "pitchfork_album_reviews",
 }
 LABEL_SOURCE_PREFIX = "bandcamp_"
-SOURCE_REPEAT_PENALTY = 2.0
+# At most 0.05 of combined quality: diversity can break close calls, never
+# outweigh a meaningful rating gap, even after many picks from one family.
+SOURCE_REPEAT_PENALTY = 0.05
 _ARCHIVAL_TITLE_RE = re.compile(
     r"(?:\b(?:deluxe|expanded|remaster(?:ed)?|reissue|anniversary|archive|archival)\b|"
     r"\b\d{1,3}(?:st|nd|rd|th)\s+anniversary\b)",
@@ -322,11 +318,13 @@ def _softly_diverse(
         def key(item: AlbumRecommendation) -> tuple[float, int, float, int, float, str, str]:
             source = item.sources[0] if item.sources else ""
             family = source_family(source)
-            # One scalar means feedback quality and repeat penalty genuinely
-            # compete. Avg rating is already reflected in score and is never a
-            # lexicographic tier that makes diversity unreachable.
+            # Album-only sources can have score=0: their average is the whole
+            # quality signal. Bound the adjustment instead of using the track
+            # scale's unbounded 2.0 penalty, which forced source rotation.
             combined = item.best_score + item.best_avg_rating
-            adjusted = combined - (SOURCE_REPEAT_PENALTY * counts[family])
+            repeats = counts[family]
+            penalty = SOURCE_REPEAT_PENALTY * repeats / (repeats + 1)
+            adjusted = combined - penalty
             fresh_at = item.newest_source_at or item.latest_seen_at
             return (
                 -item.source_count,
@@ -356,6 +354,7 @@ class _AlbumBucket:
     source_urls: dict[str, str | None] = field(default_factory=dict)
     source_first_weeks: dict[str, str] = field(default_factory=dict)
     source_first_ats: dict[str, str] = field(default_factory=dict)
+    source_last_ts: dict[str, float] = field(default_factory=dict)
     spotify_album_uri: str | None = None
     spotify_seen_ts: float = 0.0
     latest_seen_at: str = ""
@@ -366,16 +365,29 @@ class _AlbumBucket:
     def add(self, row: AlbumMention, quality: Mapping[str, SourceQuality]) -> None:
         last_ts = _timestamp(row.last_at)
         self.source_ids.add(row.source_id)
-        self.source_urls[row.source_id] = row.source_url
-        # An uncertain legacy secondary mention can help historical display,
-        # but cannot manufacture a current fresh source/consensus.
-        if row.first_seen_reliable:
+        if row.source_url and last_ts >= self.source_last_ts.get(row.source_id, 0.0):
+            self.source_urls[row.source_id] = row.source_url
+            self.source_last_ts[row.source_id] = last_ts
+        # Legacy aliases of the same source retain its earliest reliable
+        # observation; a spelling change must not manufacture fresh consensus.
+        if row.first_seen_reliable and (
+            row.source_id not in self.source_first_ats
+            or _timestamp(row.first_at) < _timestamp(self.source_first_ats[row.source_id])
+        ):
             self.source_first_weeks[row.source_id] = row.first_seen_week or _week_from_timestamp(
                 row.first_at
             )
             self.source_first_ats[row.source_id] = row.first_at
+        # Prefer the dotted display spelling when aliases meet (Fontaines
+        # D.C.), rather than letting a newer abbreviated feed rename the band.
+        current_dotted = artist_identity_key(self.artist) != normalize(self.artist)
+        incoming_dotted = artist_identity_key(row.artist) != normalize(row.artist)
+        if (incoming_dotted and not current_dotted) or (
+            incoming_dotted == current_dotted and last_ts >= self.latest_seen_ts
+        ):
+            self.artist = row.artist
         if last_ts >= self.latest_seen_ts:
-            self.artist, self.album = row.artist, row.album
+            self.album = row.album
             self.latest_seen_at, self.latest_seen_ts = row.last_at, last_ts
         avg, score = quality.get(row.source_id, (0.0, 0.0))
         self.best_avg_rating, self.best_score = (

@@ -321,6 +321,10 @@ def build_source_overview(
     """
     start, end = _window_bounds(reference_dt or datetime.now(UTC), weeks)
     window = (start.isoformat(), end.isoformat())
+    album_labels: dict[str, list[tuple[str]]] = {}
+    if any(kind == "album" for _, _, kind in sources):
+        for source_id, _, label in db.album_source_feedback(start=window[0], end=window[1]):
+            album_labels.setdefault(source_id, []).append((label,))
     rows = []
     for source_id, name, kind in sources:
         runs, new_tracks, new_albums, fetched = db.conn.execute(
@@ -336,16 +340,7 @@ def build_source_overview(
             (source_id,),
         ).fetchone()
         if kind == "album":
-            labels = db.conn.execute(
-                """
-                SELECT f.label FROM album_mentions m
-                JOIN album_feedback f ON f.artist_key = m.artist_key AND f.album_key = m.album_key
-                WHERE m.source_id = ? AND f.label NOT IN ('unavailable', 'ban')
-                  AND COALESCE(m.first_seen_at, m.seen_at) >= ?
-                  AND COALESCE(m.first_seen_at, m.seen_at) < ?
-                """,
-                (source_id, *window),
-            ).fetchall()
+            labels = album_labels.get(source_id, [])
             volume = new_albums
         else:
             labels = db.conn.execute(

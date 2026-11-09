@@ -253,9 +253,17 @@ explícita e documenta a data editorial e a data real de recolha.
 
 A weekly confirma uma fila privada independente de até 7 álbuns por defeito
 (`PEEL_MAX_ALBUMS_TO_REVIEW`, limite configurável ímpar e máximo 19) para ouvir
-e avaliar. A ordem é: consenso entre publicações (75% de positivos no histórico,
-contra 43% com uma só fonte); dentro do mesmo consenso, artistas que já avaliaste
-bem primeiro e os que rejeitaste no fim — a afinidade reordena, nunca exclui.
+e avaliar. A ordem é: consenso entre publicações; dentro do mesmo consenso,
+artistas que já avaliaste bem primeiro e os que rejeitaste no fim — a afinidade
+reordena, nunca exclui. O consenso é um sinal editorial, não uma garantia de gosto.
+A diversidade só desempata qualidades próximas: o ajuste por repetição de uma
+publicação é limitado a menos de 0,05 pontos, sem quotas nem limites por fonte.
+
+Variações de iniciais como `Fontaines D.C.` / `Fontaines DC` partilham consenso e
+avaliação, preservando os nomes e as linhas guardadas. Uma revisão explícita usa
+a avaliação existente; se houver avaliações antigas em ambas as variantes,
+prevalece a mais recente sem apagar a outra. As filas históricas não são refeitas.
+
 Reedições, compilações *Various Artists*, retrospectivas `(2016-2019)`, sessões
 e remisturas não são álbuns novos; discos ao vivo e bandas sonoras continuam
 elegíveis. A primeira

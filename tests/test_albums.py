@@ -169,7 +169,8 @@ def test_diversity_uses_combined_quality_not_avg_rating_tier() -> None:
     selected = select_album_queue(
         db,
         "2026-W29",
-        source_quality={"editorial_a": (1.0, 1.0), "editorial_b": (0.0, 0.0)},
+        # Diversity may bridge a close quality gap, not a two-point gap.
+        source_quality={"editorial_a": (1.0, 1.0), "editorial_b": (0.99, 1.0)},
         limit=2,
     )
     assert "editorial_b" in {item.sources[0] for item, _ in selected}

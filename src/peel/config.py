@@ -48,9 +48,8 @@ class Settings(BaseSettings):
         default=30,
         alias="PEEL_MAX_SOURCE_ITEM_AGE_DAYS",
     )
-    # Fila privada para ouvir e avaliar. Sete por defeito (Out 2026): 11 era
-    # demasiado para ouvir por semana, e o consenso — o sinal que mais acerta
-    # (75% positivos vs 43% com uma só fonte) — já ocupa o topo da fila.
+    # Seven private albums keep weekly listening manageable. Editorial
+    # consensus leads the queue, but does not guarantee personal relevance.
     peel_max_albums_to_review: int = Field(
         default=7,
         ge=1,

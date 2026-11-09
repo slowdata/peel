@@ -17,7 +17,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from typing import Any
 
-from peel.matcher import normalize
+from peel.matcher import artist_identity_key, normalize
 
 DEFAULT_AFFINITY = 0.5
 
@@ -112,7 +112,7 @@ def _seed_artist_scores() -> dict[str, float]:
         # suficiente para ratings reais o ultrapassarem. Tecto em 0.70 mantém
         # o prior abaixo de um love real (~0.731) e do badge threshold (0.75):
         # o 🎯 só aparece com feedback explícito.
-        scores[normalize(artist)] = 0.55 + 0.15 * ((weight - min_weight) / spread)
+        scores[artist_identity_key(artist)] = 0.55 + 0.15 * ((weight - min_weight) / spread)
     return scores
 
 
@@ -147,7 +147,7 @@ class AffinityProfile:
 
     def score(self, artist: str, genres: list[str] | tuple[str, ...] | None = None) -> float:
         """Score 0..1 para um artista, sem rede nem estado global mutável."""
-        artist_key = normalize(artist)
+        artist_key = artist_identity_key(artist)
         cached_genres = genres or self.artist_genres.get(artist_key)
         genre_affinity = _genre_score(list(cached_genres) if cached_genres else None)
         artist_affinity = self.artist_scores.get(artist_key)
@@ -205,7 +205,7 @@ def _artist_feedback_weights(db: Any) -> dict[str, float]:
     ).fetchall()
     totals: dict[str, float] = {}
     for _, artist, label, rating in rows:
-        artist_key = normalize(str(artist))
+        artist_key = artist_identity_key(str(artist))
         if not artist_key:
             continue
         weight = FEEDBACK_AFFINITY_WEIGHTS.get(str(label).lower())
@@ -245,5 +245,6 @@ def _cached_artist_genres(db: Any) -> dict[str, tuple[str, ...]]:
             continue
         genres = tuple(str(item) for item in parsed if str(item).strip())
         if genres:
-            result[normalize(str(artist))] = genres
+            key = artist_identity_key(str(artist))
+            result[key] = tuple(sorted(set(result.get(key, ())) | set(genres)))
     return result

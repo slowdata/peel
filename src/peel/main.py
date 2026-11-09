@@ -36,7 +36,7 @@ from peel.albums import (
 )
 from peel.config import settings
 from peel.db import DB, iso_week
-from peel.matcher import best_match, normalize
+from peel.matcher import artist_identity_key, best_match, normalize
 from peel.models import AlbumQueueItem, Track
 from peel.novelty import NoveltyCheck, NoveltyFilter
 from peel.scoring import SourceScore, build_source_scores
@@ -1076,7 +1076,10 @@ def _album_queue_snapshot_items(
 ) -> list[AlbumQueueItem]:
     """Freeze a bounded listening queue, backfilling directly playable picks."""
     snapshots: list[AlbumQueueItem] = []
-    cache = cached_listen_urls or {}
+    cache = {
+        (artist_identity_key(artist_key), album_key): listen
+        for (artist_key, album_key), listen in (cached_listen_urls or {}).items()
+    }
     for item, is_new in selected:
         if len(snapshots) >= limit:
             break
@@ -1090,7 +1093,7 @@ def _album_queue_snapshot_items(
             if listen_url:
                 listen_kind = "bandcamp"
         if not listen_url:
-            cached = cache.get((item.artist_key, item.album_key))
+            cached = cache.get((artist_identity_key(item.artist_key), item.album_key))
             if cached and _is_direct_album_listen_url(cached[0]):
                 listen_url, listen_kind = cached
         if not listen_url and album_resolver:

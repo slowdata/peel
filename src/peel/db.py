@@ -28,7 +28,7 @@ from pathlib import Path
 
 import structlog
 
-from peel.matcher import normalize
+from peel.matcher import artist_identity_key, normalize
 from peel.models import AlbumQueueItem, ReviewQueueItem
 from peel.playlists import canonical_playlist_id
 from peel.sources.families import source_family
@@ -219,6 +219,7 @@ class DB:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         # Conexão longo-vivida (per-run)
         self.conn = sqlite3.connect(path)
+        self.conn.create_function("artist_identity_key", 1, artist_identity_key, deterministic=True)
         log.info("db.connected", path=path)
 
     def _ensure_column(self, table: str, column: str, sql_type: str) -> bool:
@@ -1427,13 +1428,13 @@ class DB:
         now = datetime.now(UTC)
         now_iso = now.isoformat()
         week = iso_week(now)
-        artist_key = normalize(artist)
+        artist_key = artist_identity_key(artist)
         album_key = normalize(album)
         already_seen = cursor.execute(
             """
             SELECT 1
             FROM album_mentions
-            WHERE artist_key = ? AND album_key = ?
+            WHERE artist_identity_key(artist_key) = ? AND album_key = ?
             LIMIT 1
             """,
             (artist_key, album_key),
@@ -1487,6 +1488,17 @@ class DB:
         repetido só actualiza ``last_seen_*``; caso contrário feeds estáticos
         voltariam a promover discos antigos como se fossem novos.
         """
+        # Reuse the original storage key for a source already observed under
+        # another spelling. An alias is not a new editorial mention.
+        existing = self.conn.execute(
+            """
+            SELECT artist_key FROM album_mentions
+            WHERE artist_identity_key(artist_key) = ? AND album_key = ? AND source_id = ?
+            ORDER BY COALESCE(first_seen_at, seen_at), artist_key LIMIT 1
+            """,
+            (artist_identity_key(artist), normalize(album), source_id),
+        ).fetchone()
+        storage_artist_key = str(existing[0]) if existing else normalize(artist)
         self.conn.execute(
             """
             INSERT INTO album_mentions
@@ -1508,7 +1520,7 @@ class DB:
             (
                 artist,
                 album,
-                normalize(artist),
+                storage_artist_key,
                 normalize(album),
                 source_id,
                 source_url,
@@ -1648,6 +1660,10 @@ class DB:
         if normalized not in ALBUM_FEEDBACK_RATINGS:
             allowed = ", ".join(sorted(ALBUM_FEEDBACK_RATINGS))
             raise ValueError(f"invalid feedback label: {label!r}. Allowed: {allowed}")
+        # An explicit revision updates the existing vote, even when the name
+        # came from another source. Reading aliases never migrates user rows.
+        previous = self._album_feedback_row(artist, album)
+        storage_artist_key = str(previous[0]) if previous else normalize(artist)
         self.conn.execute(
             """
             INSERT INTO album_feedback (artist_key, album_key, rating, label, comment, rated_at)
@@ -1657,7 +1673,7 @@ class DB:
                 rated_at=excluded.rated_at
             """,
             (
-                normalize(artist),
+                storage_artist_key,
                 normalize(album),
                 ALBUM_FEEDBACK_RATINGS[normalized],
                 normalized,
@@ -1670,14 +1686,61 @@ class DB:
     def album_feedback_for_identity(
         self, artist: str, album: str
     ) -> tuple[int, str, str | None] | None:
-        row = self.conn.execute(
+        row = self._album_feedback_row(artist, album)
+        return (int(row[1]), str(row[2]), row[3]) if row else None
+
+    def _album_feedback_row(self, artist: str, album: str) -> tuple | None:
+        """Latest explicit opinion across aliases, keeping every stored row.
+
+        Equal timestamps prefer a block conservatively; Hate is never a block.
+        The same ordering is used for source feedback below and after sync.
+        """
+        return self.conn.execute(
             """
-            SELECT rating, label, comment FROM album_feedback
-            WHERE artist_key = ? AND album_key = ?
+            SELECT artist_key, rating, label, comment FROM album_feedback
+            WHERE artist_identity_key(artist_key) = ? AND album_key = ?
+            ORDER BY julianday(rated_at) DESC, rated_at DESC,
+                     (label = 'ban') DESC, artist_key
+            LIMIT 1
             """,
-            (normalize(artist), normalize(album)),
+            (artist_identity_key(artist), normalize(album)),
         ).fetchone()
-        return (int(row[0]), str(row[1]), row[2]) if row else None
+
+    def album_source_feedback(
+        self, *, start: str | None = None, end: str | None = None
+    ) -> list[tuple[str, int, str]]:
+        """One musical opinion per album/source, including legacy name aliases.
+
+        Deduplicate mentions before crediting sources; a spelling variant must
+        not multiply a vote. A later control also supersedes older taste votes.
+        Optional bounds refer to first observation, just like source overview.
+        No keys, timestamps, comments or historical queues are rewritten.
+        """
+        return self.conn.execute(
+            """
+            WITH opinions AS (
+                SELECT artist_identity_key(artist_key) AS artist_key, album_key, rating, label,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY artist_identity_key(artist_key), album_key
+                           ORDER BY julianday(rated_at) DESC, rated_at DESC,
+                                    (label = 'ban') DESC, artist_key
+                       ) AS priority
+                FROM album_feedback
+            ), mentions AS (
+                SELECT artist_identity_key(artist_key) AS artist_key, album_key, source_id,
+                       MIN(COALESCE(first_seen_at, seen_at)) AS first_seen_at
+                FROM album_mentions
+                GROUP BY artist_identity_key(artist_key), album_key, source_id
+            )
+            SELECT m.source_id, f.rating, f.label
+            FROM mentions m JOIN opinions f USING (artist_key, album_key)
+            WHERE f.priority = 1 AND f.label NOT IN ('unavailable', 'ban')
+              AND (? IS NULL OR m.first_seen_at >= ?)
+              AND (? IS NULL OR m.first_seen_at < ?)
+            ORDER BY m.source_id, m.artist_key, m.album_key
+            """,
+            (start, start, end, end),
+        ).fetchall()
 
     def record_source_run(
         self,

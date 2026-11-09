@@ -61,6 +61,19 @@ def normalize(s: str) -> str:
     return s
 
 
+_DOTTED_INITIALISM_RE = re.compile(r"(?<![\w.])(?:[a-z]\.)+[a-z]\.?(?![\w.])")
+
+
+def artist_identity_key(artist: str) -> str:
+    """Fold dotted initials, not arbitrary punctuation or symbolic band names.
+
+    Fontaines D.C. / DC and R.E.M. / REM share identities. Names such as
+    J. Cole, Mr. Bungle, @ and !!! retain their distinguishing punctuation.
+    This is an identity key, not a replacement for the stored display name.
+    """
+    return _DOTTED_INITIALISM_RE.sub(lambda match: match[0].replace(".", ""), normalize(artist))
+
+
 def score(a: str, b: str) -> int:
     """Compara duas strings com token_set_ratio (0..100).
 
