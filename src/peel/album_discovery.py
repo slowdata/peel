@@ -51,7 +51,9 @@ def discover_album_mentions(
             errors.append(f"{source.id}: {exc}")
             continue
         fetched_count += len(items)
-        collected.extend(_fresh_items(items, reference))
+        collected.extend(
+            item for item in _fresh_items(items, reference) if (item.kind or source.kind) == "album"
+        )
     if errors:
         raise AlbumDiscoveryError("Falharam album sources: " + "; ".join(errors))
 
@@ -83,6 +85,6 @@ def _fresh_items(items: list[Track], now: datetime) -> list[Track]:
             continue
         if published_at.tzinfo is None:
             published_at = published_at.replace(tzinfo=UTC)
-        if published_at >= cutoff:
+        if cutoff <= published_at <= now:
             fresh.append(item)
     return fresh

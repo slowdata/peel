@@ -38,9 +38,17 @@ from peel.config import settings
 from peel.db import DB, iso_week
 from peel.matcher import artist_identity_key, best_match, normalize
 from peel.models import AlbumQueueItem, Track
-from peel.novelty import NoveltyCheck, NoveltyFilter
+from peel.novelty import (
+    NoveltyCheck,
+    NoveltyFilter,
+    TrackReleaseFilter,
+    check_track_release,
+    make_track_release_filter,
+    track_release_reason,
+)
 from peel.scoring import SourceScore, build_source_scores
 from peel.site_export import make_album_resolver
+from peel.sources.bandcamp import fetch_release_details
 from peel.sources.base import Source
 from peel.sources.fetch import fetch_source
 from peel.sources.registry import active_sources
@@ -157,7 +165,11 @@ def run(dry_run: bool = False) -> None:
     db = DB(db_path)
     sp = SpotifyClient()
     album_resolver = make_album_resolver(sp)
-    novelty = NoveltyCheck(spotify_album=sp.sp.album)
+    novelty = NoveltyCheck(
+        spotify_album=sp.sp.album,
+        bandcamp_release=fetch_release_details,
+        reference_date=start_time.date(),
+    )
 
     # Contadores
     sources_processed = 0
@@ -320,6 +332,9 @@ def run(dry_run: bool = False) -> None:
                 source_quality,
                 affinity_profile,
                 new_track_uris,
+                pending_release_filter=make_track_release_filter(
+                    sp.sp.track, datetime.now(UTC).date()
+                ),
             )
         except Exception as e:
             log.exception("playlist.triage_selection_failed", error=str(e))
@@ -424,7 +439,7 @@ def _filter_fresh_source_items(source_id: str, tracks: list[Track], now: datetim
         if published_at.tzinfo is None:
             published_at = published_at.replace(tzinfo=UTC)
 
-        if published_at < cutoff:
+        if published_at < cutoff or published_at > now:
             log.info(
                 "source.item_skipped_age",
                 source_id=source_id,
@@ -432,6 +447,7 @@ def _filter_fresh_source_items(source_id: str, tracks: list[Track], now: datetim
                 title=track.title,
                 published_at=published_at.isoformat(),
                 max_age_days=settings.peel_max_source_item_age_days,
+                reason="future" if published_at > now else "stale",
             )
             continue
         fresh_tracks.append(track)
@@ -454,6 +470,8 @@ def _select_triage(
     source_quality: dict[str, tuple[float, float]],
     affinity_profile: AffinityProfile,
     new_track_uris: list[str],
+    *,
+    pending_release_filter: TrackReleaseFilter | None = None,
 ) -> tuple[list[str], list[TriageItem], bool]:
     """Escolhe a fila de triagem; ``ready`` só se os metadados cobrem cada URI."""
     window_uris = db.ranked_tracks_in_window(
@@ -481,6 +499,7 @@ def _select_triage(
         lambda uri: not db.has_feedback_for_track_identity(uri),
         limit=settings.peel_max_tracks_per_run,
         candidate_metadata=candidate_metadata,
+        pending_release_filter=pending_release_filter,
     )
     triage_entries = build_triage_items(
         db,
@@ -657,6 +676,7 @@ def _process_track_items(
                 )
                 continue
 
+            matched_candidate = next(c for c in candidates if c.get("uri") == uri)
             canonical_uri = db.canonical_uri_for_track_identity(
                 track.artist,
                 track.title,
@@ -682,6 +702,21 @@ def _process_track_items(
                 continue
 
             source_stats.matched_count += 1
+            decision = check_track_release(matched_candidate, candidates, datetime.now(UTC).date())
+            if decision.reason:
+                if decision.retryable and not db.already_added(uri):
+                    # Retry future/unconfirmed dates without consuming slots or
+                    # creating taste votes. The run's fuzzy-miss counter stays separate.
+                    db.record_unmatched(source.id, track.artist, track.title, track.source_url)
+                log.info(
+                    "track.release_skipped",
+                    source_id=source.id,
+                    artist=track.artist,
+                    title=track.title,
+                    uri=uri,
+                    reason=decision.reason,
+                )
+                continue
             already = db.already_added(uri)
 
             if already:
@@ -793,6 +828,7 @@ def select_review_playlist_uris(
     *,
     limit: int,
     candidate_metadata: Mapping[str, ReviewCandidate] | None = None,
+    pending_release_filter: TrackReleaseFilter | None = None,
 ) -> list[str]:
     """Constrói a fila de triagem: novas primeiro, pendentes só como fill.
 
@@ -816,10 +852,21 @@ def select_review_playlist_uris(
     pending_uris = [
         uri for uri in dict.fromkeys(ranked_uris) if uri not in selected_set and is_unrated(uri)
     ]
+    remaining_slots = limit - len(new_uris)
+    if pending_release_filter is not None:
+        eligible: list[str] = []
+        budget = max(14, remaining_slots * 2) if remaining_slots else 0
+        for uri in pending_uris[:budget]:
+            reason = pending_release_filter(uri)
+            if reason:
+                log.info("playlist.pending_release_skipped", uri=uri, reason=reason)
+            else:
+                eligible.append(uri)
+        pending_uris = eligible
     selected_pending = _select_diverse_pending_uris(
         pending_uris,
         candidate_metadata,
-        limit=limit - len(new_uris),
+        limit=remaining_slots,
     )
     result = new_uris + selected_pending
     log.info(
@@ -1225,6 +1272,7 @@ def _retry_unmatched(
             if uri is None:
                 continue
 
+            matched_candidate = next(c for c in candidates if c.get("uri") == uri)
             canonical_uri = db.canonical_uri_for_track_identity(artist, title)
             if canonical_uri is not None:
                 uri = canonical_uri
@@ -1242,6 +1290,17 @@ def _retry_unmatched(
                 )
                 continue
 
+            reason = track_release_reason(matched_candidate, candidates, datetime.now(UTC).date())
+            if reason:
+                log.info(
+                    "unmatched.retry_release_skipped",
+                    source_id=source_id,
+                    artist=artist,
+                    title=title,
+                    uri=uri,
+                    reason=reason,
+                )
+                continue
             already = db.already_added(uri)
             if (
                 not already

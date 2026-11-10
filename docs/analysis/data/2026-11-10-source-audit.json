@@ -1,0 +1,3729 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-11-10T01:55:12.104154+00:00",
+  "code_reference": "d23630f066d7af4f1f5a02c54ad646a244d08970",
+  "window": {
+    "start": "2026-10-05T00:00:00+00:00",
+    "end_exclusive": "2026-11-09T00:00:00+00:00",
+    "weeks": {
+      "2026-W41": 28,
+      "2026-W42": 28,
+      "2026-W43": 28,
+      "2026-W44": 28,
+      "2026-W45": 28
+    }
+  },
+  "state_sha256": {
+    "data/peel.db": "737f75a2bb25cf3c71fb50f5adfdf5790a666c0bc4d61d602ae94236ee41b37e",
+    "data/reports/2026-W45.md": "fd1daeb2c75a98ec47155e06fb1dd9ff215daf14b8dff877ddfe179c9b25f47e"
+  },
+  "method_limitations": [
+    "Only delivered queues and persisted mentions are available; cap-dropped titles are not fully recorded.",
+    "Source timestamps are collection times, not publication/release dates.",
+    "Current feedback is last retained opinion, not complete revision history.",
+    "Release dates must be checked independently before calling an item a new release.",
+    "Spotify release_date describes the returned edition, not necessarily the original recording.",
+    "Source attribution uses earliest collection per canonical identity/source, not article publication dates.",
+    "Source counts overlap and describe delivered observations, not all publisher output or causal source effects.",
+    "The short three-track Deafheaven EP is reported separately from albums.",
+    "New curator coverage is partial; absence of feedback is not a negative outcome."
+  ],
+  "track_date_status_counts": {
+    "recent_edition": 121,
+    "outside_window": 13,
+    "archival_title": 1
+  },
+  "album_date_status_counts": {
+    "outside_window": 9,
+    "recent_edition": 22
+  },
+  "recent_track_source_stats": {
+    "consequence_music": {
+      "items": 12,
+      "unrated": 4,
+      "rated": 8,
+      "positive": 3
+    },
+    "gorillavsbear": {
+      "items": 3,
+      "rated": 3,
+      "positive": 3
+    },
+    "lineofbestfit_news": {
+      "items": 4,
+      "unrated": 2,
+      "rated": 2,
+      "positive": 2
+    },
+    "npr_new_music_friday_starting5": {
+      "items": 6,
+      "unrated": 4,
+      "rated": 2,
+      "positive": 2
+    },
+    "pitchfork_bnt": {
+      "items": 2,
+      "rated": 2,
+      "positive": 1
+    },
+    "pitchfork_news": {
+      "items": 1,
+      "rated": 1,
+      "positive": 0
+    },
+    "pitchfork_selects": {
+      "items": 26,
+      "rated": 20,
+      "positive": 12,
+      "unrated": 6
+    },
+    "stereogum_best_songs": {
+      "items": 25,
+      "rated": 16,
+      "positive": 13,
+      "unrated": 9
+    },
+    "stereogum_new_music": {
+      "items": 55,
+      "unrated": 19,
+      "rated": 36,
+      "positive": 29
+    },
+    "thequietus_tracks_of_month": {
+      "items": 6,
+      "rated": 3,
+      "positive": 3,
+      "unrated": 3
+    }
+  },
+  "recent_album_source_stats": {
+    "beats_per_minute_album_reviews": {
+      "items": 7,
+      "rated": 7,
+      "positive": 2
+    },
+    "clash_album_reviews": {
+      "items": 10,
+      "rated": 8,
+      "positive": 5,
+      "unrated": 2
+    },
+    "diy_album_reviews": {
+      "items": 4,
+      "rated": 4,
+      "positive": 4
+    },
+    "guardian_music_albums": {
+      "items": 7,
+      "rated": 7,
+      "positive": 1
+    },
+    "pitchfork_album_reviews": {
+      "items": 14,
+      "rated": 12,
+      "positive": 5,
+      "unrated": 2
+    },
+    "pitchfork_best_albums": {
+      "items": 3,
+      "rated": 3,
+      "positive": 2
+    },
+    "thequietus": {
+      "items": 4,
+      "rated": 3,
+      "positive": 1,
+      "unrated": 1
+    },
+    "treble_album_reviews": {
+      "items": 2,
+      "rated": 2,
+      "positive": 0
+    }
+  },
+  "release_metadata": {
+    "fetched_at": "2026-11-10T01:02:20.200715+00:00",
+    "tracks": {
+      "spotify:track:3Vv6jWPmzKXlaoKsVwNM0O": {
+        "id": "3Vv6jWPmzKXlaoKsVwNM0O",
+        "name": "ACCELERANDO",
+        "artists": [
+          "Grimes",
+          "VADAKIN"
+        ],
+        "uri": "spotify:track:3Vv6jWPmzKXlaoKsVwNM0O",
+        "album_id": "05fB9r7Z6fMkGxLRufTXJv",
+        "album_name": "ACCELERANDO",
+        "release_date": "2026-10-09",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:5KJwFcJc0m1u4F8mVkwT5Y": {
+        "id": "5KJwFcJc0m1u4F8mVkwT5Y",
+        "name": "i think he's got a girl",
+        "artists": [
+          "Slayyyter"
+        ],
+        "uri": "spotify:track:5KJwFcJc0m1u4F8mVkwT5Y",
+        "album_id": "0S3Afd9nLzxbruNzzGPbJ0",
+        "album_name": "i think he's got a girl",
+        "release_date": "2026-10-09",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:4l1qY5SuMnNExzQCVtS6OS": {
+        "id": "4l1qY5SuMnNExzQCVtS6OS",
+        "name": "Born Again",
+        "artists": [
+          "Star Moles"
+        ],
+        "uri": "spotify:track:4l1qY5SuMnNExzQCVtS6OS",
+        "album_id": "4SO487HCmaih1yGhFfi48v",
+        "album_name": "Born Again",
+        "release_date": "2026-10-07",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:0nVA2gw5AKuuJjiVKwJvhB": {
+        "id": "0nVA2gw5AKuuJjiVKwJvhB",
+        "name": "Woman",
+        "artists": [
+          "SHEE",
+          "deadream"
+        ],
+        "uri": "spotify:track:0nVA2gw5AKuuJjiVKwJvhB",
+        "album_id": "0VJhL9eUwtKSAiqVOYKsFV",
+        "album_name": "Woman",
+        "release_date": "2026-06-19",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:3dS2pJxdGvqTW4g5inn3JZ": {
+        "id": "3dS2pJxdGvqTW4g5inn3JZ",
+        "name": "Covered In Mud",
+        "artists": [
+          "Remi Wolf"
+        ],
+        "uri": "spotify:track:3dS2pJxdGvqTW4g5inn3JZ",
+        "album_id": "19cvoEE5d3pMkxLFL5TsAG",
+        "album_name": "Mud",
+        "release_date": "2026-10-09",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 11
+      },
+      "spotify:track:02qyL2f6r1o9tD1mMGgMyD": {
+        "id": "02qyL2f6r1o9tD1mMGgMyD",
+        "name": "Everything Has Changed",
+        "artists": [
+          "Danielle Ponder"
+        ],
+        "uri": "spotify:track:02qyL2f6r1o9tD1mMGgMyD",
+        "album_id": "4oYqwTbEodi9DVme0ngg18",
+        "album_name": "Everything Has Changed",
+        "release_date": "2026-10-09",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 14
+      },
+      "spotify:track:4H17rIeJ8Sp8kUqhqXiqW0": {
+        "id": "4H17rIeJ8Sp8kUqhqXiqW0",
+        "name": "A Mile South of Heaven",
+        "artists": [
+          "Jess Williamson"
+        ],
+        "uri": "spotify:track:4H17rIeJ8Sp8kUqhqXiqW0",
+        "album_id": "5gtnnY39j0QRzGXqAVJbd7",
+        "album_name": "A Mile South of Heaven",
+        "release_date": "2026-10-09",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 12
+      },
+      "spotify:track:4q5EIdR3ONbaq6GvO9FV61": {
+        "id": "4q5EIdR3ONbaq6GvO9FV61",
+        "name": "She’s the Best",
+        "artists": [
+          "Troye Sivan"
+        ],
+        "uri": "spotify:track:4q5EIdR3ONbaq6GvO9FV61",
+        "album_id": "46RpDXDGV1091r0rLvPh93",
+        "album_name": "She’s the Best",
+        "release_date": "2026-08-14",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:2zDeZ7u3xsilDm86u1bDBf": {
+        "id": "2zDeZ7u3xsilDm86u1bDBf",
+        "name": "$0 - Live at Carnegie Hall",
+        "artists": [
+          "Cameron Winter"
+        ],
+        "uri": "spotify:track:2zDeZ7u3xsilDm86u1bDBf",
+        "album_id": "5FjFRlo7diqzHNpVz5wJCt",
+        "album_name": "Live at Carnegie Hall",
+        "release_date": "2026-10-09",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 12
+      },
+      "spotify:track:0RJB6ldc79QC6jW5OR2Pv1": {
+        "id": "0RJB6ldc79QC6jW5OR2Pv1",
+        "name": "blue",
+        "artists": [
+          "girl in red"
+        ],
+        "uri": "spotify:track:0RJB6ldc79QC6jW5OR2Pv1",
+        "album_id": "3kxuW16FADFPyKmeke0wlR",
+        "album_name": "blue",
+        "release_date": "2026-10-09",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:4NaBitL0J4PBSODIL1sUg7": {
+        "id": "4NaBitL0J4PBSODIL1sUg7",
+        "name": "Don’t Chart (from GTAVI: The Album)",
+        "artists": [
+          "Cardi B",
+          "Grand Theft Auto VI"
+        ],
+        "uri": "spotify:track:4NaBitL0J4PBSODIL1sUg7",
+        "album_id": "6bu9UAwyOykarcK9fJBjCz",
+        "album_name": "Don’t Chart (from GTAVI: The Album)",
+        "release_date": "2026-10-08",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:1Va3leaBTjd9HUGNbuI97i": {
+        "id": "1Va3leaBTjd9HUGNbuI97i",
+        "name": "Lights",
+        "artists": [
+          "John Glacier"
+        ],
+        "uri": "spotify:track:1Va3leaBTjd9HUGNbuI97i",
+        "album_id": "7fjdvyrAAPwqDoGEoW8Blr",
+        "album_name": "Lights",
+        "release_date": "2026-10-06",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 2
+      },
+      "spotify:track:3U2eGSJFunxn8iErOelx9E": {
+        "id": "3U2eGSJFunxn8iErOelx9E",
+        "name": "Leslie",
+        "artists": [
+          "Gay Meat"
+        ],
+        "uri": "spotify:track:3U2eGSJFunxn8iErOelx9E",
+        "album_id": "1qYRuDW95lXFXhQKdvhoHF",
+        "album_name": "Leslie",
+        "release_date": "2026-10-07",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:2xAIDISdChMFpMC96CogLX": {
+        "id": "2xAIDISdChMFpMC96CogLX",
+        "name": "call to u",
+        "artists": [
+          "Kimi Recor",
+          "Andy Aquarius"
+        ],
+        "uri": "spotify:track:2xAIDISdChMFpMC96CogLX",
+        "album_id": "378N9XHS9YgXuFe4ebW4Px",
+        "album_name": "call to u",
+        "release_date": "2026-10-02",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:07Lnncx7fTArEe4BHLnLWJ": {
+        "id": "07Lnncx7fTArEe4BHLnLWJ",
+        "name": "ALL THE TIME",
+        "artists": [
+          "femtanyl"
+        ],
+        "uri": "spotify:track:07Lnncx7fTArEe4BHLnLWJ",
+        "album_id": "6DZxQpQzDRwsJhDxsKY6dH",
+        "album_name": "ALL THE TIME",
+        "release_date": "2026-10-09",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:5S6Lu1hiwmipUZZV4g9n1Z": {
+        "id": "5S6Lu1hiwmipUZZV4g9n1Z",
+        "name": "Wish Upon You",
+        "artists": [
+          "Florence Road"
+        ],
+        "uri": "spotify:track:5S6Lu1hiwmipUZZV4g9n1Z",
+        "album_id": "1jB0LeWCN64fYmjJe2cW1V",
+        "album_name": "Wish Upon You",
+        "release_date": "2026-10-09",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:0sFSxnCn05rbMOM0hGUzG6": {
+        "id": "0sFSxnCn05rbMOM0hGUzG6",
+        "name": "I Don't Feel Like I Feel Right",
+        "artists": [
+          "Carissa's Wierd"
+        ],
+        "uri": "spotify:track:0sFSxnCn05rbMOM0hGUzG6",
+        "album_id": "1kW9QvEaeUR2B1m8F9KcQg",
+        "album_name": "I Don't Feel Like I Feel Right",
+        "release_date": "2026-10-09",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 6
+      },
+      "spotify:track:12kTxoHwMK6PyF6CIzeQ7U": {
+        "id": "12kTxoHwMK6PyF6CIzeQ7U",
+        "name": "Perception Management",
+        "artists": [
+          "Virga"
+        ],
+        "uri": "spotify:track:12kTxoHwMK6PyF6CIzeQ7U",
+        "album_id": "4id6SiuYwS38Ms4drNoXRI",
+        "album_name": "Perception Management / Impassable Monolith II",
+        "release_date": "2026-10-09",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 2
+      },
+      "spotify:track:1FsK0cNcT2pAjF42p8mtES": {
+        "id": "1FsK0cNcT2pAjF42p8mtES",
+        "name": "New Threats",
+        "artists": [
+          "Rocketship"
+        ],
+        "uri": "spotify:track:1FsK0cNcT2pAjF42p8mtES",
+        "album_id": "5TYQpxEFyzj5yb08HhVlBb",
+        "album_name": "New Threats",
+        "release_date": "2026-10-09",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:08EqJFDJCaBkDIMLO6Mrw2": {
+        "id": "08EqJFDJCaBkDIMLO6Mrw2",
+        "name": "Cold Blue Dawn",
+        "artists": [
+          "Kings of Leon"
+        ],
+        "uri": "spotify:track:08EqJFDJCaBkDIMLO6Mrw2",
+        "album_id": "0qySPcD4CsgE4ilIDAtKF1",
+        "album_name": "Cold Blue Dawn",
+        "release_date": "2026-09-30",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 2
+      },
+      "spotify:track:5Sdbyz01H19kJpvB2Bv0JK": {
+        "id": "5Sdbyz01H19kJpvB2Bv0JK",
+        "name": "Let Me Sell You A Dream",
+        "artists": [
+          "David Byrne",
+          "Daniel Pemberton"
+        ],
+        "uri": "spotify:track:5Sdbyz01H19kJpvB2Bv0JK",
+        "album_id": "1cLJiBmBQSYETuepZHyQFx",
+        "album_name": "Let Me Sell You A Dream",
+        "release_date": "2026-10-08",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:7FlFVxnKwJl6E5B49Jn9S7": {
+        "id": "7FlFVxnKwJl6E5B49Jn9S7",
+        "name": "Underground",
+        "artists": [
+          "Mogwai",
+          "Iggy Pop"
+        ],
+        "uri": "spotify:track:7FlFVxnKwJl6E5B49Jn9S7",
+        "album_id": "3LiArYJoDOq9fiiVIBc893",
+        "album_name": "Underground",
+        "release_date": "2026-09-30",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:7aF0puGulyEEJkOQZNKNyu": {
+        "id": "7aF0puGulyEEJkOQZNKNyu",
+        "name": "Popstar",
+        "artists": [
+          "Tinashe"
+        ],
+        "uri": "spotify:track:7aF0puGulyEEJkOQZNKNyu",
+        "album_id": "06CjF89lLSSiVWXujVVtQs",
+        "album_name": "Popstar",
+        "release_date": "2026-09-25",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 16
+      },
+      "spotify:track:6Qv9ShMC8XZOSNbUqMwGeq": {
+        "id": "6Qv9ShMC8XZOSNbUqMwGeq",
+        "name": "Little Green Book",
+        "artists": [
+          "Awning"
+        ],
+        "uri": "spotify:track:6Qv9ShMC8XZOSNbUqMwGeq",
+        "album_id": "1SVhqqDZ1g06L5GMsXKAvP",
+        "album_name": "Little Green Book",
+        "release_date": "2026-10-06",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:1ECU2GtMGdPotuTRm0zgmX": {
+        "id": "1ECU2GtMGdPotuTRm0zgmX",
+        "name": "Hum of the City",
+        "artists": [
+          "Jess Williamson"
+        ],
+        "uri": "spotify:track:1ECU2GtMGdPotuTRm0zgmX",
+        "album_id": "4IjtQ8YeWE25n0C7LzcGGG",
+        "album_name": "Hum of the City",
+        "release_date": "2026-10-06",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:7ndSNIaJ4J0TIJE5iuMHRx": {
+        "id": "7ndSNIaJ4J0TIJE5iuMHRx",
+        "name": "Love Song",
+        "artists": [
+          "Knifeplay"
+        ],
+        "uri": "spotify:track:7ndSNIaJ4J0TIJE5iuMHRx",
+        "album_id": "68IlKZOW8CEdcembmdNuHX",
+        "album_name": "Love Song",
+        "release_date": "2026-10-05",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:39ZU15Dk22EKHMwydQLV13": {
+        "id": "39ZU15Dk22EKHMwydQLV13",
+        "name": "Public",
+        "artists": [
+          "Ebbb"
+        ],
+        "uri": "spotify:track:39ZU15Dk22EKHMwydQLV13",
+        "album_id": "5CMLxgOFUnZHcCxUpwum3P",
+        "album_name": "Public",
+        "release_date": "2026-10-08",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 3
+      },
+      "spotify:track:2bE7yw711WwTYNcd6v1Yzt": {
+        "id": "2bE7yw711WwTYNcd6v1Yzt",
+        "name": "R U OK?",
+        "artists": [
+          "BINA.",
+          "Tkay Maidza"
+        ],
+        "uri": "spotify:track:2bE7yw711WwTYNcd6v1Yzt",
+        "album_id": "3QuDfvfYx0m0K3A2fmBy2g",
+        "album_name": "R U OK?",
+        "release_date": "2026-09-25",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:6qHi1FLsfgru61mcjxwDjm": {
+        "id": "6qHi1FLsfgru61mcjxwDjm",
+        "name": "Black Stars - From The Hunger Games: Sunrise on the Reaping - The Album",
+        "artists": [
+          "The Smashing Pumpkins",
+          "The Hunger Games"
+        ],
+        "uri": "spotify:track:6qHi1FLsfgru61mcjxwDjm",
+        "album_id": "5tAdiRvTELKbO0vj1vcH5f",
+        "album_name": "Black Stars",
+        "release_date": "2026-10-16",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:7fBIITTbNDzBiLrvFILtNy": {
+        "id": "7fBIITTbNDzBiLrvFILtNy",
+        "name": "Human Angel",
+        "artists": [
+          "June McDoom"
+        ],
+        "uri": "spotify:track:7fBIITTbNDzBiLrvFILtNy",
+        "album_id": "7beIYGKBzrth0ifmSsJTDd",
+        "album_name": "Human Angel",
+        "release_date": "2026-10-14",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 3
+      },
+      "spotify:track:4itV7xKZIKvqGOH4nmp0RL": {
+        "id": "4itV7xKZIKvqGOH4nmp0RL",
+        "name": "Mussel",
+        "artists": [
+          "Mother Soki"
+        ],
+        "uri": "spotify:track:4itV7xKZIKvqGOH4nmp0RL",
+        "album_id": "2I9GUnhP5vpSnrfbZtKy2T",
+        "album_name": "Mussel",
+        "release_date": "2026-10-16",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 3
+      },
+      "spotify:track:2BPeXrCESuPiBx3Dc2iZPN": {
+        "id": "2BPeXrCESuPiBx3Dc2iZPN",
+        "name": "Follow The Light",
+        "artists": [
+          "June McDoom"
+        ],
+        "uri": "spotify:track:2BPeXrCESuPiBx3Dc2iZPN",
+        "album_id": "5VHfVW8PISNYyVG9Hb4G2Y",
+        "album_name": "Follow The Light",
+        "release_date": "2026-10-16",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 12
+      },
+      "spotify:track:5OKDsQvFbDlulyJMw7d9iE": {
+        "id": "5OKDsQvFbDlulyJMw7d9iE",
+        "name": "Automatic",
+        "artists": [
+          "Johanna Warren"
+        ],
+        "uri": "spotify:track:5OKDsQvFbDlulyJMw7d9iE",
+        "album_id": "6qXS6ieCXVCgn1fg1rnLVA",
+        "album_name": "Automatic",
+        "release_date": "2026-10-15",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 2
+      },
+      "spotify:track:5xHbllWdvBHs6LGAWVk3Hl": {
+        "id": "5xHbllWdvBHs6LGAWVk3Hl",
+        "name": "Slide",
+        "artists": [
+          "Now, Now"
+        ],
+        "uri": "spotify:track:5xHbllWdvBHs6LGAWVk3Hl",
+        "album_id": "1m9LbRtekfGQm3Q635GlND",
+        "album_name": "Slide",
+        "release_date": "2026-10-15",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:70i4CalEjZ9K5GqzUKJXKa": {
+        "id": "70i4CalEjZ9K5GqzUKJXKa",
+        "name": "Rote Zora. “Resistance is Possible.” Emma, no. 6, June 1984, pp. 39-41.",
+        "artists": [
+          "PISS"
+        ],
+        "uri": "spotify:track:70i4CalEjZ9K5GqzUKJXKa",
+        "album_id": "2fxtknDHds2Kaaw0hx4S2b",
+        "album_name": "Rote Zora. “Resistance is Possible.” Emma, no. 6, June 1984, pp. 39-41.",
+        "release_date": "2026-10-14",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:6R0wgXkbTNsw0ihyWEMEtG": {
+        "id": "6R0wgXkbTNsw0ihyWEMEtG",
+        "name": "Hares on The Mountain",
+        "artists": [
+          "Radie Peat"
+        ],
+        "uri": "spotify:track:6R0wgXkbTNsw0ihyWEMEtG",
+        "album_id": "20m4rs9RvcjcB0Y9AUdKWr",
+        "album_name": "Hares on The Mountain",
+        "release_date": "2026-10-14",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 3
+      },
+      "spotify:track:3KnmrXxr0m1nUIN5uVGQEu": {
+        "id": "3KnmrXxr0m1nUIN5uVGQEu",
+        "name": "La Renommée",
+        "artists": [
+          "Bodywash"
+        ],
+        "uri": "spotify:track:3KnmrXxr0m1nUIN5uVGQEu",
+        "album_id": "4lEAiLdpFE7A1GwoUZUDZy",
+        "album_name": "La Renommée",
+        "release_date": "2026-10-15",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:4qS0HFIVCwj0AS3zR7hdyi": {
+        "id": "4qS0HFIVCwj0AS3zR7hdyi",
+        "name": "Chiltern Firehouse .",
+        "artists": [
+          "fakemink",
+          "Skepta"
+        ],
+        "uri": "spotify:track:4qS0HFIVCwj0AS3zR7hdyi",
+        "album_id": "3aOq7YwgI0lUGkmQmGno7I",
+        "album_name": "Chiltern Firehouse .",
+        "release_date": "2026-10-16",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:0kpLBvZUAQUxumZrKkycvO": {
+        "id": "0kpLBvZUAQUxumZrKkycvO",
+        "name": "Someone",
+        "artists": [
+          "SOB X RBE",
+          "DaBoii",
+          "Slimmy B",
+          "Yhung T.O."
+        ],
+        "uri": "spotify:track:0kpLBvZUAQUxumZrKkycvO",
+        "album_id": "25AoWtjqjErfFBpySjfT4L",
+        "album_name": "Someone",
+        "release_date": "2026-10-16",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:3XmwAZpIMNpTJy8faw3ajD": {
+        "id": "3XmwAZpIMNpTJy8faw3ajD",
+        "name": "expectations (feat. Chappell Roan)",
+        "artists": [
+          "Olivia Rodrigo",
+          "Chappell Roan"
+        ],
+        "uri": "spotify:track:3XmwAZpIMNpTJy8faw3ajD",
+        "album_id": "1q9LM9xC5ebSY216u31FOx",
+        "album_name": "expectations (feat. Chappell Roan)",
+        "release_date": "2026-10-16",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 2
+      },
+      "spotify:track:2M6Bn5Eh8sJuUWpKi82Faa": {
+        "id": "2M6Bn5Eh8sJuUWpKi82Faa",
+        "name": "Fresh Start",
+        "artists": [
+          "FFO: Chillin"
+        ],
+        "uri": "spotify:track:2M6Bn5Eh8sJuUWpKi82Faa",
+        "album_id": "7fj8A9zvMFWJmpmwhwFvIX",
+        "album_name": "Fresh Start",
+        "release_date": "2026-10-13",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 3
+      },
+      "spotify:track:5rP1SqAtnoMHU655knRdlA": {
+        "id": "5rP1SqAtnoMHU655knRdlA",
+        "name": "33",
+        "artists": [
+          "Marika Hackman"
+        ],
+        "uri": "spotify:track:5rP1SqAtnoMHU655knRdlA",
+        "album_id": "3j2lqvYUUnQZ0GgkoGS4JD",
+        "album_name": "33",
+        "release_date": "2026-10-14",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:589HRc51Jeqr9WouaeBI6l": {
+        "id": "589HRc51Jeqr9WouaeBI6l",
+        "name": "Like it like that",
+        "artists": [
+          "John Errol"
+        ],
+        "uri": "spotify:track:589HRc51Jeqr9WouaeBI6l",
+        "album_id": "2RUgJ14dqeYNYIg29lw02S",
+        "album_name": "Like it like that",
+        "release_date": "2026-10-14",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:122MQsmlvNrx0s1Y3r5Gpw": {
+        "id": "122MQsmlvNrx0s1Y3r5Gpw",
+        "name": "Sorry Laid The Hearth",
+        "artists": [
+          "Deafheaven"
+        ],
+        "uri": "spotify:track:122MQsmlvNrx0s1Y3r5Gpw",
+        "album_id": "7tIVbLtTqWrlTnoPiLLA1R",
+        "album_name": "At Work In The Fields Of The Bomb",
+        "release_date": "2026-10-09",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 3
+      },
+      "spotify:track:7iyNnTB0xCNNFq79rTd7nY": {
+        "id": "7iyNnTB0xCNNFq79rTd7nY",
+        "name": "Theme of the All",
+        "artists": [
+          "Ross Simonini"
+        ],
+        "uri": "spotify:track:7iyNnTB0xCNNFq79rTd7nY",
+        "album_id": "2gfGMUUmUUu4AboHgBTLM6",
+        "album_name": "Theme of the All b/w Theme of No Need",
+        "release_date": "2026-10-07",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 2
+      },
+      "spotify:track:6PmjNNC47cXfakBaBzKisi": {
+        "id": "6PmjNNC47cXfakBaBzKisi",
+        "name": "Faces Places",
+        "artists": [
+          "Keily Rude"
+        ],
+        "uri": "spotify:track:6PmjNNC47cXfakBaBzKisi",
+        "album_id": "1ULEP9VTMbt0NuseIsXnZG",
+        "album_name": "Faces Places",
+        "release_date": "2026-10-09",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:2SXl8yVSOZjZbaNqvDogk1": {
+        "id": "2SXl8yVSOZjZbaNqvDogk1",
+        "name": "Flood Whole Towns",
+        "artists": [
+          "Cece Natalie"
+        ],
+        "uri": "spotify:track:2SXl8yVSOZjZbaNqvDogk1",
+        "album_id": "0ewxfvmoLC81LKb5hlQ2fh",
+        "album_name": "Flood Whole Towns",
+        "release_date": "2026-10-09",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:1XtA5p98BAekO1veVt0v8g": {
+        "id": "1XtA5p98BAekO1veVt0v8g",
+        "name": "once you say yes to the structure, you never get out",
+        "artists": [
+          "More Eaze"
+        ],
+        "uri": "spotify:track:1XtA5p98BAekO1veVt0v8g",
+        "album_id": "18t7DxYFiBtezVUfDkSv3z",
+        "album_name": "valley and structure",
+        "release_date": "2026-10-09",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 5
+      },
+      "spotify:track:4ilXU3QwwIqwtGlw2UjIAX": {
+        "id": "4ilXU3QwwIqwtGlw2UjIAX",
+        "name": "Kinda Guy",
+        "artists": [
+          "Zsela"
+        ],
+        "uri": "spotify:track:4ilXU3QwwIqwtGlw2UjIAX",
+        "album_id": "12b7HqzzZngwfvr9Rbkal1",
+        "album_name": "Kinda Guy",
+        "release_date": "2026-10-05",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:6WqzW93Q849niTvzUnLmRm": {
+        "id": "6WqzW93Q849niTvzUnLmRm",
+        "name": "lost and found",
+        "artists": [
+          "claire rousay",
+          "Martyna Basta"
+        ],
+        "uri": "spotify:track:6WqzW93Q849niTvzUnLmRm",
+        "album_id": "0sWafy0sLQyK8qgXHjXxdx",
+        "album_name": "hotel room",
+        "release_date": "2026-09-25",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 6
+      },
+      "spotify:track:6hwSvVDnaEtnBIDBZ2H190": {
+        "id": "6hwSvVDnaEtnBIDBZ2H190",
+        "name": "FREAKED OUT",
+        "artists": [
+          "10kdunkin"
+        ],
+        "uri": "spotify:track:6hwSvVDnaEtnBIDBZ2H190",
+        "album_id": "5l70aUxjECcc6GJsUnU0Dh",
+        "album_name": "HE SMOOTH (SIDE B)",
+        "release_date": "2026-04-13",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 12
+      },
+      "spotify:track:35Wu2FdvCZ0d98f6miDqzv": {
+        "id": "35Wu2FdvCZ0d98f6miDqzv",
+        "name": "Arterial Bombardment",
+        "artists": [
+          "Undeath"
+        ],
+        "uri": "spotify:track:35Wu2FdvCZ0d98f6miDqzv",
+        "album_id": "4K3n0HAsION8g5gFV9fb8z",
+        "album_name": "Arterial Bombardment",
+        "release_date": "2026-10-06",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:0p03G39z3M9nTkm43JT9rN": {
+        "id": "0p03G39z3M9nTkm43JT9rN",
+        "name": "Around My Finger",
+        "artists": [
+          "Perfect 100"
+        ],
+        "uri": "spotify:track:0p03G39z3M9nTkm43JT9rN",
+        "album_id": "7ui7ZW1dhkx02uVMyhVyju",
+        "album_name": "Around My Finger",
+        "release_date": "2026-10-06",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:59EVJkL1DKo2RPw5uUP1bm": {
+        "id": "59EVJkL1DKo2RPw5uUP1bm",
+        "name": "APPEARANCE",
+        "artists": [
+          "LUCY (Cooper B. Handy)"
+        ],
+        "uri": "spotify:track:59EVJkL1DKo2RPw5uUP1bm",
+        "album_id": "6X8fv6u0sNuubwuev2M1eg",
+        "album_name": "CITIZEN'S ARREST",
+        "release_date": "2026-10-09",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 18
+      },
+      "spotify:track:4KHGdUOAMJro0uQYBHb7Ph": {
+        "id": "4KHGdUOAMJro0uQYBHb7Ph",
+        "name": "Jaque",
+        "artists": [
+          "Marina Herlop"
+        ],
+        "uri": "spotify:track:4KHGdUOAMJro0uQYBHb7Ph",
+        "album_id": "2EzFFqkhvaXUaTzcWwWUDZ",
+        "album_name": "Dja Dja",
+        "release_date": "2026-10-09",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 15
+      },
+      "spotify:track:6QoOy0hBf3GnUyZiEVCHol": {
+        "id": "6QoOy0hBf3GnUyZiEVCHol",
+        "name": "It All Fell in the River - Live at Carnegie Hall",
+        "artists": [
+          "Cameron Winter"
+        ],
+        "uri": "spotify:track:6QoOy0hBf3GnUyZiEVCHol",
+        "album_id": "5FjFRlo7diqzHNpVz5wJCt",
+        "album_name": "Live at Carnegie Hall",
+        "release_date": "2026-10-09",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 12
+      },
+      "spotify:track:4ssOWRV4Gw113pkNQLbaUY": {
+        "id": "4ssOWRV4Gw113pkNQLbaUY",
+        "name": "Tip of My Tongue",
+        "artists": [
+          "Helena Deland"
+        ],
+        "uri": "spotify:track:4ssOWRV4Gw113pkNQLbaUY",
+        "album_id": "1VOo0nzHIxtCc5vzFRjAf6",
+        "album_name": "Tip of My Tongue",
+        "release_date": "2026-10-22",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:2GDTzKMTTa2k2JkBu7SNeL": {
+        "id": "2GDTzKMTTa2k2JkBu7SNeL",
+        "name": "No Bad Memories",
+        "artists": [
+          "The Avalanches"
+        ],
+        "uri": "spotify:track:2GDTzKMTTa2k2JkBu7SNeL",
+        "album_id": "3De7Ues320SIjGCaz5b6fX",
+        "album_name": "No Bad Memories",
+        "release_date": "2026-10-16",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 31
+      },
+      "spotify:track:5qtalyIqYJ8m2PxoNFywMy": {
+        "id": "5qtalyIqYJ8m2PxoNFywMy",
+        "name": "L/C",
+        "artists": [
+          "Westerman"
+        ],
+        "uri": "spotify:track:5qtalyIqYJ8m2PxoNFywMy",
+        "album_id": "10mj7mGyCTMrbRgj0IE82i",
+        "album_name": "L/C",
+        "release_date": "2026-10-22",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:2FPwtNGE2c95rxvF2zovkK": {
+        "id": "2FPwtNGE2c95rxvF2zovkK",
+        "name": "Song For My Funeral",
+        "artists": [
+          "Giant Drag"
+        ],
+        "uri": "spotify:track:2FPwtNGE2c95rxvF2zovkK",
+        "album_id": "7mlC5AXX59aXNIFaiNW0aQ",
+        "album_name": "Song For My Funeral",
+        "release_date": "2026-10-22",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:1AFeuYhsse5HyF679zJiOY": {
+        "id": "1AFeuYhsse5HyF679zJiOY",
+        "name": "ZILLA",
+        "artists": [
+          "Westside Gunn"
+        ],
+        "uri": "spotify:track:1AFeuYhsse5HyF679zJiOY",
+        "album_id": "2bA62lIFAMlOitMT1XLOwI",
+        "album_name": "ZILLA",
+        "release_date": "2026-10-22",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:2SocIIYrXVOhz5JNdn9Rv4": {
+        "id": "2SocIIYrXVOhz5JNdn9Rv4",
+        "name": "Where Will You Go?",
+        "artists": [
+          "W. H. Lung"
+        ],
+        "uri": "spotify:track:2SocIIYrXVOhz5JNdn9Rv4",
+        "album_id": "43wxPS7878l9sP8ZbTzs9U",
+        "album_name": "Where Will You Go?",
+        "release_date": "2026-10-22",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:1EjrZ26QEuPEOOabXcoNCg": {
+        "id": "1EjrZ26QEuPEOOabXcoNCg",
+        "name": "Beautician",
+        "artists": [
+          "Zelooperz",
+          "Black Noi$e"
+        ],
+        "uri": "spotify:track:1EjrZ26QEuPEOOabXcoNCg",
+        "album_id": "5oldxggvHNfPUJXJhDPITU",
+        "album_name": "Beautician",
+        "release_date": "2026-10-22",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:1k4iVEOhbyDfDfONuTTJRr": {
+        "id": "1k4iVEOhbyDfDfONuTTJRr",
+        "name": "White Oak - Kosta G. Remix",
+        "artists": [
+          "Natalie Bergman",
+          "Kosta G"
+        ],
+        "uri": "spotify:track:1k4iVEOhbyDfDfONuTTJRr",
+        "album_id": "2fJHEJl85pE7eD64wqJJbI",
+        "album_name": "White Oak",
+        "release_date": "2026-10-22",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 2
+      },
+      "spotify:track:7DjfpeQoZzZv2DUe0kHaLT": {
+        "id": "7DjfpeQoZzZv2DUe0kHaLT",
+        "name": "Film Noir",
+        "artists": [
+          "Haute & Freddy"
+        ],
+        "uri": "spotify:track:7DjfpeQoZzZv2DUe0kHaLT",
+        "album_id": "1Kffzv98M9zDC9TlIBZFPw",
+        "album_name": "Film Noir",
+        "release_date": "2026-10-23",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 2
+      },
+      "spotify:track:4CKWUf6UfYvMsR3m0RRhHO": {
+        "id": "4CKWUf6UfYvMsR3m0RRhHO",
+        "name": "Hystérique",
+        "artists": [
+          "yeule"
+        ],
+        "uri": "spotify:track:4CKWUf6UfYvMsR3m0RRhHO",
+        "album_id": "5AkgK92mW3dC9RH5cXwThx",
+        "album_name": "Hystérique",
+        "release_date": "2026-10-23",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:3W2VOvLDPks8RE02dRr63O": {
+        "id": "3W2VOvLDPks8RE02dRr63O",
+        "name": "Adrenaline",
+        "artists": [
+          "mark william lewis"
+        ],
+        "uri": "spotify:track:3W2VOvLDPks8RE02dRr63O",
+        "album_id": "34iEW5XY1mGgjhzvKsMo0h",
+        "album_name": "Mark William Lewis (Deluxe)",
+        "release_date": "2026-10-23",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 17
+      },
+      "spotify:track:71boOHNV4VdHkXHuIihFTi": {
+        "id": "71boOHNV4VdHkXHuIihFTi",
+        "name": "Ain't Got Time",
+        "artists": [
+          "Bruiser Wolf",
+          "Conductor Williams"
+        ],
+        "uri": "spotify:track:71boOHNV4VdHkXHuIihFTi",
+        "album_id": "6KcF94tXFs15CtBjPezr5Q",
+        "album_name": "Ain't Got Time",
+        "release_date": "2026-10-23",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:4q6kZ2Q4nLA2cQ08Fjpkkq": {
+        "id": "4q6kZ2Q4nLA2cQ08Fjpkkq",
+        "name": "Death Keeps Me Alive",
+        "artists": [
+          "Cloud Nothings"
+        ],
+        "uri": "spotify:track:4q6kZ2Q4nLA2cQ08Fjpkkq",
+        "album_id": "0reOzke33yDX2s8x136kkB",
+        "album_name": "Death Keeps Me Alive",
+        "release_date": "2026-10-21",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:2WyUJEFZ6vQzTwSdKzqLrx": {
+        "id": "2WyUJEFZ6vQzTwSdKzqLrx",
+        "name": "White Flag",
+        "artists": [
+          "Bassvictim"
+        ],
+        "uri": "spotify:track:2WyUJEFZ6vQzTwSdKzqLrx",
+        "album_id": "0JTiE7YYOnhVPXPbUBZpHm",
+        "album_name": "White Flag",
+        "release_date": "2026-10-21",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:5rCdoOUzXhApxg05G4NAqe": {
+        "id": "5rCdoOUzXhApxg05G4NAqe",
+        "name": "Little Things",
+        "artists": [
+          "sadie"
+        ],
+        "uri": "spotify:track:5rCdoOUzXhApxg05G4NAqe",
+        "album_id": "1brz3yWqkMbo3xx9FlyewX",
+        "album_name": "Little Things",
+        "release_date": "2026-10-20",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:7rnHlv6UU4fRa4Uy13ZI1Z": {
+        "id": "7rnHlv6UU4fRa4Uy13ZI1Z",
+        "name": "Ringtone",
+        "artists": [
+          "Worldpeace DMT"
+        ],
+        "uri": "spotify:track:7rnHlv6UU4fRa4Uy13ZI1Z",
+        "album_id": "6fHv4lP1mfXizl1StQkRLU",
+        "album_name": "Stick Around For Tea",
+        "release_date": "2026-10-16",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 12
+      },
+      "spotify:track:1FcjL0pcI544fQkgwcQCil": {
+        "id": "1FcjL0pcI544fQkgwcQCil",
+        "name": "Circadian Heart",
+        "artists": [
+          "Hannah Frances"
+        ],
+        "uri": "spotify:track:1FcjL0pcI544fQkgwcQCil",
+        "album_id": "64VffnmPZXPiWG5pokLwFQ",
+        "album_name": "Circadian Heart",
+        "release_date": "2026-10-20",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:5GmgeEqXJHpxE5QwHHLqCl": {
+        "id": "5GmgeEqXJHpxE5QwHHLqCl",
+        "name": "Aquarium",
+        "artists": [
+          "Being Dead"
+        ],
+        "uri": "spotify:track:5GmgeEqXJHpxE5QwHHLqCl",
+        "album_id": "3fefETJLswgcB4prPInzEW",
+        "album_name": "Man or Myth / Aquarium",
+        "release_date": "2026-10-22",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 2
+      },
+      "spotify:track:3ayRcYGcNKyuVCAMNPPeAP": {
+        "id": "3ayRcYGcNKyuVCAMNPPeAP",
+        "name": "Better Believe It",
+        "artists": [
+          "Sophia Stel"
+        ],
+        "uri": "spotify:track:3ayRcYGcNKyuVCAMNPPeAP",
+        "album_id": "604KxCjle0KCw0VXdoMNgj",
+        "album_name": "the greatest album of all time",
+        "release_date": "2026-10-16",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 12
+      },
+      "spotify:track:5F4pV7l1hAWPoYP00lBIEM": {
+        "id": "5F4pV7l1hAWPoYP00lBIEM",
+        "name": "Dream Dub",
+        "artists": [
+          "June McDoom"
+        ],
+        "uri": "spotify:track:5F4pV7l1hAWPoYP00lBIEM",
+        "album_id": "5VHfVW8PISNYyVG9Hb4G2Y",
+        "album_name": "Follow The Light",
+        "release_date": "2026-10-16",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 12
+      },
+      "spotify:track:67Mzj4rRxufi9Hds2oUZQ3": {
+        "id": "67Mzj4rRxufi9Hds2oUZQ3",
+        "name": "Vuoto 25",
+        "artists": [
+          "Holy Tongue"
+        ],
+        "uri": "spotify:track:67Mzj4rRxufi9Hds2oUZQ3",
+        "album_id": "24RKuwnFHmCUDptvbdFBVS",
+        "album_name": "Vuoto 25",
+        "release_date": "2026-09-02",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 2
+      },
+      "spotify:track:02WSkyBsn1zyIJy9LVyo91": {
+        "id": "02WSkyBsn1zyIJy9LVyo91",
+        "name": "Kinfy",
+        "artists": [
+          "On the Ifness"
+        ],
+        "uri": "spotify:track:02WSkyBsn1zyIJy9LVyo91",
+        "album_id": "3ZG8wl4aX9kzUqEQZfVUrg",
+        "album_name": "Kinfy",
+        "release_date": "2026-10-06",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:3x7P3swbTqaLCXX6t50cYt": {
+        "id": "3x7P3swbTqaLCXX6t50cYt",
+        "name": "Mickey",
+        "artists": [
+          "Sarah Coolidge"
+        ],
+        "uri": "spotify:track:3x7P3swbTqaLCXX6t50cYt",
+        "album_id": "3RQUtNoXlhgZAsqbz3Ughb",
+        "album_name": "Mickey",
+        "release_date": "2026-10-16",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:2Bc9iZ79pfnPhIO8uDliNv": {
+        "id": "2Bc9iZ79pfnPhIO8uDliNv",
+        "name": "Wet Brain",
+        "artists": [
+          "TVOD"
+        ],
+        "uri": "spotify:track:2Bc9iZ79pfnPhIO8uDliNv",
+        "album_id": "7L4rmHev0bDisrFvOY8P96",
+        "album_name": "The Farm",
+        "release_date": "2026-10-16",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 11
+      },
+      "spotify:track:4dSWbIGKqf1EUdnN0cIYcV": {
+        "id": "4dSWbIGKqf1EUdnN0cIYcV",
+        "name": "From Space Between",
+        "artists": [
+          "fka boursin"
+        ],
+        "uri": "spotify:track:4dSWbIGKqf1EUdnN0cIYcV",
+        "album_id": "0IKhvqvPzWrxO7H1JUCAhc",
+        "album_name": "From Space Between",
+        "release_date": "2026-09-18",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 2
+      },
+      "spotify:track:5GkylkL4zY4GtGvrFiTJ7x": {
+        "id": "5GkylkL4zY4GtGvrFiTJ7x",
+        "name": "Milwaukee Brewers",
+        "artists": [
+          "Foenem"
+        ],
+        "uri": "spotify:track:5GkylkL4zY4GtGvrFiTJ7x",
+        "album_id": "0oZBbCNOlrph7HDx9lJJ18",
+        "album_name": "Milwaukee Brewers",
+        "release_date": "2026-10-04",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:7a2Qp449zk2yEmeFxV4YWH": {
+        "id": "7a2Qp449zk2yEmeFxV4YWH",
+        "name": "Fake Don",
+        "artists": [
+          "Babyfxce E"
+        ],
+        "uri": "spotify:track:7a2Qp449zk2yEmeFxV4YWH",
+        "album_id": "2NR9cKx8m9uavhXDWoNXnL",
+        "album_name": "The X Tape 2",
+        "release_date": "2026-10-16",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 21
+      },
+      "spotify:track:3HGZUb5t818Ie2MsJJZhMq": {
+        "id": "3HGZUb5t818Ie2MsJJZhMq",
+        "name": "Ivy",
+        "artists": [
+          "Worldpeace DMT"
+        ],
+        "uri": "spotify:track:3HGZUb5t818Ie2MsJJZhMq",
+        "album_id": "6fHv4lP1mfXizl1StQkRLU",
+        "album_name": "Stick Around For Tea",
+        "release_date": "2026-10-16",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 12
+      },
+      "spotify:track:3UXCJqesVKb06HA9jJ1a7r": {
+        "id": "3UXCJqesVKb06HA9jJ1a7r",
+        "name": "Clustered Around My Opening!",
+        "artists": [
+          "Fire-Toolz"
+        ],
+        "uri": "spotify:track:3UXCJqesVKb06HA9jJ1a7r",
+        "album_id": "4gLuYdbI4wSObizPh5Z5Ok",
+        "album_name": "Clustered Around My Opening!",
+        "release_date": "2026-10-30",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:6pxjskMHpE4QBmxoOX6O5H": {
+        "id": "6pxjskMHpE4QBmxoOX6O5H",
+        "name": "Pusher (feat. Gesaffelstein) [From GTAVI: Original Score]",
+        "artists": [
+          "Justice",
+          "Gesaffelstein",
+          "Grand Theft Auto VI"
+        ],
+        "uri": "spotify:track:6pxjskMHpE4QBmxoOX6O5H",
+        "album_id": "6T1v6phBadT4WrAHWaybkZ",
+        "album_name": "Pusher (feat. Gesaffelstein) [From GTAVI: Original Score]",
+        "release_date": "2026-10-29",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 2
+      },
+      "spotify:track:6pahtfyWIYs5qYHNrx9Yjv": {
+        "id": "6pahtfyWIYs5qYHNrx9Yjv",
+        "name": "Creek",
+        "artists": [
+          "waterbaby"
+        ],
+        "uri": "spotify:track:6pahtfyWIYs5qYHNrx9Yjv",
+        "album_id": "4ZHCgrvfu9ayQNQ0agDrVO",
+        "album_name": "Creek",
+        "release_date": "2026-10-29",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:0YrQ3IEz9gune1OWHEvwnX": {
+        "id": "0YrQ3IEz9gune1OWHEvwnX",
+        "name": "2 Hands",
+        "artists": [
+          "Mei Semones"
+        ],
+        "uri": "spotify:track:0YrQ3IEz9gune1OWHEvwnX",
+        "album_id": "1W8dfBIAzmCLLctGK7V64l",
+        "album_name": "2 Hands",
+        "release_date": "2026-10-29",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 2
+      },
+      "spotify:track:14nks5aBhoqTxgdywMjTm0": {
+        "id": "14nks5aBhoqTxgdywMjTm0",
+        "name": "Shower Beer",
+        "artists": [
+          "Jazmine Mary"
+        ],
+        "uri": "spotify:track:14nks5aBhoqTxgdywMjTm0",
+        "album_id": "49BG3xbXQBKdioz2k2DTAY",
+        "album_name": "Shower Beer",
+        "release_date": "2026-10-30",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:72xfedzFDmmFwmM1vpL6xY": {
+        "id": "72xfedzFDmmFwmM1vpL6xY",
+        "name": "Fast Strong Horse",
+        "artists": [
+          "Or Best Offer"
+        ],
+        "uri": "spotify:track:72xfedzFDmmFwmM1vpL6xY",
+        "album_id": "00AUi4ni9M53XhJHh3r6Cb",
+        "album_name": "Fast Strong Horse",
+        "release_date": "2026-10-28",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:2lTB2OKup4eBLMVzJWahGE": {
+        "id": "2lTB2OKup4eBLMVzJWahGE",
+        "name": "Elevate",
+        "artists": [
+          "Benny The Butcher",
+          "Black Soprano Family",
+          "Fuego Base"
+        ],
+        "uri": "spotify:track:2lTB2OKup4eBLMVzJWahGE",
+        "album_id": "0QF26JKTaBUg0CNGRZaw1V",
+        "album_name": "Elevate",
+        "release_date": "2026-10-30",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:5pADXHvtLOMl5FJ3HwfSMY": {
+        "id": "5pADXHvtLOMl5FJ3HwfSMY",
+        "name": "Creep-O",
+        "artists": [
+          "fanclubwallet"
+        ],
+        "uri": "spotify:track:5pADXHvtLOMl5FJ3HwfSMY",
+        "album_id": "5pBrgVrrH5jGLRvAaBWytH",
+        "album_name": "Creep-O",
+        "release_date": "2026-10-30",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:13102naNF6otoU5LHU5yN2": {
+        "id": "13102naNF6otoU5LHU5yN2",
+        "name": "Lay Your Head Down",
+        "artists": [
+          "Paul Smith"
+        ],
+        "uri": "spotify:track:13102naNF6otoU5LHU5yN2",
+        "album_id": "3VUU5sQCkLc9FbrAmjdlho",
+        "album_name": "Lay Your Head Down",
+        "release_date": "2026-10-30",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:5pmua8ZOsIMwcMweSWTIT0": {
+        "id": "5pmua8ZOsIMwcMweSWTIT0",
+        "name": "Ten Thousand Feet",
+        "artists": [
+          "bloodsports"
+        ],
+        "uri": "spotify:track:5pmua8ZOsIMwcMweSWTIT0",
+        "album_id": "5M6SE6Rpg7h4aMOHfu3Hs7",
+        "album_name": "Ten Thousand Feet",
+        "release_date": "2026-10-30",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:1iSjmjc3knyvW6d1eUxya8": {
+        "id": "1iSjmjc3knyvW6d1eUxya8",
+        "name": "Octoberland",
+        "artists": [
+          "Atlas Sound"
+        ],
+        "uri": "spotify:track:1iSjmjc3knyvW6d1eUxya8",
+        "album_id": "2xpPSFBo26QwYC2YvXLum9",
+        "album_name": "Octoberland",
+        "release_date": "2026-10-30",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:4Yb8otlM6n89NRvKpj3OTd": {
+        "id": "4Yb8otlM6n89NRvKpj3OTd",
+        "name": "Off It",
+        "artists": [
+          "The Chats"
+        ],
+        "uri": "spotify:track:4Yb8otlM6n89NRvKpj3OTd",
+        "album_id": "3tpcAKCSWFWmOC4RvB67Lx",
+        "album_name": "Off It",
+        "release_date": "2026-10-27",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:2xeGlyvvXDKWiPgenEMccp": {
+        "id": "2xeGlyvvXDKWiPgenEMccp",
+        "name": "Run Away From the Mob",
+        "artists": [
+          "Queens of the Stone Age"
+        ],
+        "uri": "spotify:track:2xeGlyvvXDKWiPgenEMccp",
+        "album_id": "2hbBKkFjvCmxVQGdzBzYtT",
+        "album_name": "Run Away From the Mob",
+        "release_date": "2026-10-28",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 4
+      },
+      "spotify:track:0GE8MLSbWYecG7SZszisyg": {
+        "id": "0GE8MLSbWYecG7SZszisyg",
+        "name": "If Not Soon Then Now",
+        "artists": [
+          "Trinket"
+        ],
+        "uri": "spotify:track:0GE8MLSbWYecG7SZszisyg",
+        "album_id": "2StQqt84PNozVOYk8w9Yai",
+        "album_name": "If Not Soon Then Now",
+        "release_date": "2026-10-27",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:5LCLGKFHEICGn1Fd9n8Ga5": {
+        "id": "5LCLGKFHEICGn1Fd9n8Ga5",
+        "name": "Continuation",
+        "artists": [
+          "Factory Floor"
+        ],
+        "uri": "spotify:track:5LCLGKFHEICGn1Fd9n8Ga5",
+        "album_id": "0mKVOorU7BTZPz52RRBeY2",
+        "album_name": "Continuation / One Trip",
+        "release_date": "2026-10-27",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 2
+      },
+      "spotify:track:0bP3Ih1VEss29m7DdBeouP": {
+        "id": "0bP3Ih1VEss29m7DdBeouP",
+        "name": "r1 (ripples)",
+        "artists": [
+          "nowhere else to be"
+        ],
+        "uri": "spotify:track:0bP3Ih1VEss29m7DdBeouP",
+        "album_id": "5wSm0jAPfhAPHWEzE4FX77",
+        "album_name": "r1 (ripples)",
+        "release_date": "2026-10-28",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:3Wwrx1akChkCEsBU9Ix5Qd": {
+        "id": "3Wwrx1akChkCEsBU9Ix5Qd",
+        "name": "xstick_xstick",
+        "artists": [
+          "The Healing Power of Horses"
+        ],
+        "uri": "spotify:track:3Wwrx1akChkCEsBU9Ix5Qd",
+        "album_id": "2ulOEjXX7WphDbDMkTQIl4",
+        "album_name": "xstick_xstick",
+        "release_date": "2026-10-27",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:2dt4xkZL0QhYnNAbeF2Yem": {
+        "id": "2dt4xkZL0QhYnNAbeF2Yem",
+        "name": "Million years",
+        "artists": [
+          "Fine"
+        ],
+        "uri": "spotify:track:2dt4xkZL0QhYnNAbeF2Yem",
+        "album_id": "04vD00822fgNjeKsJTldbT",
+        "album_name": "Jazz dreams",
+        "release_date": "2026-10-23",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 13
+      },
+      "spotify:track:6CKZVpET9VCGDjDtu1TOtt": {
+        "id": "6CKZVpET9VCGDjDtu1TOtt",
+        "name": "Leveled Out",
+        "artists": [
+          "Pet Fox"
+        ],
+        "uri": "spotify:track:6CKZVpET9VCGDjDtu1TOtt",
+        "album_id": "7wsbcvyzL9DC2079iF8CNH",
+        "album_name": "Balance",
+        "release_date": "2026-10-23",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 9
+      },
+      "spotify:track:2FvwrYRiugvrMKj7V4uMcE": {
+        "id": "2FvwrYRiugvrMKj7V4uMcE",
+        "name": "dunjin",
+        "artists": [
+          "ideasforconversations",
+          "Alain C. Montgomery",
+          "Zachary Mezzo"
+        ],
+        "uri": "spotify:track:2FvwrYRiugvrMKj7V4uMcE",
+        "album_id": "7krng7HBH78SnTkCFsF4YA",
+        "album_name": "Crane Operator presents... i4c+ce+zm",
+        "release_date": "2026-10-23",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 6
+      },
+      "spotify:track:7i7PwI5uj0l9ymPPHdITFX": {
+        "id": "7i7PwI5uj0l9ymPPHdITFX",
+        "name": "DEADMAN",
+        "artists": [
+          "Angelo LeRoi"
+        ],
+        "uri": "spotify:track:7i7PwI5uj0l9ymPPHdITFX",
+        "album_id": "6YZT5VWkUaWCXNylEjYXIV",
+        "album_name": "Song of Solomon",
+        "release_date": "2026-10-16",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 5
+      },
+      "spotify:track:41B8dUFYw4Onp7dA6wGiuH": {
+        "id": "41B8dUFYw4Onp7dA6wGiuH",
+        "name": "Falling down",
+        "artists": [
+          "Whait",
+          "Wendy Eisenberg",
+          "More Eaze"
+        ],
+        "uri": "spotify:track:41B8dUFYw4Onp7dA6wGiuH",
+        "album_id": "34MmIqBzHc80W1N3azQ4rS",
+        "album_name": "Falling down",
+        "release_date": "2026-10-20",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:6n9heLkoKbQu2uOQFDRPaj": {
+        "id": "6n9heLkoKbQu2uOQFDRPaj",
+        "name": "Aldehydes and Ketones",
+        "artists": [
+          "Ecco2k"
+        ],
+        "uri": "spotify:track:6n9heLkoKbQu2uOQFDRPaj",
+        "album_id": "5Tpa6kBE6UJSDo6r6mX4sH",
+        "album_name": "Aldehydes and Ketones",
+        "release_date": "2026-10-22",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:77ea9nfDN1ayGEtMZdmBlr": {
+        "id": "77ea9nfDN1ayGEtMZdmBlr",
+        "name": "NRG",
+        "artists": [
+          "Pigeon"
+        ],
+        "uri": "spotify:track:77ea9nfDN1ayGEtMZdmBlr",
+        "album_id": "7tWb0AVdGiPIYGvJ1iC8Yq",
+        "album_name": "OUTTANATIONAL",
+        "release_date": "2026-05-01",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 10
+      },
+      "spotify:track:2RNIwDWB5NzDnkL8XrBfF1": {
+        "id": "2RNIwDWB5NzDnkL8XrBfF1",
+        "name": "Northside Needs Me",
+        "artists": [
+          "Blackhaine"
+        ],
+        "uri": "spotify:track:2RNIwDWB5NzDnkL8XrBfF1",
+        "album_id": "4oQc7nNqppyi4tRLwGvcpV",
+        "album_name": "Northside Needs Me",
+        "release_date": "2026-10-22",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 2
+      },
+      "spotify:track:4F2L0zvqUZDv3QBfIDHYON": {
+        "id": "4F2L0zvqUZDv3QBfIDHYON",
+        "name": "Dusky",
+        "artists": [
+          "Anna Meredith"
+        ],
+        "uri": "spotify:track:4F2L0zvqUZDv3QBfIDHYON",
+        "album_id": "0fwhiDQqtlkfQEKta9ylm6",
+        "album_name": "Dusky",
+        "release_date": "2026-10-06",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:4ClIxhlfAg4Bd8UxII6Iji": {
+        "id": "4ClIxhlfAg4Bd8UxII6Iji",
+        "name": "Faï anar",
+        "artists": [
+          "Tresque"
+        ],
+        "uri": "spotify:track:4ClIxhlfAg4Bd8UxII6Iji",
+        "album_id": "0Xn8bCI824ldwK5vrnUhMb",
+        "album_name": "Faï anar",
+        "release_date": "2026-10-23",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:2N3ydYnfwbtuLFxCpQGbSS": {
+        "id": "2N3ydYnfwbtuLFxCpQGbSS",
+        "name": "07XXXXXXXXX",
+        "artists": [
+          "Lifeloose"
+        ],
+        "uri": "spotify:track:2N3ydYnfwbtuLFxCpQGbSS",
+        "album_id": "2kZMliijEouwEyBF2DvPlb",
+        "album_name": "07XXXXXXXXX",
+        "release_date": "2026-10-08",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:4UjYZS6Jbt3lee27qmiNOu": {
+        "id": "4UjYZS6Jbt3lee27qmiNOu",
+        "name": "take me home (4 christmas)",
+        "artists": [
+          "Olivia Rodrigo"
+        ],
+        "uri": "spotify:track:4UjYZS6Jbt3lee27qmiNOu",
+        "album_id": "50o3Wm98DQENFLiiX3zd5B",
+        "album_name": "take me home (4 christmas)",
+        "release_date": "2026-11-05",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:5YbgUS6JZLajQ8TsZDLZdu": {
+        "id": "5YbgUS6JZLajQ8TsZDLZdu",
+        "name": "I Love Christmas",
+        "artists": [
+          "Tegan and Sara"
+        ],
+        "uri": "spotify:track:5YbgUS6JZLajQ8TsZDLZdu",
+        "album_id": "2GUpcLmWTs9mV7S6R6q3XM",
+        "album_name": "I Love Christmas",
+        "release_date": "2026-11-06",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:4SqQN9tzmyi6wLmdUSOTos": {
+        "id": "4SqQN9tzmyi6wLmdUSOTos",
+        "name": "Masons Dispatch",
+        "artists": [
+          "Zelooperz",
+          "Black Noi$e"
+        ],
+        "uri": "spotify:track:4SqQN9tzmyi6wLmdUSOTos",
+        "album_id": "1H6Ws2WMpDLN7LFONXRv7k",
+        "album_name": "Masons Dispatch",
+        "release_date": "2026-11-04",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 2
+      },
+      "spotify:track:5juc6CUCHZQS6cXUaj6HIL": {
+        "id": "5juc6CUCHZQS6cXUaj6HIL",
+        "name": "The Score",
+        "artists": [
+          "Bruiser Wolf",
+          "Conductor Williams",
+          "Marv Won"
+        ],
+        "uri": "spotify:track:5juc6CUCHZQS6cXUaj6HIL",
+        "album_id": "7lxLrZa6YgZmhxXlHgNjiz",
+        "album_name": "The Score",
+        "release_date": "2026-11-06",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:6wqameUCAxH9vWpmenY4EP": {
+        "id": "6wqameUCAxH9vWpmenY4EP",
+        "name": "The Castle",
+        "artists": [
+          "Soup Activists"
+        ],
+        "uri": "spotify:track:6wqameUCAxH9vWpmenY4EP",
+        "album_id": "6wIlIkMsl4fkh7jn1s6p0N",
+        "album_name": "The Castle",
+        "release_date": "2026-11-05",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:76jR5C9oKb1DJR3rab6dGV": {
+        "id": "76jR5C9oKb1DJR3rab6dGV",
+        "name": "Ya Hit (feat. Drake, Travis Scott & Loe Shimmy)",
+        "artists": [
+          "Future",
+          "Drake",
+          "Travis Scott",
+          "Loe Shimmy"
+        ],
+        "uri": "spotify:track:76jR5C9oKb1DJR3rab6dGV",
+        "album_id": "5KXRJdjRBZMPrmvt4EgXAd",
+        "album_name": "Ya Hit (feat. Drake, Travis Scott & Loe Shimmy)",
+        "release_date": "2026-11-06",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:1h35GXVhetKtQU3JfntPpO": {
+        "id": "1h35GXVhetKtQU3JfntPpO",
+        "name": "OK",
+        "artists": [
+          "Belly Gang Kushington"
+        ],
+        "uri": "spotify:track:1h35GXVhetKtQU3JfntPpO",
+        "album_id": "2bj93oOTQd7EZkbyA8DXyP",
+        "album_name": "OK",
+        "release_date": "2026-11-06",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 3
+      },
+      "spotify:track:2tX5Ov7Ualejv6PYWFHZ6t": {
+        "id": "2tX5Ov7Ualejv6PYWFHZ6t",
+        "name": "american dream",
+        "artists": [
+          "Cleo Reed"
+        ],
+        "uri": "spotify:track:2tX5Ov7Ualejv6PYWFHZ6t",
+        "album_id": "5pQO8PvAKN18YmyRL3EJkx",
+        "album_name": "american dream",
+        "release_date": "2026-11-06",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:0x6WGIxGhDAWZg3rkcrzZ0": {
+        "id": "0x6WGIxGhDAWZg3rkcrzZ0",
+        "name": "Not The End Of It All",
+        "artists": [
+          "Lindstrøm"
+        ],
+        "uri": "spotify:track:0x6WGIxGhDAWZg3rkcrzZ0",
+        "album_id": "4YtflrPyn22eMzad7Bqn2N",
+        "album_name": "Not The End Of It All",
+        "release_date": "2026-11-06",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:3BSco97spgO2LTKHcWS9Id": {
+        "id": "3BSco97spgO2LTKHcWS9Id",
+        "name": "STOVIE'S HOME (Down Down)",
+        "artists": [
+          "Stove God Cooks",
+          "Swizz Beatz"
+        ],
+        "uri": "spotify:track:3BSco97spgO2LTKHcWS9Id",
+        "album_id": "4vWz66r5e53ZJbEezLLCPL",
+        "album_name": "STOVIE'S HOME (Down Down)",
+        "release_date": "2026-11-05",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:5VxGvEGKHDw8AfoRqdfmcR": {
+        "id": "5VxGvEGKHDw8AfoRqdfmcR",
+        "name": "Way back to You",
+        "artists": [
+          "Becky and the Birds"
+        ],
+        "uri": "spotify:track:5VxGvEGKHDw8AfoRqdfmcR",
+        "album_id": "70wK07yeUWeQiH9OnsjyTP",
+        "album_name": "Way back to You",
+        "release_date": "2026-11-05",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:7wc8vySuac7bEjofGcrNeV": {
+        "id": "7wc8vySuac7bEjofGcrNeV",
+        "name": "Black Tattoo",
+        "artists": [
+          "Dusted"
+        ],
+        "uri": "spotify:track:7wc8vySuac7bEjofGcrNeV",
+        "album_id": "58L06VWFMRaqTP2p4jceOv",
+        "album_name": "Black Tattoo",
+        "release_date": "2026-11-06",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:6nN7JjTCV8EbMk8Kysxhoe": {
+        "id": "6nN7JjTCV8EbMk8Kysxhoe",
+        "name": "Looking Right At It",
+        "artists": [
+          "GUPPY"
+        ],
+        "uri": "spotify:track:6nN7JjTCV8EbMk8Kysxhoe",
+        "album_id": "6L63ttbWDbkRNEnOcgthqw",
+        "album_name": "Looking Right At It",
+        "release_date": "2026-11-06",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:61zdXHYTIPD8WaCs5hQYoj": {
+        "id": "61zdXHYTIPD8WaCs5hQYoj",
+        "name": "Nächstenliebe",
+        "artists": [
+          "Boys Noize",
+          "Brutalismus 3000"
+        ],
+        "uri": "spotify:track:61zdXHYTIPD8WaCs5hQYoj",
+        "album_id": "4kBCwBGPOB86PAfRkDEbv6",
+        "album_name": "Nächstenliebe",
+        "release_date": "2026-10-29",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:02q72hZq4Ds2pWiBrK8HZo": {
+        "id": "02q72hZq4Ds2pWiBrK8HZo",
+        "name": "hey boyyy",
+        "artists": [
+          "Slayyyter"
+        ],
+        "uri": "spotify:track:02q72hZq4Ds2pWiBrK8HZo",
+        "album_id": "7K9T4t0Oj0Ho8CR6Rq7hga",
+        "album_name": "hey boyyy",
+        "release_date": "2026-11-06",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:2b8BZIE6VefboEkZMrNhRX": {
+        "id": "2b8BZIE6VefboEkZMrNhRX",
+        "name": "Overthinker",
+        "artists": [
+          "CHVRCHES"
+        ],
+        "uri": "spotify:track:2b8BZIE6VefboEkZMrNhRX",
+        "album_id": "2vKqcQXs8Rvrcvb2vEgn8Q",
+        "album_name": "Overthinker",
+        "release_date": "2026-10-27",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 2
+      },
+      "spotify:track:7Iwoiaro59GdgnGwxFaVcc": {
+        "id": "7Iwoiaro59GdgnGwxFaVcc",
+        "name": "Dracula",
+        "artists": [
+          "Lita Ford"
+        ],
+        "uri": "spotify:track:7Iwoiaro59GdgnGwxFaVcc",
+        "album_id": "4H7BAnbN3vCtzWIgNyJXbi",
+        "album_name": "Dracula",
+        "release_date": "2026-10-27",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:1IGVmPuyttwxqNnbbD9Goj": {
+        "id": "1IGVmPuyttwxqNnbbD9Goj",
+        "name": "Sadness Will Reign",
+        "artists": [
+          "Cult Of Luna",
+          "Joe Duplantier"
+        ],
+        "uri": "spotify:track:1IGVmPuyttwxqNnbbD9Goj",
+        "album_id": "1SKwChtsQdSNkv88AW6F8c",
+        "album_name": "Sadness Will Reign",
+        "release_date": "2026-11-04",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 4
+      },
+      "spotify:track:1sTGDnMOSEFYMW3zDPYF7M": {
+        "id": "1sTGDnMOSEFYMW3zDPYF7M",
+        "name": "Make It Easy",
+        "artists": [
+          "Cage The Elephant"
+        ],
+        "uri": "spotify:track:1sTGDnMOSEFYMW3zDPYF7M",
+        "album_id": "7zfkgL9UrW9KkVupjbHQJk",
+        "album_name": "Make It Easy",
+        "release_date": "2026-11-05",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:4pUqYy4luIo0NvjfGogx3w": {
+        "id": "4pUqYy4luIo0NvjfGogx3w",
+        "name": "The Never Was",
+        "artists": [
+          "Death Angel"
+        ],
+        "uri": "spotify:track:4pUqYy4luIo0NvjfGogx3w",
+        "album_id": "0exuMYSioml4mkOc056ysS",
+        "album_name": "The Never Was",
+        "release_date": "2026-11-05",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:6j9T9L1ISbLbkUjEsFHFcd": {
+        "id": "6j9T9L1ISbLbkUjEsFHFcd",
+        "name": "On This Christmas (It Only Gets Better)",
+        "artists": [
+          "Sufjan Stevens"
+        ],
+        "uri": "spotify:track:6j9T9L1ISbLbkUjEsFHFcd",
+        "album_id": "0dEoTBRi6DvUIcESme3or0",
+        "album_name": "On This Christmas (It Only Gets Better)",
+        "release_date": "2026-11-02",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:7gPIl8d5ALiUmYiV7h1xbv": {
+        "id": "7gPIl8d5ALiUmYiV7h1xbv",
+        "name": "Crushed to Nothing",
+        "artists": [
+          "Crate"
+        ],
+        "uri": "spotify:track:7gPIl8d5ALiUmYiV7h1xbv",
+        "album_id": "6lNk2yK8eWSI7FywalcERh",
+        "album_name": "Crushed to Nothing",
+        "release_date": "2026-11-04",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      },
+      "spotify:track:3v34PIRb54ovlyHu8y0qhA": {
+        "id": "3v34PIRb54ovlyHu8y0qhA",
+        "name": "john dearly",
+        "artists": [
+          "smush"
+        ],
+        "uri": "spotify:track:3v34PIRb54ovlyHu8y0qhA",
+        "album_id": "5sfUXzimsgIO3srUNQzMe3",
+        "album_name": "john dearly",
+        "release_date": "2026-11-02",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 1
+      }
+    },
+    "albums": {
+      "6tcLBCFSo3nmGDiYq6opGu": {
+        "id": "6tcLBCFSo3nmGDiYq6opGu",
+        "name": "So Much For Goodbyes",
+        "artists": [
+          "Billy Strings"
+        ],
+        "uri": "spotify:album:6tcLBCFSo3nmGDiYq6opGu",
+        "album_id": "6tcLBCFSo3nmGDiYq6opGu",
+        "album_name": "So Much For Goodbyes",
+        "release_date": "2026-08-28",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 16
+      },
+      "6ahtjSXlZpJsOxSOucSuRg": {
+        "id": "6ahtjSXlZpJsOxSOucSuRg",
+        "name": "Violins",
+        "artists": [
+          "Blondshell"
+        ],
+        "uri": "spotify:album:6ahtjSXlZpJsOxSOucSuRg",
+        "album_id": "6ahtjSXlZpJsOxSOucSuRg",
+        "album_name": "Violins",
+        "release_date": "2026-09-25",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 11
+      },
+      "2uTMERh6Ta40fBW2aKTjtQ": {
+        "id": "2uTMERh6Ta40fBW2aKTjtQ",
+        "name": "All Set The Bone",
+        "artists": [
+          "Greg Freeman"
+        ],
+        "uri": "spotify:album:2uTMERh6Ta40fBW2aKTjtQ",
+        "album_id": "2uTMERh6Ta40fBW2aKTjtQ",
+        "album_name": "All Set The Bone",
+        "release_date": "2026-10-02",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 13
+      },
+      "2qTYkMZ8qtOcyEgD5LTawC": {
+        "id": "2qTYkMZ8qtOcyEgD5LTawC",
+        "name": "These Killing Times",
+        "artists": [
+          "Emma Ruth Rundle"
+        ],
+        "uri": "spotify:album:2qTYkMZ8qtOcyEgD5LTawC",
+        "album_id": "2qTYkMZ8qtOcyEgD5LTawC",
+        "album_name": "These Killing Times",
+        "release_date": "2026-09-18",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 8
+      },
+      "06CjF89lLSSiVWXujVVtQs": {
+        "id": "06CjF89lLSSiVWXujVVtQs",
+        "name": "Popstar",
+        "artists": [
+          "Tinashe"
+        ],
+        "uri": "spotify:album:06CjF89lLSSiVWXujVVtQs",
+        "album_id": "06CjF89lLSSiVWXujVVtQs",
+        "album_name": "Popstar",
+        "release_date": "2026-09-25",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 16
+      },
+      "5FjFRlo7diqzHNpVz5wJCt": {
+        "id": "5FjFRlo7diqzHNpVz5wJCt",
+        "name": "Live at Carnegie Hall",
+        "artists": [
+          "Cameron Winter"
+        ],
+        "uri": "spotify:album:5FjFRlo7diqzHNpVz5wJCt",
+        "album_id": "5FjFRlo7diqzHNpVz5wJCt",
+        "album_name": "Live at Carnegie Hall",
+        "release_date": "2026-10-09",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 12
+      },
+      "6lMOCr0XfcaUBLvF74SKtP": {
+        "id": "6lMOCr0XfcaUBLvF74SKtP",
+        "name": "Decay",
+        "artists": [
+          "Godflesh"
+        ],
+        "uri": "spotify:album:6lMOCr0XfcaUBLvF74SKtP",
+        "album_id": "6lMOCr0XfcaUBLvF74SKtP",
+        "album_name": "Decay",
+        "release_date": "2026-09-25",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 6
+      },
+      "0JICUfSKOdGqzE9FJSrNci": {
+        "id": "0JICUfSKOdGqzE9FJSrNci",
+        "name": "Dopamine Chamber",
+        "artists": [
+          "Fontaines D.C."
+        ],
+        "uri": "spotify:album:0JICUfSKOdGqzE9FJSrNci",
+        "album_id": "0JICUfSKOdGqzE9FJSrNci",
+        "album_name": "Dopamine Chamber",
+        "release_date": "2026-10-16",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 11
+      },
+      "4HLo8X3jcJpPXQpHpkvJak": {
+        "id": "4HLo8X3jcJpPXQpHpkvJak",
+        "name": "She’s the Best",
+        "artists": [
+          "Troye Sivan"
+        ],
+        "uri": "spotify:album:4HLo8X3jcJpPXQpHpkvJak",
+        "album_id": "4HLo8X3jcJpPXQpHpkvJak",
+        "album_name": "She’s the Best",
+        "release_date": "2026-10-09",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 12
+      },
+      "5QU2B5YghYinEDhsetY6oo": {
+        "id": "5QU2B5YghYinEDhsetY6oo",
+        "name": "Do Not Dare To Dream",
+        "artists": [
+          "Teenage Fanclub"
+        ],
+        "uri": "spotify:album:5QU2B5YghYinEDhsetY6oo",
+        "album_id": "5QU2B5YghYinEDhsetY6oo",
+        "album_name": "Do Not Dare To Dream",
+        "release_date": "2026-10-09",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 10
+      },
+      "3De7Ues320SIjGCaz5b6fX": {
+        "id": "3De7Ues320SIjGCaz5b6fX",
+        "name": "No Bad Memories",
+        "artists": [
+          "The Avalanches"
+        ],
+        "uri": "spotify:album:3De7Ues320SIjGCaz5b6fX",
+        "album_id": "3De7Ues320SIjGCaz5b6fX",
+        "album_name": "No Bad Memories",
+        "release_date": "2026-10-16",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 31
+      },
+      "2eoLkddmrf8ZtNFAhluX0g": {
+        "id": "2eoLkddmrf8ZtNFAhluX0g",
+        "name": "Confirmation!",
+        "artists": [
+          "Logic1000"
+        ],
+        "uri": "spotify:album:2eoLkddmrf8ZtNFAhluX0g",
+        "album_id": "2eoLkddmrf8ZtNFAhluX0g",
+        "album_name": "Confirmation!",
+        "release_date": "2026-10-02",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 10
+      },
+      "0rqyaE19Aj47roRdxNDixw": {
+        "id": "0rqyaE19Aj47roRdxNDixw",
+        "name": "Cooked",
+        "artists": [
+          "Oren Ambarchi"
+        ],
+        "uri": "spotify:album:0rqyaE19Aj47roRdxNDixw",
+        "album_id": "0rqyaE19Aj47roRdxNDixw",
+        "album_name": "Cooked",
+        "release_date": "2026-09-25",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 2
+      },
+      "354hclDfb4GX3gIXwYknTL": {
+        "id": "354hclDfb4GX3gIXwYknTL",
+        "name": "I think I spoke too soon",
+        "artists": [
+          "Rachel Chinouriri"
+        ],
+        "uri": "spotify:album:354hclDfb4GX3gIXwYknTL",
+        "album_id": "354hclDfb4GX3gIXwYknTL",
+        "album_name": "I think I spoke too soon",
+        "release_date": "2026-10-16",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 12
+      },
+      "4Qy4QeE6QL941JsIyEVqF2": {
+        "id": "4Qy4QeE6QL941JsIyEVqF2",
+        "name": "FUDGE",
+        "artists": [
+          "Michael Kiwanuka"
+        ],
+        "uri": "spotify:album:4Qy4QeE6QL941JsIyEVqF2",
+        "album_id": "4Qy4QeE6QL941JsIyEVqF2",
+        "album_name": "FUDGE",
+        "release_date": "2026-10-23",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 12
+      },
+      "1BYliQLIbtADojb9uv37qB": {
+        "id": "1BYliQLIbtADojb9uv37qB",
+        "name": "KOOL FAITH / LOOSIES II",
+        "artists": [
+          "They Are Gutting a Body of Water"
+        ],
+        "uri": "spotify:album:1BYliQLIbtADojb9uv37qB",
+        "album_id": "1BYliQLIbtADojb9uv37qB",
+        "album_name": "KOOL FAITH / LOOSIES II",
+        "release_date": "2026-10-16",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 29
+      },
+      "6fHv4lP1mfXizl1StQkRLU": {
+        "id": "6fHv4lP1mfXizl1StQkRLU",
+        "name": "Stick Around For Tea",
+        "artists": [
+          "Worldpeace DMT"
+        ],
+        "uri": "spotify:album:6fHv4lP1mfXizl1StQkRLU",
+        "album_id": "6fHv4lP1mfXizl1StQkRLU",
+        "album_name": "Stick Around For Tea",
+        "release_date": "2026-10-16",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 12
+      },
+      "7tIVbLtTqWrlTnoPiLLA1R": {
+        "id": "7tIVbLtTqWrlTnoPiLLA1R",
+        "name": "At Work In The Fields Of The Bomb",
+        "artists": [
+          "Deafheaven"
+        ],
+        "uri": "spotify:album:7tIVbLtTqWrlTnoPiLLA1R",
+        "album_id": "7tIVbLtTqWrlTnoPiLLA1R",
+        "album_name": "At Work In The Fields Of The Bomb",
+        "release_date": "2026-10-09",
+        "release_date_precision": "day",
+        "album_type": "single",
+        "total_tracks": 3
+      },
+      "04vD00822fgNjeKsJTldbT": {
+        "id": "04vD00822fgNjeKsJTldbT",
+        "name": "Jazz dreams",
+        "artists": [
+          "Fine"
+        ],
+        "uri": "spotify:album:04vD00822fgNjeKsJTldbT",
+        "album_id": "04vD00822fgNjeKsJTldbT",
+        "album_name": "Jazz dreams",
+        "release_date": "2026-10-23",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 13
+      },
+      "5VHfVW8PISNYyVG9Hb4G2Y": {
+        "id": "5VHfVW8PISNYyVG9Hb4G2Y",
+        "name": "Follow The Light",
+        "artists": [
+          "June McDoom"
+        ],
+        "uri": "spotify:album:5VHfVW8PISNYyVG9Hb4G2Y",
+        "album_id": "5VHfVW8PISNYyVG9Hb4G2Y",
+        "album_name": "Follow The Light",
+        "release_date": "2026-10-16",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 12
+      },
+      "53a19c7TkUcgvZ1lnPLQCr": {
+        "id": "53a19c7TkUcgvZ1lnPLQCr",
+        "name": "Autosmile",
+        "artists": [
+          "@"
+        ],
+        "uri": "spotify:album:53a19c7TkUcgvZ1lnPLQCr",
+        "album_id": "53a19c7TkUcgvZ1lnPLQCr",
+        "album_name": "Autosmile",
+        "release_date": "2026-10-16",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 11
+      },
+      "6dbpTliEiGiQF6qphsDv2F": {
+        "id": "6dbpTliEiGiQF6qphsDv2F",
+        "name": "From The Toolkit Of Lovers",
+        "artists": [
+          "Loidis"
+        ],
+        "uri": "spotify:album:6dbpTliEiGiQF6qphsDv2F",
+        "album_id": "6dbpTliEiGiQF6qphsDv2F",
+        "album_name": "From The Toolkit Of Lovers",
+        "release_date": "2026-10-23",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 12
+      },
+      "52lzfH80ON0jSqt1NkKsOQ": {
+        "id": "52lzfH80ON0jSqt1NkKsOQ",
+        "name": "The Age Of Everything",
+        "artists": [
+          "Johnny Marr"
+        ],
+        "uri": "spotify:album:52lzfH80ON0jSqt1NkKsOQ",
+        "album_id": "52lzfH80ON0jSqt1NkKsOQ",
+        "album_name": "The Age Of Everything",
+        "release_date": "2026-10-02",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 10
+      },
+      "3HaXEC1Zfo0zM6OCqdpofT": {
+        "id": "3HaXEC1Zfo0zM6OCqdpofT",
+        "name": "ZIRP!",
+        "artists": [
+          "DIIV"
+        ],
+        "uri": "spotify:album:3HaXEC1Zfo0zM6OCqdpofT",
+        "album_id": "3HaXEC1Zfo0zM6OCqdpofT",
+        "album_name": "ZIRP!",
+        "release_date": "2026-10-30",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 11
+      },
+      "4iAUrFmilfatLq7lBeH29p": {
+        "id": "4iAUrFmilfatLq7lBeH29p",
+        "name": "From the Dark",
+        "artists": [
+          "Tony Iommi",
+          "Jorn"
+        ],
+        "uri": "spotify:album:4iAUrFmilfatLq7lBeH29p",
+        "album_id": "4iAUrFmilfatLq7lBeH29p",
+        "album_name": "From the Dark",
+        "release_date": "2026-10-23",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 8
+      },
+      "0da8HogwCCHMOcDSCVsOd8": {
+        "id": "0da8HogwCCHMOcDSCVsOd8",
+        "name": "Believe You Me",
+        "artists": [
+          "Mackeeper"
+        ],
+        "uri": "spotify:album:0da8HogwCCHMOcDSCVsOd8",
+        "album_id": "0da8HogwCCHMOcDSCVsOd8",
+        "album_name": "Believe You Me",
+        "release_date": "2026-10-16",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 13
+      },
+      "0o3Zhp5zTfwhgCjPxPYZOj": {
+        "id": "0o3Zhp5zTfwhgCjPxPYZOj",
+        "name": "What's In Between",
+        "artists": [
+          "Radio Free Alice"
+        ],
+        "uri": "spotify:album:0o3Zhp5zTfwhgCjPxPYZOj",
+        "album_id": "0o3Zhp5zTfwhgCjPxPYZOj",
+        "album_name": "What's In Between",
+        "release_date": "2026-10-30",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 11
+      },
+      "5ma4Jeo1KwJXQpBOKkq2PF": {
+        "id": "5ma4Jeo1KwJXQpBOKkq2PF",
+        "name": "Late Loop",
+        "artists": [
+          "Andy Stott"
+        ],
+        "uri": "spotify:album:5ma4Jeo1KwJXQpBOKkq2PF",
+        "album_id": "5ma4Jeo1KwJXQpBOKkq2PF",
+        "album_name": "Late Loop",
+        "release_date": "2026-10-30",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 8
+      },
+      "3yKyFJwczUuyNdu67GyLNy": {
+        "id": "3yKyFJwczUuyNdu67GyLNy",
+        "name": "What To Make Of These Mortal Hands",
+        "artists": [
+          "Dis Fig"
+        ],
+        "uri": "spotify:album:3yKyFJwczUuyNdu67GyLNy",
+        "album_id": "3yKyFJwczUuyNdu67GyLNy",
+        "album_name": "What To Make Of These Mortal Hands",
+        "release_date": "2026-10-23",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 11
+      },
+      "6rkiieHSmjekjpj5OZ05wQ": {
+        "id": "6rkiieHSmjekjpj5OZ05wQ",
+        "name": "Burning Song",
+        "artists": [
+          "Kali Malone"
+        ],
+        "uri": "spotify:album:6rkiieHSmjekjpj5OZ05wQ",
+        "album_id": "6rkiieHSmjekjpj5OZ05wQ",
+        "album_name": "Burning Song",
+        "release_date": "2026-10-30",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 7
+      },
+      "1etlSexyJijLqtLBRK3nxi": {
+        "id": "1etlSexyJijLqtLBRK3nxi",
+        "name": "Everything in Readiness",
+        "artists": [
+          "Shovel Dance Collective"
+        ],
+        "uri": "spotify:album:1etlSexyJijLqtLBRK3nxi",
+        "album_id": "1etlSexyJijLqtLBRK3nxi",
+        "album_name": "Everything in Readiness",
+        "release_date": "2026-10-23",
+        "release_date_precision": "day",
+        "album_type": "album",
+        "total_tracks": 11
+      }
+    },
+    "errors": {}
+  },
+  "candidate_feeds": {
+    "hoh-main": {
+      "url": "https://hardofhearingmagazine.com/feed/",
+      "entries": [
+        {
+          "title": "Tracks 6th November 2026, ft. 1000 Rabbits, Another Country $$$$ and more.",
+          "url": "https://hardofhearingmagazine.com/2026/11/06/tracks-6th-november-2026-ft-1000-rabbits-another-country-and-more/",
+          "published_at": "2026-11-06T10:00:00+00:00"
+        },
+        {
+          "title": "The Great Escape gears up to launch its First Fifty.",
+          "url": "https://hardofhearingmagazine.com/2026/11/05/the-great-escape-gears-up-to-launch-its-first-fifty-on-14th-november/",
+          "published_at": "2026-11-05T13:56:16+00:00"
+        },
+        {
+          "title": "October Roundup: Key releases from PISS, HMLTD, Cameron Winter and more.",
+          "url": "https://hardofhearingmagazine.com/2026/11/05/october-roundup-key-releases-from-hmltd-cameron-winter-silverwingkiller-and-more/",
+          "published_at": "2026-11-05T10:00:00+00:00"
+        },
+        {
+          "title": "“Having this outlet always feels therapeutic:” Sarah Meth in Conversation.",
+          "url": "https://hardofhearingmagazine.com/2026/11/03/having-this-outlet-always-feels-therapeutic-sarah-meth-in-conversation/",
+          "published_at": "2026-11-03T10:00:00+00:00"
+        },
+        {
+          "title": "RIP Magic live up to the hype on ‘1,2,3’.",
+          "url": "https://hardofhearingmagazine.com/2026/11/02/rip-magic-live-up-to-the-hype-on-123/",
+          "published_at": "2026-11-02T10:00:00+00:00"
+        },
+        {
+          "title": "Tracks 30th October 2026, ft. KEG, Kiosk and thredd.",
+          "url": "https://hardofhearingmagazine.com/2026/10/30/tracks-30th-october-2026-ft-keg-kiosk-and-thredd/",
+          "published_at": "2026-10-30T10:02:28+00:00"
+        },
+        {
+          "title": "“We wanted to make this kind of music for a very long time:” Introducing Bramwell.",
+          "url": "https://hardofhearingmagazine.com/2026/10/29/we-wanted-to-make-this-kind-of-music-for-a-very-long-time-introducing-bramwell/",
+          "published_at": "2026-10-29T14:00:00+00:00"
+        },
+        {
+          "title": "Sarah Meth exposes an intoxicating poignancy on ‘Something Shameful’.",
+          "url": "https://hardofhearingmagazine.com/2026/10/29/sarah-meth-exposes-an-intoxicating-poignancy-on-something-shameful/",
+          "published_at": "2026-10-29T10:00:00+00:00"
+        },
+        {
+          "title": "“If I just listen to The Smiths, it will all fall into place”: Radio Free Alice in Conversation.",
+          "url": "https://hardofhearingmagazine.com/2026/10/28/if-i-just-listen-to-the-smiths-it-will-all-fall-into-place-radio-free-alice-in-conversation/",
+          "published_at": "2026-10-28T13:00:00+00:00"
+        },
+        {
+          "title": "“We’ve always tried to make the most of what we have available”: Troutflies in Conversation.",
+          "url": "https://hardofhearingmagazine.com/2026/10/28/weve-always-tried-to-make-the-most-of-what-we-have-available-troutflies-in-conversation/",
+          "published_at": "2026-10-28T10:00:00+00:00"
+        },
+        {
+          "title": "Looking ahead to Simple Things 2026, curated by Cobrah, Squid, Shabaka and Jeremy Deller.",
+          "url": "https://hardofhearingmagazine.com/2026/10/27/looking-ahead-to-simple-things-2026-curated-by-cobrah-squid-shabaka-and-jeremy-deller/",
+          "published_at": "2026-10-27T13:00:00+00:00"
+        },
+        {
+          "title": "“We’ve always been kind of a goth band at heart”: HMLTD on new album ‘Fangs’.",
+          "url": "https://hardofhearingmagazine.com/2026/10/27/weve-always-been-kind-of-a-goth-band-at-heart-hmltd-on-new-album-fangs/",
+          "published_at": "2026-10-27T10:00:00+00:00"
+        },
+        {
+          "title": "Left of the Dial 2026.",
+          "url": "https://hardofhearingmagazine.com/2026/10/26/left-of-the-dial-2026/",
+          "published_at": "2026-10-26T13:00:00+00:00"
+        },
+        {
+          "title": "“I suppose disco is about finding joy in yourself”: Pink Eye Club Q&A.",
+          "url": "https://hardofhearingmagazine.com/2026/10/23/i-suppose-disco-is-about-finding-joy-in-yourself-pink-eye-club-qa/",
+          "published_at": "2026-10-23T09:00:00+00:00"
+        },
+        {
+          "title": "Introducing Wyatt.",
+          "url": "https://hardofhearingmagazine.com/2026/10/22/introducing-wyatt/",
+          "published_at": "2026-10-22T09:00:00+00:00"
+        },
+        {
+          "title": "Sŵn Festival reaches dizzying new heights with stacked 2026 edition.",
+          "url": "https://hardofhearingmagazine.com/2026/10/20/swn-festival-reaches-dizzying-new-heights-with-stacked-2026-edition/",
+          "published_at": "2026-10-20T12:00:00+00:00"
+        },
+        {
+          "title": "Our Picks at Left of the Dial 2026.",
+          "url": "https://hardofhearingmagazine.com/2026/10/20/our-picks-at-left-of-the-dial-2026/",
+          "published_at": "2026-10-20T09:00:00+00:00"
+        },
+        {
+          "title": "Tracks 16th October 2026, ft. @, Dummy, Vehicle and more.",
+          "url": "https://hardofhearingmagazine.com/2026/10/16/tracks-16th-october-2026-ft-dummy-vehicle-and-more/",
+          "published_at": "2026-10-16T11:13:38+00:00"
+        },
+        {
+          "title": "“That’s the thing with DIY, people will always keep going”: In Conversation with Tummyache.",
+          "url": "https://hardofhearingmagazine.com/2026/10/15/thats-the-thing-with-diy-people-will-always-keep-going-in-conversation-with-tummyache/",
+          "published_at": "2026-10-15T09:00:00+00:00"
+        },
+        {
+          "title": "“We wanted to make music that wasn’t just what we’d always been playing”: Adult DVD Q&A.",
+          "url": "https://hardofhearingmagazine.com/2026/10/14/we-wanted-to-make-music-that-wasnt-just-what-wed-always-been-playing-adult-dvd-qa/",
+          "published_at": "2026-10-14T09:00:00+00:00"
+        }
+      ]
+    },
+    "soyoung-1": {
+      "url": "https://soyoungmagazine.com/feed/",
+      "entries": [
+        {
+          "title": "Manchester’s catbandcat Share ‘I Want the Future’",
+          "url": "https://soyoungmagazine.com/manchesters-catbandcat-share-i-want-the-future/",
+          "published_at": "2026-11-04T15:36:59+00:00"
+        },
+        {
+          "title": "Manchester’s Another Country $$$$ Share New Single ‘WANT’ and Announce EP",
+          "url": "https://soyoungmagazine.com/manchesters-another-country-share-new-single-want-and-announce-ep/",
+          "published_at": "2026-11-04T13:12:00+00:00"
+        },
+        {
+          "title": "Bathing Suits Return with New Single ‘Do Ya?’",
+          "url": "https://soyoungmagazine.com/bathing-suits-return-with-new-single-do-ya/",
+          "published_at": "2026-11-03T17:53:22+00:00"
+        },
+        {
+          "title": "New York’s Threshold Returns with New Single ‘Stillwater’ via untitled (recs)",
+          "url": "https://soyoungmagazine.com/new-yorls-threshold-returns-with-new-single-stillwater-via-untitled-recs/",
+          "published_at": "2026-10-28T08:14:23+00:00"
+        },
+        {
+          "title": "Heartworms Returns with New Single ‘Guess I’m Stuck In The Dark’ via Speedy Wunderground",
+          "url": "https://soyoungmagazine.com/heartworms-returns-with-new-single-guess-im-stuck-in-the-dark-via-speedy-wunderground/",
+          "published_at": "2026-10-27T10:31:48+00:00"
+        },
+        {
+          "title": "London’s Hank Share New Single ‘Tell The Leaves Not To Turn’ and Announce Album",
+          "url": "https://soyoungmagazine.com/londons-hank-share-new-single-tell-the-leaves-not-to-turn-and-announce-album/",
+          "published_at": "2026-10-22T09:41:30+00:00"
+        },
+        {
+          "title": "Leeds Duo Kiosk Share New Single ‘Baby Teeth’",
+          "url": "https://soyoungmagazine.com/leeds-duo-kiosk-share-new-single-baby-teeth/",
+          "published_at": "2026-10-21T15:44:42+00:00"
+        },
+        {
+          "title": "Nabihah Iqbal Returns with New Single ‘Heaven Can Wait’",
+          "url": "https://soyoungmagazine.com/nabihah-iqbal-returns-with-new-single-heaven-can-wait/",
+          "published_at": "2026-10-21T15:33:31+00:00"
+        },
+        {
+          "title": "Tokyo’s bed Share New Single ‘ズーキッド｜Zookid’",
+          "url": "https://soyoungmagazine.com/tokyos-bed-share-new-single-%e3%82%ba%e3%83%bc%e3%82%ad%e3%83%83%e3%83%89%ef%bd%9czookid/",
+          "published_at": "2026-10-15T15:00:34+00:00"
+        }
+      ]
+    },
+    "soyoung-2": {
+      "url": "https://soyoungmagazine.com/feed/?paged=2",
+      "entries": [
+        {
+          "title": "So Young at The Elephants Head: Little Grandad + Tanzana + Exit Stencil",
+          "url": "https://soyoungmagazine.com/so-young-at-the-elephants-head-little-grandad-tanzana-exit-stencil/",
+          "published_at": "2026-10-15T14:37:46+00:00"
+        },
+        {
+          "title": "So Young Issue Sixty-Four",
+          "url": "https://soyoungmagazine.com/so-young-issue-sixty-four/",
+          "published_at": "2026-10-15T08:27:17+00:00"
+        },
+        {
+          "title": "Leeds Quartet Vehicle Share Single ‘Miserable Vibes’ and Announce New Album",
+          "url": "https://soyoungmagazine.com/leeds-quartet-vehicle-share-single-miserable-vibes-and-announce-new-album/",
+          "published_at": "2026-10-13T13:02:21+00:00"
+        },
+        {
+          "title": "London’s green star Share ‘atomic paradise’ from New EP ‘silver + dust’",
+          "url": "https://soyoungmagazine.com/londons-green-star-share-atomic-paradise-from-new-ep-silver-dust/",
+          "published_at": "2026-10-13T11:45:53+00:00"
+        },
+        {
+          "title": "London’s Tooth Share New Single ‘Take Me As I Am’",
+          "url": "https://soyoungmagazine.com/londons-tooth-share-new-single-take-me-as-i-am/",
+          "published_at": "2026-10-12T12:17:59+00:00"
+        },
+        {
+          "title": "London Duo Lifeloose Share New Single ’07XXXXXXXXX’",
+          "url": "https://soyoungmagazine.com/london-duo-lifeloose-share-new-single-07xxxxxxxxx/",
+          "published_at": "2026-10-08T12:05:40+00:00"
+        },
+        {
+          "title": "studio20 Share Debut Single ‘Penny Drop’ via Communion Records",
+          "url": "https://soyoungmagazine.com/studio20-share-debut-single-penny-drop-via-communion-records/",
+          "published_at": "2026-10-07T09:55:50+00:00"
+        },
+        {
+          "title": "Gabriel Paschal Blake Shares Debut Single ‘Everythin’ About You’",
+          "url": "https://soyoungmagazine.com/gabriel-paschal-blake-shares-debut-single-everythin-about-you/",
+          "published_at": "2026-10-07T09:28:12+00:00"
+        }
+      ]
+    },
+    "hearing-albums-rss": {
+      "url": "https://www.hearingthings.co/tag/five-albums/rss/",
+      "entries": [
+        {
+          "title": "The Next Great Riot Grrrl Band",
+          "url": "https://www.hearingthings.co/the-next-great-riot-grrrl-band/",
+          "published_at": "2026-11-03T17:03:50+00:00"
+        },
+        {
+          "title": "Rap for Making Sense of A Decaying World",
+          "url": "https://www.hearingthings.co/rap-for-making-sense-of-a-decaying-world/",
+          "published_at": "2026-10-27T17:10:35+00:00"
+        },
+        {
+          "title": "An Existential Film Score That Sees Right Through You",
+          "url": "https://www.hearingthings.co/an-existential-film-score-that-sees-right-through-you/",
+          "published_at": "2026-10-20T15:30:18+00:00"
+        },
+        {
+          "title": "The Dancefloor Belongs to Tinashe",
+          "url": "https://www.hearingthings.co/the-dancefloor-belongs-to-tinashe/",
+          "published_at": "2026-10-13T15:32:57+00:00"
+        },
+        {
+          "title": "Self-Actualization for the Pop and Rock Girlies",
+          "url": "https://www.hearingthings.co/self-actualization-for-the-pop-and-rock-girlies/",
+          "published_at": "2026-10-06T14:55:08+00:00"
+        }
+      ]
+    },
+    "hearing-songs-rss": {
+      "url": "https://www.hearingthings.co/tag/five-songs/rss/",
+      "entries": [
+        {
+          "title": "The Five Spookiest Songs We Can Think Of",
+          "url": "https://www.hearingthings.co/the-five-spookiest-songs-we-can-think-of/",
+          "published_at": "2026-10-29T15:41:59+00:00"
+        },
+        {
+          "title": "Here's Your Song of the Spooky Season",
+          "url": "https://www.hearingthings.co/heres-your-song-of-the-spooky-season/",
+          "published_at": "2026-10-15T14:57:57+00:00"
+        }
+      ]
+    }
+  },
+  "candidate_articles": [
+    {
+      "url": "https://diymag.com/feature/the-neu-bulletin-silver-gore-1000-rabbits-dermot-henry",
+      "title": "The Neu Bulletin (Silver Gore, 1000 Rabbits, Dermot Henry)",
+      "published_at": "2026-11-06T12:22:00+00:00"
+    },
+    {
+      "url": "https://diymag.com/feature/the-neu-bulletin-bathing-suits-little-grandad-the-healing-power-of-horses",
+      "title": "The Neu Bulletin (Bathing Suits, Little Grandad, Big Red)",
+      "published_at": "2026-10-30T12:42:00+00:00"
+    },
+    {
+      "url": "https://diymag.com/feature/the-neu-bulletin-bed-piss-jo-from-school-and-more-2",
+      "title": "The Neu Bulletin (Kiosk, Hank, Big Softy and more!)",
+      "published_at": "2026-10-23T14:54:00+01:00"
+    },
+    {
+      "url": "https://stereogum.com/2515021/album-of-the-week-josh-johnson-animative/reviews/album-of-the-week",
+      "title": "Album Of The Week: Josh Johnson <em>Animative</em>",
+      "published_at": "2026-10-20T17:51:53+00:00"
+    },
+    {
+      "url": "https://stereogum.com/2514364/album-of-the-week-sophia-stel-the-greatest-album-of-all-time/reviews/album-of-the-week",
+      "title": "Album Of The Week: Sophia Stel <em>the greatest album of all time</em>",
+      "published_at": "2026-10-13T14:38:41+00:00"
+    },
+    {
+      "url": "https://stereogum.com/2516368/album-of-the-week-willi-carlisle-the-universal-bubba/reviews/album-of-the-week",
+      "title": "Album Of The Week: Willi Carlisle <em>The Universal Bubba</em>",
+      "published_at": "2026-11-03T17:46:10+00:00"
+    },
+    {
+      "url": "https://stereogum.com/category/reviews/album-of-the-week",
+      "title": "Album Of The Week Archives - Stereogum",
+      "published_at": null
+    }
+  ],
+  "tia_visible_track_metadata": [
+    {
+      "id": "153bbFmUR5lpdGoyGnyN9D",
+      "artist": "Lucy Park",
+      "title": "BLUE SASHIKO",
+      "album": "THREAD 27",
+      "release_date": "2026-08-28",
+      "album_id": "0XUnBMVWkhIM3gO3SiPC3o",
+      "album_type": "single",
+      "url": "https://open.spotify.com/track/153bbFmUR5lpdGoyGnyN9D"
+    },
+    {
+      "id": "6W0tPbrogUy2E0BAY2AkUn",
+      "artist": "Deki Alem",
+      "title": "Pretty Toes",
+      "album": "Pretty Toes",
+      "release_date": "2026-10-22",
+      "album_id": "4GOIvl4L0hHHeKtdwYTROX",
+      "album_type": "single",
+      "url": "https://open.spotify.com/track/6W0tPbrogUy2E0BAY2AkUn"
+    },
+    {
+      "id": "3K44mxnFOVgHwFWMeRKrbd",
+      "artist": "Nabihah Iqbal",
+      "title": "Heaven Can Wait",
+      "album": "Heaven Can Wait",
+      "release_date": "2026-10-20",
+      "album_id": "1vSuOpRhrkhH8cRLBBHMdd",
+      "album_type": "single",
+      "url": "https://open.spotify.com/track/3K44mxnFOVgHwFWMeRKrbd"
+    },
+    {
+      "id": "4DJRiC0S5kakXkcHqUZ3zF",
+      "artist": "Oxis, torr",
+      "title": "Grey Mullet (Flip)",
+      "album": "Dance Fish 1",
+      "release_date": "2026-10-09",
+      "album_id": "0pI9BQaIXrxxOUZWTCg0Q2",
+      "album_type": "single",
+      "url": "https://open.spotify.com/track/4DJRiC0S5kakXkcHqUZ3zF"
+    },
+    {
+      "id": "3TUJkCw8IXrFs0CiRF8CDI",
+      "artist": "Font",
+      "title": "Punish Task",
+      "album": "Punish Task",
+      "release_date": "2026-10-07",
+      "album_id": "62dyXN1a2E9WSp5wuGLsf7",
+      "album_type": "single",
+      "url": "https://open.spotify.com/track/3TUJkCw8IXrFs0CiRF8CDI"
+    },
+    {
+      "id": "2infXICqVSUM3bbGSOgFOY",
+      "artist": "BICEP, SOARR",
+      "title": "Air",
+      "album": "Air / Lemonder / Viper",
+      "release_date": "2026-09-25",
+      "album_id": "1nr62onEOu3YeRQGqhvX0q",
+      "album_type": "single",
+      "url": "https://open.spotify.com/track/2infXICqVSUM3bbGSOgFOY"
+    }
+  ],
+  "candidate_metadata": [
+    {
+      "kind": "track",
+      "artist": "Kiosk",
+      "title": "Baby Teeth",
+      "id": "4mhH137pWiEqSxSL1B6f9Z",
+      "url": "https://open.spotify.com/track/4mhH137pWiEqSxSL1B6f9Z",
+      "release_date": "2026-10-21",
+      "album_type": "single",
+      "total_tracks": 1
+    },
+    {
+      "kind": "track",
+      "artist": "Heartworms",
+      "title": "Guess I'm Stuck In The Dark",
+      "id": "6vhGYTtmSsk2JsCjO4Ngp0",
+      "url": "https://open.spotify.com/track/6vhGYTtmSsk2JsCjO4Ngp0",
+      "release_date": "2026-10-26",
+      "album_type": "single",
+      "total_tracks": 1
+    },
+    {
+      "kind": "track",
+      "artist": "Another Country $$$$",
+      "title": "WANT",
+      "id": "2tUG60GZjYMbZTYFBBSvw7",
+      "url": "https://open.spotify.com/track/2tUG60GZjYMbZTYFBBSvw7",
+      "release_date": "2026-11-04",
+      "album_type": "single",
+      "total_tracks": 1
+    },
+    {
+      "kind": "track",
+      "artist": "The Healing Power of Horses",
+      "title": "xstick_xstick",
+      "id": "3Wwrx1akChkCEsBU9Ix5Qd",
+      "url": "https://open.spotify.com/track/3Wwrx1akChkCEsBU9Ix5Qd",
+      "release_date": "2026-10-27",
+      "album_type": "single",
+      "total_tracks": 1
+    },
+    {
+      "kind": "album",
+      "artist": "Radio Free Alice",
+      "title": "What's In Between",
+      "id": "0o3Zhp5zTfwhgCjPxPYZOj",
+      "url": "https://open.spotify.com/album/0o3Zhp5zTfwhgCjPxPYZOj",
+      "release_date": "2026-10-30",
+      "album_type": "album",
+      "total_tracks": 11
+    },
+    {
+      "kind": "album",
+      "artist": "RIP Magic",
+      "title": "1,2,3",
+      "id": "1tMPaXMpEEWTYeDEiAlcVv",
+      "url": "https://open.spotify.com/album/1tMPaXMpEEWTYeDEiAlcVv",
+      "release_date": "2026-10-30",
+      "album_type": "album",
+      "total_tracks": 12
+    },
+    {
+      "kind": "album",
+      "artist": "HMLTD",
+      "title": "FANGS",
+      "id": "5wkVUK1l05V4kXvVcWwNS7",
+      "url": "https://open.spotify.com/album/5wkVUK1l05V4kXvVcWwNS7",
+      "release_date": "2026-10-23",
+      "album_type": "album",
+      "total_tracks": 11
+    },
+    {
+      "kind": "album",
+      "artist": "Sophia Stel",
+      "title": "the greatest album of all time",
+      "id": "604KxCjle0KCw0VXdoMNgj",
+      "url": "https://open.spotify.com/album/604KxCjle0KCw0VXdoMNgj",
+      "release_date": "2026-10-16",
+      "album_type": "album",
+      "total_tracks": 12
+    }
+  ],
+  "bandcamp_coverage": {
+    "subpop": {
+      "url": "https://subpop.bandcamp.com/music",
+      "serialized_item_count": 782,
+      "visible_card_count": 16,
+      "visible_cards_absent_by_url_from_serialized_list": [
+        {
+          "text": [
+            "Harmacy (30th Anniversary Expanded Edition)",
+            "Sebadoh"
+          ],
+          "urls": [
+            "https://sebadoh.bandcamp.com/album/harmacy-30th-anniversary-expanded-edition?label=200780738&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "Splendor & Misery (Anniversary X)",
+            "clipping."
+          ],
+          "urls": [
+            "https://clppng.bandcamp.com/album/splendor-misery-anniversary-x-1?label=200780738&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "The Holy Cross Tigers",
+            "Twisted Teens"
+          ],
+          "urls": [
+            "https://twistedteens.bandcamp.com/album/the-holy-cross-tigers?label=200780738&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "Curse",
+            "Hannah Jadagu"
+          ],
+          "urls": [
+            "https://hannahjadagu.bandcamp.com/album/curse?label=200780738&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "Etcetera",
+            "The Gits"
+          ],
+          "urls": [
+            "https://thegits.bandcamp.com/album/etcetera-1?label=200780738&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "you made me / skin on linen",
+            "PISS"
+          ],
+          "urls": [
+            "https://pisstheband.bandcamp.com/album/you-made-me-skin-on-linen?label=200780738&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "Creek",
+            "waterbaby"
+          ],
+          "urls": [
+            "https://waterbabyonline.bandcamp.com/album/creek?label=200780738&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "It's a Style Sport",
+            "Shabazz Palaces"
+          ],
+          "urls": [
+            "https://shabazzpalaces.bandcamp.com/album/its-a-style-sport-1?label=200780738&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "The X-panded Universe",
+            "FATHER JOHN MISTY"
+          ],
+          "urls": [
+            "https://fatherjohnmisty.bandcamp.com/album/the-x-panded-universe?label=200780738&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "Hen's Teeth (Deluxe Edition)",
+            "Iron & Wine"
+          ],
+          "urls": [
+            "https://ironandwine.bandcamp.com/album/hens-teeth-deluxe-edition?label=200780738&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "Belinda",
+            "Σtella"
+          ],
+          "urls": [
+            "https://stellawithasigma.bandcamp.com/album/belinda?label=200780738&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "Free Electricity",
+            "The GO"
+          ],
+          "urls": [
+            "https://listentothego.bandcamp.com/album/free-electricity?label=200780738&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "Maximum MN",
+            "Various Artists"
+          ],
+          "urls": [
+            "/album/maximum-mn"
+          ]
+        },
+        {
+          "text": [
+            "I'll Believe in Anything (Trixie Mattel Remix)",
+            "Wolf Parade, Trixie Mattel"
+          ],
+          "urls": [
+            "https://wolfparade.bandcamp.com/album/ill-believe-in-anything-trixie-mattel-remix?label=200780738&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "I've Missed You All These Years",
+            "Sera Cahoone"
+          ],
+          "urls": [
+            "https://seracahoone.bandcamp.com/album/ive-missed-you-all-these-years?label=200780738&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "ULTIMATE LOVE FOREVER",
+            "Lex Walton"
+          ],
+          "urls": [
+            "https://youthagainstsatan.bandcamp.com/album/ultimate-love-forever?label=200780738&tab=music"
+          ]
+        }
+      ],
+      "inspected_serialized_prefix_release_dates": [
+        {
+          "position": 1,
+          "artist": "Sweeping Promises",
+          "title": "You Say I Romanticize",
+          "url": "https://sweepingpromises.bandcamp.com/album/you-say-i-romanticize?label=200780738&tab=music",
+          "release_date": "2026-08-14T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 10,
+          "kind": "album",
+          "in_window": false
+        },
+        {
+          "position": 2,
+          "artist": "Deep Sea Diver",
+          "title": "Teardrop",
+          "url": "https://thedeepseadiver.bandcamp.com/album/teardrop?label=200780738&tab=music",
+          "release_date": "2026-07-14T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 1,
+          "kind": "track",
+          "in_window": false
+        },
+        {
+          "position": 3,
+          "artist": "The Head And The Heart",
+          "title": "Live at Neumos (2011)",
+          "url": "https://theheadandtheheart.bandcamp.com/album/live-at-neumos-2011?label=200780738&tab=music",
+          "release_date": "2026-07-10T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 13,
+          "kind": "album",
+          "in_window": false
+        },
+        {
+          "position": 4,
+          "artist": "Nation of Language",
+          "title": "Tougher Than the Rest",
+          "url": "https://nationoflanguage.bandcamp.com/album/tougher-than-the-rest?label=200780738&tab=music",
+          "release_date": "2026-07-07T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 2,
+          "kind": "track",
+          "in_window": false
+        },
+        {
+          "position": 5,
+          "artist": "Downtown Boys",
+          "title": "Public Luxury",
+          "url": "https://downtownboys.bandcamp.com/album/public-luxury?label=200780738&tab=music",
+          "release_date": "2026-06-26T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 11,
+          "kind": "album",
+          "in_window": false
+        },
+        {
+          "position": 6,
+          "artist": "Girl and Girl",
+          "title": "Hell + It's Dead",
+          "url": "https://girlandgirl.bandcamp.com/album/hell-its-dead?label=200780738&tab=music",
+          "release_date": "2026-06-25T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 2,
+          "kind": "track",
+          "in_window": false
+        },
+        {
+          "position": 7,
+          "artist": "Cartel Madras and Jide",
+          "title": "EVIDENT 2 ME",
+          "url": "https://cartelmadras.bandcamp.com/album/evident-2-me?label=200780738&tab=music",
+          "release_date": "2026-06-18T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 1,
+          "kind": "track",
+          "in_window": false
+        },
+        {
+          "position": 8,
+          "artist": "SLIFT",
+          "title": "FANTASIA",
+          "url": "https://slift.bandcamp.com/album/fantasia?label=200780738&tab=music",
+          "release_date": "2026-06-05T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 8,
+          "kind": "album",
+          "in_window": false
+        },
+        {
+          "position": 9,
+          "artist": "The Bug Club",
+          "title": "Every Single Muscle",
+          "url": "https://thebugclub.bandcamp.com/album/every-single-muscle?label=200780738&tab=music",
+          "release_date": "2026-05-29T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 18,
+          "kind": "album",
+          "in_window": false
+        },
+        {
+          "position": 10,
+          "artist": "Telehealth",
+          "title": "Green World Image",
+          "url": "https://telehealth.bandcamp.com/album/green-world-image?label=200780738&tab=music",
+          "release_date": "2026-05-15T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 13,
+          "kind": "album",
+          "in_window": false
+        },
+        {
+          "position": 11,
+          "artist": "Sera Cahoone",
+          "title": "Say Something",
+          "url": "https://seracahoone.bandcamp.com/album/say-something-2?label=200780738&tab=music",
+          "release_date": "2026-05-14T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 1,
+          "kind": "track",
+          "in_window": false
+        },
+        {
+          "position": 12,
+          "artist": "FATHER JOHN MISTY",
+          "title": "The Payoff",
+          "url": "https://fatherjohnmisty.bandcamp.com/album/the-payoff?label=200780738&tab=music",
+          "release_date": "2026-05-07T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 1,
+          "kind": "track",
+          "in_window": false
+        },
+        {
+          "position": 13,
+          "artist": "Weird Nightmare",
+          "title": "Hoopla",
+          "url": "https://weirdnightmare.bandcamp.com/album/hoopla?label=200780738&tab=music",
+          "release_date": "2026-05-01T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 10,
+          "kind": "album",
+          "in_window": false
+        },
+        {
+          "position": 14,
+          "artist": "SUNN O)))",
+          "title": "sunn O)))",
+          "url": "https://sunn.bandcamp.com/album/sunn-o-2?label=200780738&tab=music",
+          "release_date": "2026-04-03T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 6,
+          "kind": "album",
+          "in_window": false
+        },
+        {
+          "position": 15,
+          "artist": "Man Man and Fingers & The Outlaws",
+          "title": "So It Goes",
+          "url": "https://manmanbandband.bandcamp.com/album/so-it-goes?label=200780738&tab=music",
+          "release_date": "2026-03-30T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 1,
+          "kind": "track",
+          "in_window": false
+        },
+        {
+          "position": 16,
+          "artist": "Rogue Wave",
+          "title": "Descended Like Vultures (20th Anniversary Director's Cut)",
+          "url": "https://roguewave.bandcamp.com/album/descended-like-vultures-20th-anniversary-directors-cut?label=200780738&tab=music",
+          "release_date": "2026-03-27T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 20,
+          "kind": "album",
+          "in_window": false
+        },
+        {
+          "position": 17,
+          "artist": "Rogue Wave",
+          "title": "Out of the Shadow (Deluxe Edition)",
+          "url": "https://roguewave.bandcamp.com/album/out-of-the-shadow-deluxe-edition?label=200780738&tab=music",
+          "release_date": "2026-03-27T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 18,
+          "kind": "album",
+          "in_window": false
+        },
+        {
+          "position": 18,
+          "artist": "Band of Horses",
+          "title": "Everything All The Time (20th Anniversary Edition)",
+          "url": "https://bandofhorses.bandcamp.com/album/everything-all-the-time-20th-anniversary-edition?label=200780738&tab=music",
+          "release_date": "2026-03-20T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 24,
+          "kind": "album",
+          "in_window": false
+        },
+        {
+          "position": 19,
+          "artist": "waterbaby",
+          "title": "Memory Be a Blade",
+          "url": "https://waterbabyonline.bandcamp.com/album/memory-be-a-blade?label=200780738&tab=music",
+          "release_date": "2026-03-06T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 8,
+          "kind": "album",
+          "in_window": false
+        },
+        {
+          "position": 20,
+          "artist": "SPRINTS",
+          "title": "Trickle Down",
+          "url": "https://sprintsmusic.bandcamp.com/album/trickle-down?label=200780738&tab=music",
+          "release_date": "2026-03-03T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 1,
+          "kind": "track",
+          "in_window": false
+        }
+      ]
+    },
+    "sacredbonesrecords": {
+      "url": "https://sacredbonesrecords.bandcamp.com/music",
+      "serialized_item_count": 381,
+      "visible_card_count": 16,
+      "visible_cards_absent_by_url_from_serialized_list": [
+        {
+          "text": [
+            "Werwulf (Original Motion Picture Soundtrack)",
+            "Robin Carolan"
+          ],
+          "urls": [
+            "/album/werwulf-original-motion-picture-soundtrack"
+          ]
+        },
+        {
+          "text": [
+            "Live at Max’s Kansas City",
+            "Alan Vega"
+          ],
+          "urls": [
+            "https://alanvega.bandcamp.com/album/live-at-max-s-kansas-city?label=237579501&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "Bocca di Lupo and Mouth of the Wolf",
+            "Jozef Van Wissem & Jim Jarmusch"
+          ],
+          "urls": [
+            "https://jozefandjim.bandcamp.com/album/bocca-di-lupo-and-mouth-of-the-wolf?label=237579501&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "Lost Themes II Expanded 10th Anniversary Edition",
+            "John Carpenter"
+          ],
+          "urls": [
+            "https://johncarpentermusic.bandcamp.com/album/lost-themes-ii-expanded-10th-anniversary-edition?label=237579501&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "evidence",
+            "SPIKE FUCK"
+          ],
+          "urls": [
+            "https://spikefuck.bandcamp.com/album/evidence?label=237579501&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "Women Respond to Bass (Schwefelgelb Remix)",
+            "Sextile"
+          ],
+          "urls": [
+            "https://sextile.bandcamp.com/track/women-respond-to-bass-schwefelgelb-remix?label=237579501&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "Life in Small Spaces",
+            "Black Marble"
+          ],
+          "urls": [
+            "https://blackmarble.bandcamp.com/album/life-in-small-spaces?label=237579501&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "Cathedral",
+            "John Carpenter"
+          ],
+          "urls": [
+            "https://johncarpentermusic.bandcamp.com/album/cathedral?label=237579501&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "Movement",
+            "Gigi Masin"
+          ],
+          "urls": [
+            "https://masin.bandcamp.com/album/movement?label=237579501&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "Ammunition featuring Jean Dawson",
+            "SPELLLING"
+          ],
+          "urls": [
+            "https://spellling.bandcamp.com/album/ammunition-featuring-jean-dawson?label=237579501&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "Morning Star",
+            "Këkht Aräkh"
+          ],
+          "urls": [
+            "https://kekhtarakh.bandcamp.com/album/morning-star?label=237579501&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "Hard Hearted Woman",
+            "Ora Cogan"
+          ],
+          "urls": [
+            "https://oracogan.bandcamp.com/album/hard-hearted-woman?label=237579501&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "Marathon",
+            "Maria BC"
+          ],
+          "urls": [
+            "https://mariabc.bandcamp.com/album/marathon?label=237579501&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "All Worlds (Deluxe)",
+            "Lust For Youth & Croatian Amor"
+          ],
+          "urls": [
+            "https://croatianamor.bandcamp.com/album/all-worlds-deluxe?label=237579501&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "All Worlds (Deluxe)",
+            "Lust For Youth & Croatian Amor"
+          ],
+          "urls": [
+            "https://lustforyouth.bandcamp.com/album/all-worlds-deluxe?label=237579501&tab=music"
+          ]
+        },
+        {
+          "text": [
+            "URGH",
+            "Mandy, Indiana"
+          ],
+          "urls": [
+            "https://mandyindiana.bandcamp.com/album/urgh?label=237579501&tab=music"
+          ]
+        }
+      ],
+      "inspected_serialized_prefix_release_dates": [
+        {
+          "position": 1,
+          "artist": "Alan Vega",
+          "title": "Alan Vega",
+          "url": "https://alanvega.bandcamp.com/album/alan-vega?label=237579501&tab=music",
+          "release_date": "2026-01-23T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 8,
+          "kind": "album",
+          "in_window": false
+        },
+        {
+          "position": 2,
+          "artist": "Alan Vega",
+          "title": "Alan Vega Deluxe Edition",
+          "url": "https://alanvega.bandcamp.com/album/alan-vega-deluxe-edition?label=237579501&tab=music",
+          "release_date": "2026-01-23T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 15,
+          "kind": "album",
+          "in_window": false
+        },
+        {
+          "position": 3,
+          "artist": "Alan Vega",
+          "title": "Collision Drive",
+          "url": "https://alanvega.bandcamp.com/album/collision-drive?label=237579501&tab=music",
+          "release_date": "2026-01-23T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 9,
+          "kind": "album",
+          "in_window": false
+        },
+        {
+          "position": 4,
+          "artist": "SPELLLING",
+          "title": "Portrait of My Heart featuring Brendan Yates",
+          "url": "https://spellling.bandcamp.com/track/portrait-of-my-heart-featuring-brendan-yates?label=237579501&tab=music",
+          "release_date": "2026-01-21T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 1,
+          "kind": "track",
+          "in_window": false
+        },
+        {
+          "position": 5,
+          "artist": "Jim Jarmusch & Anika",
+          "title": "Father Mother Sister Brother (Original Music From The Film)",
+          "url": "https://anika.bandcamp.com/album/father-mother-sister-brother-original-music-from-the-film?label=237579501&tab=music",
+          "release_date": "2025-11-14T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 16,
+          "kind": "album",
+          "in_window": false
+        },
+        {
+          "position": 6,
+          "artist": "Jim Jarmusch & Anika",
+          "title": "Father Mother Sister Brother (Original Music From The Film)",
+          "url": "https://jimjarmusch.bandcamp.com/album/father-mother-sister-brother-original-music-from-the-film?label=237579501&tab=music",
+          "release_date": "2025-11-14T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 16,
+          "kind": "album",
+          "in_window": false
+        },
+        {
+          "position": 7,
+          "artist": "SPELLLING",
+          "title": "Destiny Arrives featuring Weyes Blood",
+          "url": "https://spellling.bandcamp.com/track/destiny-arrives-featuring-weyes-blood?label=237579501&tab=music",
+          "release_date": "2025-11-04T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 1,
+          "kind": "track",
+          "in_window": false
+        },
+        {
+          "position": 8,
+          "artist": "Hilary Woods",
+          "title": "Night CRIÚ",
+          "url": "https://hilarywoodsmusic.bandcamp.com/album/night-cri?label=237579501&tab=music",
+          "release_date": "2025-10-31T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 7,
+          "kind": "album",
+          "in_window": false
+        },
+        {
+          "position": 9,
+          "artist": "SPIKE FUCK",
+          "title": "Live from Underground",
+          "url": "https://spikefuck.bandcamp.com/album/live-from-underground?label=237579501&tab=music",
+          "release_date": "2025-10-17T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 6,
+          "kind": "album",
+          "in_window": false
+        },
+        {
+          "position": 10,
+          "artist": "John Carpenter, Cody Carpenter, and Daniel Davies",
+          "title": "Halloween Ends: Original Motion Picture Soundtrack (Expanded Edition)",
+          "url": "https://johncarpentermusic.bandcamp.com/album/halloween-ends-original-motion-picture-soundtrack-expanded-edition?label=237579501&tab=music",
+          "release_date": "2025-10-03T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 31,
+          "kind": "album",
+          "in_window": false
+        },
+        {
+          "position": 11,
+          "artist": "John Carpenter, Cody Carpenter, and Daniel Davies",
+          "title": "Halloween Kills: Original Motion Picture Soundtrack (Expanded Edition)",
+          "url": "https://johncarpentermusic.bandcamp.com/album/halloween-kills-original-motion-picture-soundtrack-expanded-edition?label=237579501&tab=music",
+          "release_date": "2025-10-03T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 45,
+          "kind": "album",
+          "in_window": false
+        },
+        {
+          "position": 12,
+          "artist": "John Carpenter, Cody Carpenter, and Daniel Davies",
+          "title": "Halloween: The Complete Expanded Collection",
+          "url": "https://johncarpentermusic.bandcamp.com/album/halloween-the-complete-expanded-collection?label=237579501&tab=music",
+          "release_date": "2025-10-03T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 121,
+          "kind": "album",
+          "in_window": false
+        },
+        {
+          "position": 13,
+          "artist": "Lathe of Heaven",
+          "title": "Aurora",
+          "url": "https://latheofheaven.bandcamp.com/album/aurora?label=237579501&tab=music",
+          "release_date": "2025-08-29T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 11,
+          "kind": "album",
+          "in_window": false
+        },
+        {
+          "position": 14,
+          "artist": "Molchat Doma",
+          "title": "Belaya Polosa Remixes",
+          "url": "https://domamolchat.bandcamp.com/album/belaya-polosa-remixes?label=237579501&tab=music",
+          "release_date": "2025-08-22T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 9,
+          "kind": "album",
+          "in_window": false
+        },
+        {
+          "position": 15,
+          "artist": "Marissa Nadler",
+          "title": "New Radiations",
+          "url": "https://marissanadler.bandcamp.com/album/new-radiations?label=237579501&tab=music",
+          "release_date": "2025-08-15T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 11,
+          "kind": "album",
+          "in_window": false
+        },
+        {
+          "position": 16,
+          "artist": "LD Deutsch",
+          "title": "Time, Myth and Matter",
+          "url": "https://lddeutsch.bandcamp.com/album/time-myth-and-matter?label=237579501&tab=music",
+          "release_date": "2025-05-20T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 0,
+          "kind": "track",
+          "in_window": false
+        },
+        {
+          "position": 17,
+          "artist": "John Carpenter",
+          "title": "Lost Themes 10th Anniversary Expanded Edition",
+          "url": "https://johncarpentermusic.bandcamp.com/album/lost-themes-10th-anniversary-expanded-edition?label=237579501&tab=music",
+          "release_date": "2025-05-09T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 11,
+          "kind": "album",
+          "in_window": false
+        },
+        {
+          "position": 18,
+          "artist": "SPIKE FUCK",
+          "title": "Eternity & Time",
+          "url": "https://spikefuck.bandcamp.com/track/eternity-time?label=237579501&tab=music",
+          "release_date": "2025-05-06T01:55:14+00:00",
+          "preorder": false,
+          "tracks": 1,
+          "kind": "track",
+          "in_window": false
+        },
+        {
+          "position": 19,
+          "artist": "Sextile",
+          "title": "yes, please.",
+          "url": "https://sextile.bandcamp.com/album/yes-please?label=237579501&tab=music",
+          "release_date": "2025-05-02T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 13,
+          "kind": "album",
+          "in_window": false
+        },
+        {
+          "position": 20,
+          "artist": "Anja Huwe",
+          "title": "PolarForest",
+          "url": "https://xmaldeutschland.bandcamp.com/album/polarforest?label=237579501&tab=music",
+          "release_date": "2025-04-29T00:00:00+00:00",
+          "preorder": false,
+          "tracks": 1,
+          "kind": "track",
+          "in_window": false
+        }
+      ]
+    }
+  },
+  "bandcamp_visible_release_metadata": [
+    {
+      "artist": "PISS",
+      "title": "you made me / skin on linen",
+      "url": "https://pisstheband.bandcamp.com/album/you-made-me-skin-on-linen",
+      "release_date": "2026-10-30T00:00:00+00:00",
+      "tracks": 15,
+      "preorder": false
+    },
+    {
+      "artist": "Twisted Teens",
+      "title": "The Holy Cross Tigers",
+      "url": "https://twistedteens.bandcamp.com/album/the-holy-cross-tigers",
+      "release_date": "2026-11-06T00:00:00+00:00",
+      "tracks": 13,
+      "preorder": false
+    },
+    {
+      "artist": "Hannah Jadagu",
+      "title": "Curse",
+      "url": "https://hannahjadagu.bandcamp.com/album/curse",
+      "release_date": "2026-11-04T00:00:00+00:00",
+      "tracks": 1,
+      "preorder": false
+    },
+    {
+      "artist": "SPIKE FUCK",
+      "title": "evidence",
+      "url": "https://spikefuck.bandcamp.com/album/evidence",
+      "release_date": "2026-10-02T00:00:00+00:00",
+      "tracks": 8,
+      "preorder": false
+    },
+    {
+      "artist": "Black Marble",
+      "title": "Life in Small Spaces",
+      "url": "https://blackmarble.bandcamp.com/album/life-in-small-spaces",
+      "release_date": "2026-08-21T00:00:00+00:00",
+      "tracks": 11,
+      "preorder": false
+    }
+  ]
+}

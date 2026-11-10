@@ -91,3 +91,35 @@ def test_source_failure_happens_before_any_album_write(tmp_path: Path) -> None:
 
     assert db.conn.execute("SELECT COUNT(*) FROM albums").fetchone()[0] == 0
     db.close()
+
+
+def test_album_only_refresh_never_records_label_singles_or_future_items(tmp_path: Path):
+    db = DB(str(tmp_path / "formats.db"))
+    db.init_schema()
+    now = datetime(2026, 11, 10, 12, tzinfo=UTC)
+    source = FixtureSource(
+        [
+            Track(
+                source_id="fixture_album", artist="Band", title="LP", kind="album", published_at=now
+            ),
+            Track(
+                source_id="fixture_album",
+                artist="Band",
+                title="Single",
+                kind="track",
+                published_at=now,
+            ),
+            Track(
+                source_id="fixture_album",
+                artist="Band",
+                title="Future",
+                kind="album",
+                published_at=now + timedelta(days=1),
+            ),
+        ]
+    )
+    result = discover_album_mentions(db, now=now, sources=[source])
+    assert result.fetched == 3 and result.fresh == 1
+    assert db.conn.execute("SELECT album FROM album_mentions").fetchall() == [("LP",)]
+    assert db.conn.execute("SELECT count(*) FROM tracks").fetchone()[0] == 0
+    db.close()

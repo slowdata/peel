@@ -1325,9 +1325,10 @@ class DB:
         title: str,
         source_url: str | None = None,
     ) -> None:
-        """Regista uma faixa que não foi encontrada no Spotify.
+        """Store a track pending matching or confirmed release metadata.
 
-        Útil para auditoria: depois podes rever quais faixas falharam matching.
+        Also used for future/undated releases: they can be retried without
+        consuming a review slot or creating musical feedback.
 
         Args:
             source_id: ID da fonte

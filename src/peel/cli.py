@@ -67,6 +67,7 @@ from peel.publication import (
 from peel.report import generate_weekly_html_report, generate_weekly_report
 from peel.scoring import SourceScore, build_source_overview, build_source_scores
 from peel.site_export import CANONICAL_PUBLIC_SELECTION_SINCE, export_site, make_album_resolver
+from peel.sources.bandcamp import fetch_release_details
 from peel.sources.registry import ACTIVE_SOURCES, source_label
 from peel.spotify_client import SpotifyClient, SpotifyReauthRequired
 from peel.state_sync import (
@@ -1384,8 +1385,17 @@ def albums_refresh(
             selected,
             resolver,
             cached_listen_urls=listen_cache,
-            novelty=NoveltyCheck(spotify_album=spotify.sp.album if spotify else None),
+            novelty=NoveltyCheck(
+                spotify_album=spotify.sp.album if spotify else None,
+                bandcamp_release=fetch_release_details if not dry_run else None,
+                reference_date=min(datetime.now(UTC).date(), reference.date()),
+            ),
         )
+        if dry_run:
+            console.print(
+                "Preview parcial: sem validação final dos links Spotify/Bandcamp, "
+                "não confirma datas e formatos de todos os candidatos."
+            )
         table = Table(title=f"Peel — Álbuns {target_week}")
         table.add_column("#", justify="right")
         table.add_column("Artist", style="bold")

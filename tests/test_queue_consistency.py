@@ -284,7 +284,12 @@ def test_real_client_readback_gates_db_history_telegram_and_reports(db, monkeypa
     client.sp.search.return_value = {
         "tracks": {
             "items": [
-                {"uri": "spotify:track:fresh", "name": "New", "artists": [{"name": "Artist"}]}
+                {
+                    "uri": "spotify:track:fresh",
+                    "name": "New",
+                    "artists": [{"name": "Artist"}],
+                    "album": {"release_date": datetime.now(UTC).date().isoformat()},
+                }
             ]
         }
     }

@@ -166,6 +166,34 @@ def mock_spotify_client():
             yield client, mock_sp_instance
 
 
+def test_search_keeps_release_metadata_without_extra_album_calls(mock_spotify_client):
+    client, sp = mock_spotify_client
+    sp.search.return_value = {
+        "tracks": {
+            "items": [
+                {
+                    "uri": "spotify:track:new",
+                    "name": "New",
+                    "artists": [{"name": "Artist"}],
+                    "album": {
+                        "name": "Album",
+                        "release_date": "2026-11-06",
+                        "release_date_precision": "day",
+                    },
+                    "external_ids": {"isrc": "ISRC123"},
+                }
+            ]
+        }
+    }
+    candidate = client.search_track("Artist", "New")[0]
+    assert candidate["release_date"] == "2026-11-06"
+    assert candidate["release_date_precision"] == "day"
+    assert candidate["album_name"] == "Album"
+    assert candidate["isrc"] == "ISRC123"
+    sp.album.assert_not_called()
+    sp.track.assert_not_called()
+
+
 class TestReadPlaylistItems:
     def test_playlist_track_uris_accepts_item_and_legacy_track(self, mock_spotify_client) -> None:
         client, mock_sp = mock_spotify_client

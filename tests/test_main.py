@@ -24,46 +24,28 @@ from peel.models import AlbumQueueItem, Track
 from peel.report import build_weekly_html_report
 from peel.scoring import SourceScore
 from peel.site_export import build_site_week_payload
-from peel.sources.bandcamp import BandcampLabel
 from peel.sources.rss import (
-    AquariumDrunkard,
-    ClashAlbumReviews,
-    ClashFirstTake,
-    ConsequenceMusic,
-    DIYAlbumReviews,
     GorillaVsBear,
     GuardianMusicAlbums,
-    KexpInOurHeadphones,
-    LineOfBestFitNews,
     NprNewMusicFridayStarting5,
-    PitchforkAlbumReviews,
-    PitchforkBestAlbums,
     PitchforkBNT,
-    PitchforkNews,
     StereogumNewMusic,
     TheQuietus,
-    TheQuietusFeedbacker,
     TheQuietusTracksOfMonth,
-    WeeklyListSource,
 )
 
 
 @pytest.fixture(autouse=True)
-def _disable_network_album_sources(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Evita rede nos testes de main; o registry valida que as sources estão activas."""
-    monkeypatch.setattr(PitchforkBestAlbums, "fetch", lambda self: [])
-    monkeypatch.setattr(PitchforkAlbumReviews, "fetch", lambda self: [])
-    monkeypatch.setattr(TheQuietusFeedbacker, "fetch", lambda self: [])
-    monkeypatch.setattr(PitchforkNews, "fetch", lambda self: [])
-    monkeypatch.setattr(LineOfBestFitNews, "fetch", lambda self: [])
-    monkeypatch.setattr(ConsequenceMusic, "fetch", lambda self: [])
-    monkeypatch.setattr(KexpInOurHeadphones, "fetch", lambda self: [])
-    monkeypatch.setattr(AquariumDrunkard, "fetch", lambda self: [])
-    monkeypatch.setattr(DIYAlbumReviews, "fetch", lambda self: [])
-    monkeypatch.setattr(ClashAlbumReviews, "fetch", lambda self: [])
-    monkeypatch.setattr(ClashFirstTake, "fetch", lambda self: [])
-    monkeypatch.setattr(BandcampLabel, "fetch", lambda self: [])
-    monkeypatch.setattr(WeeklyListSource, "fetch", lambda self: [])
+def _disable_unconfigured_network_sources(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Only explicitly configured fixtures may feed an integration test."""
+    from peel.sources.registry import active_sources
+
+    monkeypatch.setattr(
+        PitchforkBNT, "url", (Path(__file__).parent / "fixtures/pitchfork_feed.xml").as_uri()
+    )
+    for cls in {type(source) for source in active_sources()}:
+        if cls is not PitchforkBNT:  # two end-to-end tests parse a local RSS fixture
+            monkeypatch.setattr(cls, "fetch", lambda self: [])
 
 
 def _candidate(
@@ -214,6 +196,9 @@ class TestMainIntegration:
         # Mock do SpotifyClient: encontra sempre algo
         mock_sp = MagicMock()
 
+        # Old publication fixtures remain useful; simulated release dates are explicit.
+        monkeypatch.setattr(config_module.settings, "peel_max_source_item_age_days", 10000)
+
         def mock_search_track(artist, title, limit=5):
             """Mock simples: sempre devolve um candidato."""
             artist_slug = artist.lower().replace(" ", "_")
@@ -223,6 +208,7 @@ class TestMainIntegration:
                     "uri": f"spotify:track:{artist_slug}_{title_slug}",
                     "name": title,
                     "artists": [artist],
+                    "release_date": datetime.now(UTC).date().isoformat(),
                 }
             ]
 
@@ -357,7 +343,12 @@ class TestMainIntegration:
 
         mock_sp = MagicMock()
         mock_sp.search_track.return_value = [
-            {"uri": "spotify:track:dry", "name": "Track", "artists": ["Artist"]}
+            {
+                "uri": "spotify:track:dry",
+                "name": "Track",
+                "artists": ["Artist"],
+                "release_date": datetime.now(UTC).date().isoformat(),
+            }
         ]
         mock_sp.replace_playlist_items = MagicMock()
 
@@ -399,7 +390,12 @@ class TestMainIntegration:
         monkeypatch.setattr(config_module.settings, "db_path", str(db_path))
         mock_sp = MagicMock()
         mock_sp.search_track.return_value = [
-            {"uri": "spotify:track:replace-fail", "name": "Track", "artists": ["Artist"]}
+            {
+                "uri": "spotify:track:replace-fail",
+                "name": "Track",
+                "artists": ["Artist"],
+                "release_date": datetime.now(UTC).date().isoformat(),
+            }
         ]
         mock_sp.replace_playlist_items.side_effect = RuntimeError("Spotify indisponível")
 
@@ -443,6 +439,8 @@ class TestMainIntegration:
 
         mock_sp = MagicMock()
 
+        monkeypatch.setattr(config_module.settings, "peel_max_source_item_age_days", 10000)
+
         def mock_search_track(artist, title, limit=5):
             """Mock simples: encontra sempre algo."""
             return [
@@ -450,6 +448,7 @@ class TestMainIntegration:
                     "uri": f"spotify:track:{artist.lower()}_{title.lower()}",
                     "name": title,
                     "artists": [artist],
+                    "release_date": datetime.now(UTC).date().isoformat(),
                 }
             ]
 
@@ -588,6 +587,7 @@ class TestMainIntegration:
                 "uri": "spotify:track:registry",
                 "name": "Registry Track",
                 "artists": ["Registry Artist"],
+                "release_date": datetime.now(UTC).date().isoformat(),
             }
         ]
         mock_sp.replace_playlist_items = MagicMock()
@@ -688,7 +688,14 @@ class TestPlaylistSafetyCaps:
 
         mock_sp = MagicMock()
         mock_sp.search_track.side_effect = [
-            [{"uri": f"spotify:track:{idx}", "name": f"Track {idx}", "artists": ["Artist"]}]
+            [
+                {
+                    "uri": f"spotify:track:{idx}",
+                    "name": f"Track {idx}",
+                    "artists": ["Artist"],
+                    "release_date": datetime.now(UTC).date().isoformat(),
+                }
+            ]
             for idx in range(1, 4)
         ]
         mock_sp.replace_playlist_items = MagicMock()
@@ -741,6 +748,7 @@ class TestPlaylistSafetyCaps:
                     "uri": f"spotify:track:{idx}",
                     "name": f"Track {idx}",
                     "artists": [f"Artist {idx}"],
+                    "release_date": datetime.now(UTC).date().isoformat(),
                 }
             ]
             for idx in range(1, 5)
@@ -806,9 +814,30 @@ class TestPlaylistSafetyCaps:
         mock_sp.search_track.side_effect = [
             [],  # t1 → no match
             [],  # t2 → no match
-            [{"uri": "spotify:track:3", "name": "Track 3", "artists": ["Artist 3"]}],
-            [{"uri": "spotify:track:4", "name": "Track 4", "artists": ["Artist 4"]}],
-            [{"uri": "spotify:track:5", "name": "Track 5", "artists": ["Artist 5"]}],
+            [
+                {
+                    "uri": "spotify:track:3",
+                    "name": "Track 3",
+                    "artists": ["Artist 3"],
+                    "release_date": datetime.now(UTC).date().isoformat(),
+                }
+            ],
+            [
+                {
+                    "uri": "spotify:track:4",
+                    "name": "Track 4",
+                    "artists": ["Artist 4"],
+                    "release_date": datetime.now(UTC).date().isoformat(),
+                }
+            ],
+            [
+                {
+                    "uri": "spotify:track:5",
+                    "name": "Track 5",
+                    "artists": ["Artist 5"],
+                    "release_date": datetime.now(UTC).date().isoformat(),
+                }
+            ],
         ]
 
         with (
@@ -923,6 +952,7 @@ class TestPlaylistSafetyCaps:
                     "uri": "spotify:track:banned",
                     "name": "Banned Song",
                     "artists": ["Banned Artist"],
+                    "release_date": datetime.now(UTC).date().isoformat(),
                 }
             ]
         )
@@ -982,6 +1012,7 @@ class TestPlaylistSafetyCaps:
                     "uri": "spotify:track:good",
                     "name": "Good Song",
                     "artists": ["Artist"],
+                    "release_date": datetime.now(UTC).date().isoformat(),
                 }
             ]
         )
@@ -1029,7 +1060,14 @@ class TestPlaylistSafetyCaps:
 
         def search_track(artist, title, limit=5):
             uri = "spotify:track:shared" if title == "Consensus" else "spotify:track:single"
-            return [{"uri": uri, "name": title, "artists": [artist]}]
+            return [
+                {
+                    "uri": uri,
+                    "name": title,
+                    "artists": [artist],
+                    "release_date": datetime.now(UTC).date().isoformat(),
+                }
+            ]
 
         mock_sp = MagicMock()
         mock_sp.search_track = MagicMock(side_effect=search_track)
@@ -1069,7 +1107,14 @@ class TestPlaylistSafetyCaps:
 
         mock_sp = MagicMock()
         mock_sp.search_track = MagicMock(
-            return_value=[{"uri": "spotify:track:1", "name": "Track", "artists": ["Artist"]}]
+            return_value=[
+                {
+                    "uri": "spotify:track:1",
+                    "name": "Track",
+                    "artists": ["Artist"],
+                    "release_date": datetime.now(UTC).date().isoformat(),
+                }
+            ]
         )
         mock_sp.replace_playlist_items = MagicMock()
 
@@ -1363,6 +1408,7 @@ class TestRetryUnmatched:
                     "uri": "spotify:track:abc",
                     "name": "Hey Eleanor",
                     "artists": ["Claire Rousay"],
+                    "release_date": datetime.now(UTC).date().isoformat(),
                 }
             ]
         )
@@ -1413,6 +1459,7 @@ class TestRetryUnmatched:
                     "uri": uri,
                     "name": "Title",
                     "artists": ["Artist"],
+                    "release_date": datetime.now(UTC).date().isoformat(),
                 }
             ]
         )
@@ -1438,8 +1485,22 @@ class TestRetryUnmatched:
 
         mock_sp = MagicMock()
         mock_sp.search_track.side_effect = [
-            [{"uri": "spotify:track:a", "name": "Track A", "artists": ["Artist A"]}],
-            [{"uri": "spotify:track:b", "name": "Track B", "artists": ["Artist B"]}],
+            [
+                {
+                    "uri": "spotify:track:a",
+                    "name": "Track A",
+                    "artists": ["Artist A"],
+                    "release_date": datetime.now(UTC).date().isoformat(),
+                }
+            ],
+            [
+                {
+                    "uri": "spotify:track:b",
+                    "name": "Track B",
+                    "artists": ["Artist B"],
+                    "release_date": datetime.now(UTC).date().isoformat(),
+                }
+            ],
         ]
 
         digest_entries: list = []
@@ -1489,6 +1550,7 @@ class TestRetryUnmatched:
                     "uri": "spotify:track:banned",
                     "name": "Title",
                     "artists": ["Artist"],
+                    "release_date": datetime.now(UTC).date().isoformat(),
                 }
             ]
         )
@@ -1540,6 +1602,7 @@ class TestConsensusAttribution:
                     "uri": shared_uri,
                     "name": "Shared Track",
                     "artists": ["Shared Artist"],
+                    "release_date": datetime.now(UTC).date().isoformat(),
                 }
             ]
         )

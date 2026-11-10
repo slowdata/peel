@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "scope": "Read-only date/format/explicit-archive probes; not taste outcomes or a complete first-recording guarantee.",
+  "code_base": "d23630f066d7af4f1f5a02c54ad646a244d08970",
+  "production_sha256": {
+    "data/peel.db": "737f75a2bb25cf3c71fb50f5adfdf5790a666c0bc4d61d602ae94236ee41b37e",
+    "data/reports/2026-W45.md": "fd1daeb2c75a98ec47155e06fb1dd9ff215daf14b8dff877ddfe179c9b25f47e"
+  },
+  "bandcamp_and_search": {
+    "checked_at": "2026-11-10T12:35:43.028211+00:00",
+    "bandcamp": {
+      "bandcamp_dfa": {
+        "raw": 230,
+        "budget": 20,
+        "items": []
+      },
+      "bandcamp_sacred_bones": {
+        "raw": 397,
+        "budget": 20,
+        "items": [
+          {
+            "artist": "Jozef Van Wissem & Jim Jarmusch",
+            "title": "Bocca di Lupo and Mouth of the Wolf",
+            "kind": "album",
+            "released_at": "2026-11-06T00:00:00+00:00",
+            "url": "https://jozefandjim.bandcamp.com/album/bocca-di-lupo-and-mouth-of-the-wolf?label=237579501&tab=music"
+          }
+        ]
+      },
+      "bandcamp_sub_pop": {
+        "raw": 798,
+        "budget": 20,
+        "items": [
+          {
+            "artist": "Twisted Teens",
+            "title": "The Holy Cross Tigers",
+            "kind": "album",
+            "released_at": "2026-11-06T00:00:00+00:00",
+            "url": "https://twistedteens.bandcamp.com/album/the-holy-cross-tigers?label=200780738&tab=music"
+          },
+          {
+            "artist": "Hannah Jadagu",
+            "title": "Curse",
+            "kind": "track",
+            "released_at": "2026-11-04T00:00:00+00:00",
+            "url": "https://hannahjadagu.bandcamp.com/album/curse?label=200780738&tab=music"
+          },
+          {
+            "artist": "PISS",
+            "title": "you made me / skin on linen",
+            "kind": "album",
+            "released_at": "2026-10-30T00:00:00+00:00",
+            "url": "https://pisstheband.bandcamp.com/album/you-made-me-skin-on-linen?label=200780738&tab=music"
+          },
+          {
+            "artist": "waterbaby",
+            "title": "Creek",
+            "kind": "track",
+            "released_at": "2026-10-29T00:00:00+00:00",
+            "url": "https://waterbabyonline.bandcamp.com/album/creek?label=200780738&tab=music"
+          },
+          {
+            "artist": "Shabazz Palaces",
+            "title": "It's a Style Sport",
+            "kind": "album",
+            "released_at": "2026-10-23T00:00:00+00:00",
+            "url": "https://shabazzpalaces.bandcamp.com/album/its-a-style-sport-1?label=200780738&tab=music"
+          }
+        ]
+      },
+      "bandcamp_stones_throw": {
+        "raw": 402,
+        "budget": 20,
+        "items": [
+          {
+            "artist": "Sudan Archives",
+            "title": "YEA YEA YEA (DJ Manny Remix)",
+            "kind": "track",
+            "released_at": "2026-11-06T00:00:00+00:00",
+            "url": "https://sudanarchives.bandcamp.com/album/the-bpm-remixes?label=1441992835&tab=music"
+          },
+          {
+            "artist": "N8NOFACE",
+            "title": "Tomorrow's World",
+            "kind": "album",
+            "released_at": "2026-10-16T00:00:00+00:00",
+            "url": "https://n8noface.bandcamp.com/album/tomorrows-world?label=1441992835&tab=music"
+          },
+          {
+            "artist": "Automatic",
+            "title": "Shadowplay",
+            "kind": "track",
+            "released_at": "2026-10-12T00:00:00+00:00",
+            "url": "https://automatic-band.bandcamp.com/track/shadowplay?label=1441992835&tab=music"
+          }
+        ]
+      },
+      "bandcamp_ghostly": {
+        "raw": 392,
+        "budget": 20,
+        "items": [
+          {
+            "artist": "Sylvie",
+            "title": "New Season",
+            "kind": "album",
+            "released_at": "2026-11-06T00:00:00+00:00",
+            "url": "https://sylvie-music.bandcamp.com/album/new-season?label=1560012315&tab=music"
+          },
+          {
+            "artist": "Goya Gumbani",
+            "title": "Bean Pie",
+            "kind": "album",
+            "released_at": "2026-10-23T00:00:00+00:00",
+            "url": "https://goyagumbani.bandcamp.com/album/bean-pie?label=1560012315&tab=music"
+          },
+          {
+            "artist": "Nabihah Iqbal",
+            "title": "Heaven Can Wait",
+            "kind": "track",
+            "released_at": "2026-10-20T10:31:07+00:00",
+            "url": "https://nabihahiqbal.bandcamp.com/track/heaven-can-wait?label=1560012315&tab=music"
+          }
+        ]
+      }
+    },
+    "spotify_search": {
+      "uri": "spotify:track:4mhH137pWiEqSxSL1B6f9Z",
+      "name": "Baby Teeth",
+      "artists": [
+        "KiosK"
+      ],
+      "release_date": "2026-10-21",
+      "release_date_precision": "day",
+      "album_name": "Baby Teeth",
+      "isrc": "UK6822616613"
+    },
+    "production_hashes_unchanged": true
+  },
+  "pending_and_short_ep": {
+    "checked_at": "2026-11-10T12:48:52.079318+00:00",
+    "fresh_track": {
+      "uri": "spotify:track:4mhH137pWiEqSxSL1B6f9Z",
+      "reason": null
+    },
+    "historical_pending": {
+      "artist": "Pigeon",
+      "title": "NRG",
+      "reason": "lançado em 2026-05-01 (mais de 35 dias)"
+    },
+    "short_ep": {
+      "artist": "Deafheaven",
+      "title": "At Work in the Fields of the Bomb EP",
+      "reason": "single/EP curto no Spotify (3 faixas)"
+    },
+    "production_hashes_unchanged": true
+  },
+  "tests": {
+    "plain": 810,
+    "ansi": 810
+  }
+}

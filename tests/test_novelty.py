@@ -19,6 +19,8 @@ def _artist(name: str, end: str | None = None, score: int = 100) -> dict:
 
 
 def _check(spotify: dict | None = None, mb: dict | None = None) -> NoveltyCheck:
+    if spotify is not None:
+        spotify = {"total_tracks": 8, "album_type": "album", **spotify}
     return NoveltyCheck(
         spotify_album=(lambda _id: spotify) if spotify is not None else None,
         artist_search=(lambda _a: mb or _mb()),
@@ -66,12 +68,19 @@ def test_active_namesake_keeps_the_album():
     assert artist_ended_on("Fine", payload) is None
 
 
-def test_lookup_failures_keep_the_album():
+def test_release_lookup_failure_holds_album_but_artist_failure_is_best_effort():
     def boom(_x):
         raise RuntimeError("down")
 
     check = NoveltyCheck(spotify_album=boom, artist_search=boom, sleep=lambda _s: None)
-    assert check("Any", "Album", "https://open.spotify.com/album/x", WEEK) is None
+    assert "não confirmados" in check("Any", "Album", "https://open.spotify.com/album/x", WEEK)
+    assert check("Any", "Album", None, WEEK) is None
+    check.spotify_album = lambda _id: {
+        "name": "Album",
+        "release_date": "2026-11-06",
+        "total_tracks": 8,
+    }
+    assert check("Any", "Album", "spotify:album:x", WEEK) is None
 
 
 def test_helpers():
@@ -79,3 +88,54 @@ def test_helpers():
     assert parse_release_date("2026-10") == date(2026, 10, 1)
     assert spotify_album_id("https://open.spotify.com/album/abc?si=1") == "abc"
     assert spotify_album_id("https://label.bandcamp.com/album/x") is None
+
+
+def test_album_date_and_format_admission():
+    for data, expected in [
+        ({"release_date": "2026-09-01"}, "35 dias"),
+        ({"release_date": "2026-11-09"}, "futuro"),
+        ({"release_date": None}, "não confirmada"),
+        ({"release_date": "2026-11-06", "total_tracks": 3, "album_type": "single"}, "EP curto"),
+        ({"release_date": "2026-11-06", "total_tracks": None}, "formato"),
+        ({"release_date": "2026-11-06", "album_type": "compilation"}, "compilação"),
+    ]:
+        reason = _check(spotify=data)("Artist", "Album", "spotify:album:x", WEEK)
+        assert reason and expected in reason
+
+
+def test_explicit_long_form_album_is_not_rejected_only_for_few_tracks():
+    for count in [1, 3]:
+        check = _check(
+            spotify={"release_date": "2026-11-06", "total_tracks": count, "album_type": "album"}
+        )
+        assert check("Artist", "Long Form", "spotify:album:x", WEEK) is None
+    empty = _check(spotify={"release_date": "2026-11-06", "total_tracks": 0})
+    assert "sem faixas" in empty("Artist", "Empty", "spotify:album:x", WEEK)
+
+
+def test_actual_run_date_not_monday_or_future_sunday_controls_release_window():
+    check = _check(spotify={"release_date": "2026-11-07"})
+    check.reference_date = date(2026, 11, 6)
+    assert "futuro" in check("Artist", "Album", "spotify:album:x", WEEK)
+    check.reference_date = date(2026, 11, 7)
+    assert check("Artist", "Album", "spotify:album:x", WEEK) is None
+
+
+def test_bandcamp_links_are_checked_for_release_date_and_short_format():
+    from datetime import UTC, datetime
+
+    from peel.sources.bandcamp import ReleaseDetails
+
+    good = ReleaseDetails(8, "Song", datetime(2026, 11, 6, tzinfo=UTC), False)
+    check = NoveltyCheck(bandcamp_release=lambda _url: good, artist_search=None)
+    url = "https://artist.bandcamp.com/album/release"
+    assert check("Artist", "Album", url, WEEK) is None
+    for bad in [
+        ReleaseDetails(3, "Song", good.released_at, False),
+        ReleaseDetails(8, "Song", None, False),
+        ReleaseDetails(8, "Song", good.released_at, True),
+        ReleaseDetails(8, "Song", good.released_at, False, "arquivo declarado"),
+        ReleaseDetails(8, "Song", datetime(2000, 1, 1, tzinfo=UTC), False),
+    ]:
+        check.bandcamp_release = lambda _url, bad=bad: bad
+        assert check("Artist", "Album", url, WEEK)

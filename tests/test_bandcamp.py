@@ -121,7 +121,7 @@ def test_fetch_reads_each_release_and_routes_singles_to_tracks(monkeypatch) -> N
     calls = _fake_bandcamp(monkeypatch)
     source = _source(max_items=10)
 
-    releases = source.fetch()
+    releases = source.fetch(now=datetime(2026, 10, 2, 12, tzinfo=UTC))
 
     assert calls[0][0] == "https://dfarecords.bandcamp.com/music"
     assert calls[0][1]["follow_redirects"] is True
@@ -130,17 +130,16 @@ def test_fetch_reads_each_release_and_routes_singles_to_tracks(monkeypatch) -> N
         ("LCD Soundsystem", "American Dream", "album"),
         # Two tracks: a single, sent to triage by its lead track.
         ("Automatic", "Is It Now?", "track"),
-        ("Yaeji", "Raingurl", "track"),
-        # Factory Floor is a pre-order: skipped until it is out.
+        # Yaeji's July release is stale; Factory Floor is a pre-order.
     ]
     assert releases[0].published_at == datetime(2026, 10, 1, tzinfo=UTC)
-    assert releases[2].published_at == datetime(2026, 7, 7, tzinfo=UTC)
+    assert releases[1].published_at == datetime(2026, 9, 28, tzinfo=UTC)
 
 
 def test_release_page_failure_skips_only_that_release(monkeypatch) -> None:
     _fake_bandcamp(monkeypatch, failing={"https://dfarecords.bandcamp.com/album/american-dream"})
-    releases = _source(max_items=10).fetch()
-    assert [r.artist for r in releases] == ["Automatic", "Yaeji"]
+    releases = _source(max_items=10).fetch(now=datetime(2026, 10, 2, 12, tzinfo=UTC))
+    assert [r.artist for r in releases] == ["Automatic"]
 
 
 def test_parse_release_details_reads_real_shape() -> None:
@@ -153,3 +152,25 @@ def test_parse_release_details_reads_real_shape() -> None:
     assert not details.preorder
     with pytest.raises(ValueError):
         parse_release_details("<html></html>")
+
+
+def test_explicit_vault_recordings_are_not_mistaken_for_new_music():
+    data = {
+        "trackinfo": [{"title": "Old recording"}] * 8,
+        "album_release_date": "02 Nov 2026 00:00:00 GMT",
+        "current": {
+            "about": "A collection of unreleased material selected from their personal vault."
+        },
+    }
+
+    def html():
+        return f'<div data-tralbum="{escape(json.dumps(data))}"></div>'
+
+    assert parse_release_details(html()).archival_reason
+    data["current"]["about"] = (
+        "New songs recorded in 2025.\n\n"
+        "The earlier retrospective was drawn from their personal vault."
+    )
+    assert parse_release_details(html()).archival_reason is None
+    data["current"]["about"] = "Newly recorded songs using samples from their personal vault."
+    assert parse_release_details(html()).archival_reason is None

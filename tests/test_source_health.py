@@ -138,6 +138,7 @@ def test_album_source_routes_single_items_to_track_triage(
             "uri": "spotify:track:nol",
             "name": "Tougher Than the Rest",
             "artists": ["Nation of Language"],
+            "release_date": now.date().isoformat(),
         }
     ]
     with (

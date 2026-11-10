@@ -269,14 +269,57 @@ e remisturas não são álbuns novos; discos ao vivo e bandas sonoras continuam
 elegíveis. A primeira
 observação de cada `(artista, álbum, source)` é imutável; polling repetido só
 actualiza a última observação. Menções editoriais novas e consenso entram antes
-de pendentes sem feedback; labels Bandcamp são complementares. Como a página
-da editora não traz datas nem segue a ordem de lançamento, o Peel lê a página de
-cada edição: pré-vendas ficam de fora, a data de lançamento passa pelo filtro
-normal de novidade e edições com menos de 4 faixas são singles — seguem para a
-triagem de faixas, nunca para a fila de álbuns. Os artigos `First Take` da Clash são encaminhados separadamente
+de pendentes sem feedback; labels Bandcamp são complementares. O leitor combina
+os cartões visíveis da editora com a continuação `data-client-items`, sem duplicar
+lançamentos. Inspeciona no máximo 20 candidatos por editora para devolver até cinco
+edições elegíveis: arquivos, falhas, datas antigas e pré-vendas não preenchem esse
+limite de cinco. Edições com menos de quatro faixas são singles/EPs curtos: seguem
+para a triagem de faixas, nunca para a fila de álbuns. Um refresh só de álbuns não
+regista esses singles como discos. Os artigos `First Take` da Clash são encaminhados separadamente
 para a triagem de faixas. CLI, Telegram e relatório local mostram a snapshot
 completa. A edição pública Sept tem uma selecção explícita separada, com até sete
 álbuns aprovados; não trunca automaticamente os primeiros sete da fila privada.
+
+### Release admission
+
+Novas admissões exigem uma edição já lançada há, no máximo, **35 dias**. A data da
+notícia, recolha ou adição a uma playlist não substitui a data de lançamento.
+O filtro editorial de 30 dias continua separado e pode ser mais restritivo no
+Bandcamp. Os metadados da pesquisa Spotify validam faixas sem pedidos adicionais;
+uma edição antiga com o mesmo ISRC, quando devolvida na pesquisa, impede que uma
+compilação recente faça a mesma gravação passar por novidade. Uma faixa bónus
+nova não é excluída só por estar num álbum deluxe.
+
+Álbuns são verificados no link de escuta Spotify/Bandcamp: sem pré-vendas,
+compilação identificada ou edição de arquivo. Um single/EP Spotify de 1–3 faixas
+não ocupa uma vaga de álbum; um lançamento explicitamente classificado como
+álbum pelo Spotify não é excluído apenas por ter poucas faixas longas. No
+Bandcamp, que não distingue esse formato no URL, mantém-se o mínimo de quatro
+faixas para a fila de álbuns. Proveniência
+explícita de uma coleção de material/gravações inéditas «from their vault/archive»
+na abertura da descrição Bandcamp também identifica arquivo. Referências a
+samples de arquivo ou a discos antigos na biografia não bastam. Datas
+imprecisas só são aceites se todo o intervalo possível couber na janela. Sem
+data/formato confirmado, a nova admissão fica de fora — não é um Dislike nem Ban.
+Faixas futuras ou com data por confirmar ficam no mecanismo de retry existente,
+sem ocupar vagas ou gerar votos; não se perdem só porque a notícia entretanto
+desapareceu do feed. São guardadas em `unmatched`, cujo total continua a participar
+no sinal de disponibilidade do scoring existente — não é uma rejeição musical.
+Falhas/ambiguidade na pesquisa do artista continuam conservadoras e não excluem
+um lançamento de outra forma elegível. Datas de edição não detetam todas as
+reedições silenciosas: estes controlos não garantem identificar a primeira
+publicação de cada gravação.
+
+Não se apagam pendentes, opiniões ou filas históricas. Antes de preencher uma
+nova fila, os pendentes também passam pela validação de lançamento; antigos ou
+não confirmados ficam guardados, mas não servem para encher vagas. Essas consultas
+são limitadas a uma pool de `max(14, 2 × vagas livres)` e não se fazem quando as
+novidades já preenchem a fila. A triagem mantém a separação entre novidades e
+pendentes; abrir/exportar uma snapshot não a refaz.
+`albums refresh --dry-run` continua a ser uma **pré-visualização parcial**, sem
+validar os metadados de todos os links Spotify/Bandcamp. `--fetch` pode confirmar
+alguns dados na recolha das fontes, mas não equivale à validação final de todos
+os candidatos; o comando avisa explicitamente.
 
 ```bash
 uv run peel albums                 # fila activa e links de escuta

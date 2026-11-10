@@ -186,6 +186,12 @@ class SpotifyClient:
                     "uri": item.get("uri"),
                     "name": item.get("name"),
                     "artists": [a["name"] for a in item.get("artists", [])],
+                    "release_date": (item.get("album") or {}).get("release_date"),
+                    "release_date_precision": (item.get("album") or {}).get(
+                        "release_date_precision"
+                    ),
+                    "album_name": (item.get("album") or {}).get("name"),
+                    "isrc": (item.get("external_ids") or {}).get("isrc"),
                 }
                 for item in items
             ]
