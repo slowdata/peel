@@ -280,6 +280,42 @@ para a triagem de faixas. CLI, Telegram e relatório local mostram a snapshot
 completa. A edição pública Sept tem uma selecção explícita separada, com até sete
 álbuns aprovados; não trunca automaticamente os primeiros sete da fila privada.
 
+### ADM radar (read-only)
+
+```bash
+uv run peel radar                 # datas recentes + presença/feedback local
+uv run peel radar --all           # inclui antigos, futuros, arquivo e dados incertos
+uv run peel radar --json          # inclui publicações/links originais indexados
+uv run peel radar --no-local      # consulta ADM sem ler SQLite
+uv run peel radar --limit 20 --snapshot /tmp/peel-adm-$(date -u +%Y%m%dT%H%M%SZ).json
+```
+
+Consulta **Just In e Unlisted**, sem mínimo de cinco críticas. As notas ADM são
+contexto editorial, nunca previsão de gosto, ranking pessoal ou um voto/família
+adicional. `Known` significa que o álbum já consta do Peel, não que o Dias conhece
+o artista. A comparação usa as opiniões atuais retidas, sem as alterar ou enviar
+ao site. Não há auto-sync, inicialização/migração de SQLite, Spotify, Telegram,
+exportação do site, integração semanal nem agendamento. Por defeito não grava
+ficheiros; `--snapshot` cria apenas o JSON explicitamente pedido, datado por
+`observed_at`, sem substituir existentes nem escrever no estado canónico.
+
+A janela de **35 dias** é descritiva sobre as datas UK/US indexadas pelo ADM:
+prevalece a mais antiga conhecida; `Added` não substitui lançamento. Formato,
+primeira edição/gravação e disponibilidade para ouvir **não ficam verificados**.
+Os artigos originais não são consultados; datas de críticas ausentes permanecem
+desconhecidas. O índice atual não é reconstituído como se existisse numa sexta
+anterior. `--json` e a snapshot incluem também os excluídos e os erros.
+
+Lê apenas as duas listagens atuais, não um catálogo exaustivo. Consulta até 30
+fichas por defeito (`--limit`: 1–50), intercalando as listagens e deduplicando
+URLs/identidades; não são quotas de seleção musical. Cada URL admite no máximo
+três GETs, incluindo redirecionamentos restritos ao ADM. Para após HTTP 429 ou
+três falhas consecutivas nas fichas e assinala resultados parciais. Estado local
+inacessível fica desconhecido, não passa a «álbum novo». A opção global
+`--offline` refere-se ao sync do estado, não impede esta consulta web explícita.
+
+Primeira observação e limites: [análise de 10/11/2026](docs/analysis/2026-11-10-adm-radar.md).
+
 ### Release admission
 
 Novas admissões exigem uma edição já lançada há, no máximo, **35 dias**. A data da

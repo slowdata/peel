@@ -1,0 +1,1838 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-11-10T13:30:44.449457+00:00",
+  "window_days": 35,
+  "listing_urls": [
+    "http://www.anydecentmusic.com/chart/JustOut.aspx",
+    "http://www.anydecentmusic.com/chart/Unlisted.aspx"
+  ],
+  "discovered_count": 21,
+  "detail_limit": 30,
+  "details_requested": 21,
+  "truncated": false,
+  "errors": [],
+  "albums": [
+    {
+      "artist": "La Roux",
+      "album": "Old Flames",
+      "adm_url": "http://www.anydecentmusic.com/review/15774/La-Roux-Old-Flames-.aspx",
+      "adm_urls": [
+        "http://www.anydecentmusic.com/review/15774/La-Roux-Old-Flames-.aspx"
+      ],
+      "discovered_via": [
+        "http://www.anydecentmusic.com/chart/JustOut.aspx"
+      ],
+      "release_uk": "2026-11-06",
+      "release_us": "2026-11-06",
+      "release_date": "2026-11-06",
+      "adm_rating_10": 6.4,
+      "reviews": [
+        {
+          "publication": "musicOMH",
+          "rating_10": 8.0,
+          "url": "https://www.musicomh.com/reviews/albums/la-roux-old-flames",
+          "published_at": null
+        },
+        {
+          "publication": "The Guardian",
+          "rating_10": 8.0,
+          "url": "https://www.theguardian.com/music/2026/nov/06/la-roux-old-flames-review",
+          "published_at": null
+        },
+        {
+          "publication": "Rolling Stone UK",
+          "rating_10": 8.0,
+          "url": null,
+          "published_at": null
+        },
+        {
+          "publication": "Still Listening",
+          "rating_10": 6.5,
+          "url": "https://www.stilllisteningmagazine.com/reviews/la-roux-old-flames-review",
+          "published_at": null
+        },
+        {
+          "publication": "The Skinny",
+          "rating_10": 6.0,
+          "url": "https://www.theskinny.co.uk/music/reviews/albums/la-roux-old-flames",
+          "published_at": null
+        },
+        {
+          "publication": "Record Collector",
+          "rating_10": 4.0,
+          "url": null,
+          "published_at": null
+        }
+      ],
+      "listen_url": "https://open.spotify.com/album/074HfcJlCLJiYzm92nVqHe",
+      "status": "recent",
+      "reason": null,
+      "known_to_peel": true,
+      "feedback_label": null,
+      "local_sources": [
+        "guardian_music_albums"
+      ]
+    },
+    {
+      "artist": "Sheryl Crow",
+      "album": "Pick You Up",
+      "adm_url": "http://www.anydecentmusic.com/review/15753/Sheryl-Crow-Pick-You-Up.aspx",
+      "adm_urls": [
+        "http://www.anydecentmusic.com/review/15753/Sheryl-Crow-Pick-You-Up.aspx"
+      ],
+      "discovered_via": [
+        "http://www.anydecentmusic.com/chart/Unlisted.aspx"
+      ],
+      "release_uk": "2026-10-09",
+      "release_us": "2026-10-09",
+      "release_date": "2026-10-09",
+      "adm_rating_10": null,
+      "reviews": [
+        {
+          "publication": "Hot Press",
+          "rating_10": 7.5,
+          "url": "https://www.hotpress.com/music/album-review-sheryl-crow-pick-you-up-23164390",
+          "published_at": null
+        },
+        {
+          "publication": "PopMatters",
+          "rating_10": 6.0,
+          "url": "https://www.popmatters.com/sheryl-crow-pick-you-up",
+          "published_at": null
+        },
+        {
+          "publication": "musicOMH",
+          "rating_10": 5.0,
+          "url": "https://www.musicomh.com/reviews/albums/sheryl-crow-pick-you-up",
+          "published_at": null
+        }
+      ],
+      "listen_url": "https://open.spotify.com/album/2jR3pofg0GEeOnfWWXNeVd",
+      "status": "recent",
+      "reason": null,
+      "known_to_peel": false,
+      "feedback_label": null,
+      "local_sources": []
+    },
+    {
+      "artist": "Django Django",
+      "album": "Doveland",
+      "adm_url": "http://www.anydecentmusic.com/review/15773/Django-Django-Doveland-.aspx",
+      "adm_urls": [
+        "http://www.anydecentmusic.com/review/15773/Django-Django-Doveland-.aspx"
+      ],
+      "discovered_via": [
+        "http://www.anydecentmusic.com/chart/JustOut.aspx"
+      ],
+      "release_uk": "2026-11-06",
+      "release_us": "2026-11-06",
+      "release_date": "2026-11-06",
+      "adm_rating_10": 7.8,
+      "reviews": [
+        {
+          "publication": "Uncut",
+          "rating_10": 9.0,
+          "url": null,
+          "published_at": null
+        },
+        {
+          "publication": "The Arts Desk",
+          "rating_10": 8.0,
+          "url": "https://theartsdesk.com/new-music/django-django-kick-back-and-chill-out-doveland",
+          "published_at": null
+        },
+        {
+          "publication": "The Skinny",
+          "rating_10": 8.0,
+          "url": "https://www.theskinny.co.uk/music/reviews/albums/django-django-doveland",
+          "published_at": null
+        },
+        {
+          "publication": "PopMatters",
+          "rating_10": 8.0,
+          "url": "https://www.popmatters.com/django-django-doveland",
+          "published_at": null
+        },
+        {
+          "publication": "musicOMH",
+          "rating_10": 8.0,
+          "url": "https://www.musicomh.com/reviews/albums/django-django-doveland",
+          "published_at": null
+        }
+      ],
+      "listen_url": "https://open.spotify.com/album/1xIhnCw6TnGf1wuCIjeofL",
+      "status": "recent",
+      "reason": null,
+      "known_to_peel": false,
+      "feedback_label": null,
+      "local_sources": []
+    },
+    {
+      "artist": "U2",
+      "album": "Carnaval de Luz",
+      "adm_url": "http://www.anydecentmusic.com/review/15769/U2-Carnaval-de-Luz.aspx",
+      "adm_urls": [
+        "http://www.anydecentmusic.com/review/15769/U2-Carnaval-de-Luz.aspx"
+      ],
+      "discovered_via": [
+        "http://www.anydecentmusic.com/chart/Unlisted.aspx",
+        "http://www.anydecentmusic.com/chart/JustOut.aspx"
+      ],
+      "release_uk": "2026-11-13",
+      "release_us": "2026-11-13",
+      "release_date": "2026-11-13",
+      "adm_rating_10": null,
+      "reviews": [
+        {
+          "publication": "XS Noize",
+          "rating_10": 9.0,
+          "url": "https://www.xsnoize.com/u2-carnaval-de-luz-review/",
+          "published_at": null
+        },
+        {
+          "publication": "The Irish Times",
+          "rating_10": 8.0,
+          "url": "https://www.irishtimes.com/culture/music/review/2026/11/06/u2-carnaval-de-luz-review-irish-rocks-crazy-diamonds-shine-on-brighter-than-ever/",
+          "published_at": null
+        },
+        {
+          "publication": "Record Collector",
+          "rating_10": 8.0,
+          "url": "https://recordcollectormag.com/reviews/u2-carnaval-de-luz-review",
+          "published_at": null
+        }
+      ],
+      "listen_url": null,
+      "status": "future",
+      "reason": "lançamento futuro (2026-11-13)",
+      "known_to_peel": false,
+      "feedback_label": null,
+      "local_sources": []
+    },
+    {
+      "artist": "Kings Of Leon",
+      "album": "O My Beloved",
+      "adm_url": "http://www.anydecentmusic.com/review/15772/Kings-Of-Leon-O-My-Beloved-.aspx",
+      "adm_urls": [
+        "http://www.anydecentmusic.com/review/15772/Kings-Of-Leon-O-My-Beloved-.aspx"
+      ],
+      "discovered_via": [
+        "http://www.anydecentmusic.com/chart/JustOut.aspx"
+      ],
+      "release_uk": "2026-11-06",
+      "release_us": "2026-11-06",
+      "release_date": "2026-11-06",
+      "adm_rating_10": 6.6,
+      "reviews": [
+        {
+          "publication": "Clash",
+          "rating_10": 8.0,
+          "url": "https://www.clashmusic.com/reviews/kings-of-leon-o-my-beloved/",
+          "published_at": null
+        },
+        {
+          "publication": "Hot Press",
+          "rating_10": 8.0,
+          "url": "https://www.hotpress.com/music/album-review-kings-of-leon-o-my-beloved-23168182",
+          "published_at": null
+        },
+        {
+          "publication": "Mojo",
+          "rating_10": 8.0,
+          "url": null,
+          "published_at": null
+        },
+        {
+          "publication": "Uncut",
+          "rating_10": 7.0,
+          "url": null,
+          "published_at": null
+        },
+        {
+          "publication": "All Music",
+          "rating_10": 7.0,
+          "url": "https://www.allmusic.com/album/o-my-beloved-mw0004887549",
+          "published_at": null
+        },
+        {
+          "publication": "Far Out",
+          "rating_10": 6.0,
+          "url": "https://faroutmagazine.co.uk/kings-of-leon-o-my-beloved-album-review/",
+          "published_at": null
+        },
+        {
+          "publication": "The Arts Desk",
+          "rating_10": 4.0,
+          "url": "https://theartsdesk.com/new-music/kings-leon-lack-depth-stripped-back-tenth-album-o-my-beloved",
+          "published_at": null
+        }
+      ],
+      "listen_url": "https://open.spotify.com/album/02K3LVfeVC1rPBD6OsANBy",
+      "status": "recent",
+      "reason": null,
+      "known_to_peel": true,
+      "feedback_label": null,
+      "local_sources": [
+        "clash_album_reviews"
+      ]
+    },
+    {
+      "artist": "Twisted Teens",
+      "album": "The Holy Cross Tigers",
+      "adm_url": "http://www.anydecentmusic.com/review/15770/Twisted-Teens-The-Holy-Cross-Tigers-.aspx",
+      "adm_urls": [
+        "http://www.anydecentmusic.com/review/15770/Twisted-Teens-The-Holy-Cross-Tigers-.aspx"
+      ],
+      "discovered_via": [
+        "http://www.anydecentmusic.com/chart/JustOut.aspx"
+      ],
+      "release_uk": "2026-11-06",
+      "release_us": "2026-11-06",
+      "release_date": "2026-11-06",
+      "adm_rating_10": 7.7,
+      "reviews": [
+        {
+          "publication": "Northern Transmissions",
+          "rating_10": 9.5,
+          "url": "https://northerntransmissions.com/twisted-teens-the-holy-cross-tigers/#google_vignette",
+          "published_at": null
+        },
+        {
+          "publication": "Paste Magazine",
+          "rating_10": 9.1,
+          "url": "https://www.pastemagazine.com/music/twisted-teens/twisted-teens-the-holy-cross-tigers-review",
+          "published_at": null
+        },
+        {
+          "publication": "Pitchfork",
+          "rating_10": 8.0,
+          "url": "https://pitchfork.com/reviews/albums/twisted-teens-the-holy-cross-tigers/",
+          "published_at": null
+        },
+        {
+          "publication": "Mojo",
+          "rating_10": 8.0,
+          "url": null,
+          "published_at": null
+        },
+        {
+          "publication": "Under The Radar",
+          "rating_10": 7.5,
+          "url": "https://www.undertheradarmag.com/reviews/the_holy_cross_tigers_twisted_teens",
+          "published_at": null
+        },
+        {
+          "publication": "Slant Magazine",
+          "rating_10": 7.0,
+          "url": "https://www.slantmagazine.com/music/twisted-teens-the-holy-cross-tigers-album-review/",
+          "published_at": null
+        },
+        {
+          "publication": "Uncut",
+          "rating_10": 7.0,
+          "url": null,
+          "published_at": null
+        }
+      ],
+      "listen_url": "https://open.spotify.com/album/34rN1EeWCYWzPCwIaUXqQr",
+      "status": "recent",
+      "reason": null,
+      "known_to_peel": true,
+      "feedback_label": null,
+      "local_sources": [
+        "pitchfork_album_reviews"
+      ]
+    },
+    {
+      "artist": "Shabazz Palaces",
+      "album": "It’s A Style Sport",
+      "adm_url": "http://www.anydecentmusic.com/review/15768/Shabazz-Palaces-Its-A-Style-Sport-.aspx",
+      "adm_urls": [
+        "http://www.anydecentmusic.com/review/15768/Shabazz-Palaces-Its-A-Style-Sport-.aspx"
+      ],
+      "discovered_via": [
+        "http://www.anydecentmusic.com/chart/JustOut.aspx"
+      ],
+      "release_uk": "2026-10-23",
+      "release_us": "2026-10-23",
+      "release_date": "2026-10-23",
+      "adm_rating_10": 7.2,
+      "reviews": [
+        {
+          "publication": "Paste Magazine",
+          "rating_10": 8.3,
+          "url": "https://www.pastemagazine.com/music/shabazz-palaces/shabazz-palaces-its-a-style-sport-review",
+          "published_at": null
+        },
+        {
+          "publication": "Slant Magazine",
+          "rating_10": 8.0,
+          "url": "https://www.slantmagazine.com/music/shabazz-palaces-its-a-style-sport-album-review/",
+          "published_at": null
+        },
+        {
+          "publication": "Spectrum Culture",
+          "rating_10": 8.0,
+          "url": "https://spectrumculture.com/2026/10/28/shabazz-palaces-its-a-style-sport-review/",
+          "published_at": null
+        },
+        {
+          "publication": "Pitchfork",
+          "rating_10": 7.6,
+          "url": "https://pitchfork.com/reviews/albums/shabazz-palaces-its-a-style-sport/",
+          "published_at": null
+        },
+        {
+          "publication": "musicOMH",
+          "rating_10": 7.0,
+          "url": "https://www.musicomh.com/reviews/albums/shabazz-palaces-its-a-style-sport",
+          "published_at": null
+        },
+        {
+          "publication": "Uncut",
+          "rating_10": 7.0,
+          "url": null,
+          "published_at": null
+        }
+      ],
+      "listen_url": "https://open.spotify.com/album/24MyPYK5qT4OloO3ta5Noj",
+      "status": "recent",
+      "reason": null,
+      "known_to_peel": false,
+      "feedback_label": null,
+      "local_sources": []
+    },
+    {
+      "artist": "PISS",
+      "album": "You Made Me / Skin on Linen",
+      "adm_url": "http://www.anydecentmusic.com/review/15767/PISS-You-Made-Me--Skin-on-Linen-.aspx",
+      "adm_urls": [
+        "http://www.anydecentmusic.com/review/15767/PISS-You-Made-Me--Skin-on-Linen-.aspx"
+      ],
+      "discovered_via": [
+        "http://www.anydecentmusic.com/chart/JustOut.aspx"
+      ],
+      "release_uk": "2026-10-30",
+      "release_us": "2026-10-30",
+      "release_date": "2026-10-30",
+      "adm_rating_10": 8.5,
+      "reviews": [
+        {
+          "publication": "Far Out",
+          "rating_10": 10.0,
+          "url": "https://faroutmagazine.co.uk/piss-you-made-me-skin-on-linen-album-review/",
+          "published_at": null
+        },
+        {
+          "publication": "The Line Of Best Fit",
+          "rating_10": 10.0,
+          "url": "https://www.thelineofbestfit.com/albums/piss-confronts-our-culture-of-sexual-violence-on-you-made-me-skin-on-linen",
+          "published_at": null
+        },
+        {
+          "publication": "musicOMH",
+          "rating_10": 10.0,
+          "url": "https://www.musicomh.com/reviews/albums/piss-you-made-me-skin-on-linen",
+          "published_at": null
+        },
+        {
+          "publication": "Exclaim",
+          "rating_10": 9.0,
+          "url": "https://exclaim.ca/music/article/piss-you-made-me-skin-on-linen-album-review",
+          "published_at": null
+        },
+        {
+          "publication": "Beats Per Minute",
+          "rating_10": 8.8,
+          "url": "https://beatsperminute.com/album-review-piss-you-made-me-skin-on-linen/",
+          "published_at": null
+        },
+        {
+          "publication": "Northern Transmissions",
+          "rating_10": 8.5,
+          "url": "https://northerntransmissions.com/piss-you-made-me-skin-on-linen/",
+          "published_at": null
+        },
+        {
+          "publication": "Mojo",
+          "rating_10": 8.0,
+          "url": null,
+          "published_at": null
+        },
+        {
+          "publication": "Kerrang!",
+          "rating_10": 8.0,
+          "url": "https://www.kerrang.com/album-review-piss-you-made-me-skin-on-linen",
+          "published_at": null
+        },
+        {
+          "publication": "The Skinny",
+          "rating_10": 8.0,
+          "url": "https://www.theskinny.co.uk/music/reviews/albums/piss-you-made-me-skin-on-linen",
+          "published_at": null
+        },
+        {
+          "publication": "Spill Magazine",
+          "rating_10": 7.0,
+          "url": "https://spillmagazine.com/spill-album-review-piss-you-made-me-skin-on-linen/",
+          "published_at": null
+        }
+      ],
+      "listen_url": "https://open.spotify.com/album/4L3aQdOW11hKFGRbpkw3wN",
+      "status": "recent",
+      "reason": null,
+      "known_to_peel": true,
+      "feedback_label": null,
+      "local_sources": [
+        "beats_per_minute_album_reviews"
+      ]
+    },
+    {
+      "artist": "Queens Of The Stone Age",
+      "album": "Perfecth",
+      "adm_url": "http://www.anydecentmusic.com/review/15766/Queens-Of-The-Stone-Age-Perfecth-.aspx",
+      "adm_urls": [
+        "http://www.anydecentmusic.com/review/15766/Queens-Of-The-Stone-Age-Perfecth-.aspx"
+      ],
+      "discovered_via": [
+        "http://www.anydecentmusic.com/chart/JustOut.aspx"
+      ],
+      "release_uk": "2026-10-30",
+      "release_us": "2026-10-30",
+      "release_date": "2026-10-30",
+      "adm_rating_10": 7.6,
+      "reviews": [
+        {
+          "publication": "All Music",
+          "rating_10": 9.0,
+          "url": "https://www.allmusic.com/album/perfecth-mw0004867644",
+          "published_at": null
+        },
+        {
+          "publication": "Louder Than War",
+          "rating_10": 9.0,
+          "url": "https://louderthanwar.com/queens-of-the-stone-age-perfecth-album-review/",
+          "published_at": null
+        },
+        {
+          "publication": "Still Listening",
+          "rating_10": 8.4,
+          "url": "https://www.stilllisteningmagazine.com/reviews/queens-of-the-stone-age-perfecth-review",
+          "published_at": null
+        },
+        {
+          "publication": "Consequence Of Sound",
+          "rating_10": 8.3,
+          "url": "https://consequence.net/2026/10/queens-of-the-stone-age-perfecth-album-review/",
+          "published_at": null
+        },
+        {
+          "publication": "Clash",
+          "rating_10": 8.0,
+          "url": "https://www.clashmusic.com/reviews/queens-of-the-stone-age-perfecth/",
+          "published_at": null
+        },
+        {
+          "publication": "The Arts Desk",
+          "rating_10": 8.0,
+          "url": "https://theartsdesk.com/new-music/queens-stone-age-return-intimate-vulnerable-ninth-album-perfecth",
+          "published_at": null
+        },
+        {
+          "publication": "No Ripcord",
+          "rating_10": 8.0,
+          "url": "https://www.noripcord.com/queens-of-the-stone-age-perfecth/",
+          "published_at": null
+        },
+        {
+          "publication": "Far Out",
+          "rating_10": 8.0,
+          "url": "https://faroutmagazine.co.uk/queens-of-the-stone-age-perfecth-album-review/",
+          "published_at": null
+        },
+        {
+          "publication": "musicOMH",
+          "rating_10": 8.0,
+          "url": "https://www.musicomh.com/reviews/albums/queens-of-the-stone-age-perfecth",
+          "published_at": null
+        },
+        {
+          "publication": "Uncut",
+          "rating_10": 8.0,
+          "url": "https://www.uncut.co.uk/reviews/queens-of-the-stone-ages-perfecth-reviewed-rock-of-ages-156750/",
+          "published_at": null
+        },
+        {
+          "publication": "Exclaim",
+          "rating_10": 8.0,
+          "url": "https://exclaim.ca/music/article/queens-of-the-stone-age-perfecth-album-review",
+          "published_at": null
+        },
+        {
+          "publication": "NME",
+          "rating_10": 8.0,
+          "url": "https://www.nme.com/reviews/album/queens-of-the-stone-age-perfecth-album-review-3974374",
+          "published_at": null
+        },
+        {
+          "publication": "Mojo",
+          "rating_10": 8.0,
+          "url": "https://www.mojo4music.com/articles/new-music/queens-of-the-stone-age-perfecth-reviewed-josh-homme-in-a-rueful-and-reflective-mood/",
+          "published_at": null
+        },
+        {
+          "publication": "Spectrum Culture",
+          "rating_10": 7.7,
+          "url": "https://spectrumculture.com/2026/11/02/queens-of-the-stone-age-perfecth-review/",
+          "published_at": null
+        },
+        {
+          "publication": "Under The Radar",
+          "rating_10": 7.0,
+          "url": "https://www.undertheradarmag.com/reviews/perfecth_queens_of_the_stone_age",
+          "published_at": null
+        },
+        {
+          "publication": "PopMatters",
+          "rating_10": 7.0,
+          "url": "https://www.popmatters.com/queens-of-the-stone-age-perfecth",
+          "published_at": null
+        },
+        {
+          "publication": "Northern Transmissions",
+          "rating_10": 6.7,
+          "url": "https://northerntransmissions.com/queens-of-the-stone-age-perfecth/#google_vignette",
+          "published_at": null
+        },
+        {
+          "publication": "Rolling Stone",
+          "rating_10": 6.0,
+          "url": "https://www.rollingstone.com/music/music-album-reviews/queens-of-the-stone-age-perfecth-review-1235637835/",
+          "published_at": null
+        },
+        {
+          "publication": "Paste Magazine",
+          "rating_10": 5.8,
+          "url": "https://www.pastemagazine.com/music/queens-of-the-stone-age/queens-of-the-stone-age-perfecth-review",
+          "published_at": null
+        }
+      ],
+      "listen_url": null,
+      "status": "recent",
+      "reason": null,
+      "known_to_peel": true,
+      "feedback_label": null,
+      "local_sources": [
+        "clash_album_reviews"
+      ]
+    },
+    {
+      "artist": "DIIV",
+      "album": "ZIRP!",
+      "adm_url": "http://www.anydecentmusic.com/review/15765/DIIV-ZIRP.aspx",
+      "adm_urls": [
+        "http://www.anydecentmusic.com/review/15765/DIIV-ZIRP.aspx"
+      ],
+      "discovered_via": [
+        "http://www.anydecentmusic.com/chart/JustOut.aspx"
+      ],
+      "release_uk": "2026-10-30",
+      "release_us": "2026-10-30",
+      "release_date": "2026-10-30",
+      "adm_rating_10": 7.3,
+      "reviews": [
+        {
+          "publication": "Under The Radar",
+          "rating_10": 8.5,
+          "url": "https://www.undertheradarmag.com/reviews/zirp_diiv",
+          "published_at": null
+        },
+        {
+          "publication": "Paste Magazine",
+          "rating_10": 8.3,
+          "url": "https://www.pastemagazine.com/music/diiv/diiv-zirp-review",
+          "published_at": null
+        },
+        {
+          "publication": "Exclaim",
+          "rating_10": 8.0,
+          "url": "https://exclaim.ca/music/article/diiv-zirp-album-review",
+          "published_at": null
+        },
+        {
+          "publication": "Clash",
+          "rating_10": 8.0,
+          "url": "https://www.clashmusic.com/reviews/diiv-zirp/",
+          "published_at": null
+        },
+        {
+          "publication": "NME",
+          "rating_10": 8.0,
+          "url": "https://www.nme.com/reviews/album/diiv-zirp-review-3974219",
+          "published_at": null
+        },
+        {
+          "publication": "Beats Per Minute",
+          "rating_10": 7.9,
+          "url": "https://beatsperminute.com/album-review-diiv-zirp/",
+          "published_at": null
+        },
+        {
+          "publication": "Northern Transmissions",
+          "rating_10": 7.7,
+          "url": "https://northerntransmissions.com/diiv-zirp/",
+          "published_at": null
+        },
+        {
+          "publication": "Pitchfork",
+          "rating_10": 7.0,
+          "url": "https://pitchfork.com/reviews/albums/diiv-zirp/",
+          "published_at": null
+        },
+        {
+          "publication": "The Line Of Best Fit",
+          "rating_10": 6.0,
+          "url": "https://www.thelineofbestfit.com/albums/diiv-confront-social-turmoil-with-more-simplicity-on-zirp",
+          "published_at": null
+        },
+        {
+          "publication": "Slant Magazine",
+          "rating_10": 5.0,
+          "url": "https://www.slantmagazine.com/music/diiv-zirp-album-review/",
+          "published_at": null
+        }
+      ],
+      "listen_url": null,
+      "status": "recent",
+      "reason": null,
+      "known_to_peel": true,
+      "feedback_label": "dislike",
+      "local_sources": [
+        "beats_per_minute_album_reviews",
+        "clash_album_reviews",
+        "pitchfork_album_reviews"
+      ]
+    },
+    {
+      "artist": "Tony Iommi",
+      "album": "From The Dark",
+      "adm_url": "http://www.anydecentmusic.com/review/15764/Tony-Iommi-From-The-Dark.aspx",
+      "adm_urls": [
+        "http://www.anydecentmusic.com/review/15764/Tony-Iommi-From-The-Dark.aspx"
+      ],
+      "discovered_via": [
+        "http://www.anydecentmusic.com/chart/JustOut.aspx"
+      ],
+      "release_uk": "2026-10-23",
+      "release_us": "2026-10-23",
+      "release_date": "2026-10-23",
+      "adm_rating_10": 7.5,
+      "reviews": [
+        {
+          "publication": "Louder Than War",
+          "rating_10": 10.0,
+          "url": "https://louderthanwar.com/tony-iommi-from-the-dark-album-review/",
+          "published_at": null
+        },
+        {
+          "publication": "The Arts Desk",
+          "rating_10": 8.0,
+          "url": "https://theartsdesk.com/new-music/tony-iommis-dark-sound-classic-heavy-metal-written-large",
+          "published_at": null
+        },
+        {
+          "publication": "Record Collector",
+          "rating_10": 8.0,
+          "url": null,
+          "published_at": null
+        },
+        {
+          "publication": "Mojo",
+          "rating_10": 8.0,
+          "url": null,
+          "published_at": null
+        },
+        {
+          "publication": "Kerrang!",
+          "rating_10": 8.0,
+          "url": "https://www.kerrang.com/album-review-tony-iommi-from-the-dark",
+          "published_at": null
+        },
+        {
+          "publication": "Spill Magazine",
+          "rating_10": 8.0,
+          "url": "https://spillmagazine.com/spill-album-review-tony-iommi-from-the-dark/",
+          "published_at": null
+        },
+        {
+          "publication": "Pitchfork",
+          "rating_10": 7.5,
+          "url": "https://pitchfork.com/reviews/albums/tony-iommi-from-the-dark/",
+          "published_at": null
+        },
+        {
+          "publication": "Spectrum Culture",
+          "rating_10": 7.0,
+          "url": "https://spectrumculture.com/2026/11/02/iommi-from-the-dark-review/",
+          "published_at": null
+        },
+        {
+          "publication": "Far Out",
+          "rating_10": 7.0,
+          "url": "https://faroutmagazine.co.uk/tony-iommi-from-the-dark-album-review/",
+          "published_at": null
+        },
+        {
+          "publication": "Uncut",
+          "rating_10": 6.0,
+          "url": null,
+          "published_at": null
+        }
+      ],
+      "listen_url": "https://open.spotify.com/album/4iAUrFmilfatLq7lBeH29p",
+      "status": "recent",
+      "reason": null,
+      "known_to_peel": true,
+      "feedback_label": null,
+      "local_sources": [
+        "pitchfork_album_reviews"
+      ]
+    },
+    {
+      "artist": "Michael Kiwanuka",
+      "album": "Fudge",
+      "adm_url": "http://www.anydecentmusic.com/review/15763/Michael-Kiwanuka-Fudge.aspx",
+      "adm_urls": [
+        "http://www.anydecentmusic.com/review/15763/Michael-Kiwanuka-Fudge.aspx"
+      ],
+      "discovered_via": [
+        "http://www.anydecentmusic.com/chart/JustOut.aspx"
+      ],
+      "release_uk": "2026-10-23",
+      "release_us": "2026-10-23",
+      "release_date": "2026-10-23",
+      "adm_rating_10": 7.8,
+      "reviews": [
+        {
+          "publication": "The Arts Desk",
+          "rating_10": 10.0,
+          "url": "https://theartsdesk.com/new-music/michael-kiwanuka-definitely-doesnt-fudge-his-first-self-produced-album",
+          "published_at": null
+        },
+        {
+          "publication": "God Is In The TV",
+          "rating_10": 9.0,
+          "url": "https://www.godisinthetvzine.co.uk/2026/10/27/michael-kiwanuka-fudge-polydor-geffen/",
+          "published_at": null
+        },
+        {
+          "publication": "Spill Magazine",
+          "rating_10": 8.0,
+          "url": "https://spillmagazine.com/spill-album-review-michael-kiwanuka-fudge/",
+          "published_at": null
+        },
+        {
+          "publication": "Clash",
+          "rating_10": 8.0,
+          "url": "https://www.clashmusic.com/reviews/michael-kiwanuka-fudge/",
+          "published_at": null
+        },
+        {
+          "publication": "Record Collector",
+          "rating_10": 8.0,
+          "url": null,
+          "published_at": null
+        },
+        {
+          "publication": "All Music",
+          "rating_10": 8.0,
+          "url": "https://www.allmusic.com/album/fudge-mw0004892753",
+          "published_at": null
+        },
+        {
+          "publication": "Rolling Stone",
+          "rating_10": 8.0,
+          "url": "https://www.rollingstone.co.uk/music/album-reviews/michael-kiwanuka-fudge-review-a-beautiful-but-bittersweet-reminder-of-his-brilliance-65320/",
+          "published_at": null
+        },
+        {
+          "publication": "NME",
+          "rating_10": 8.0,
+          "url": "https://www.nme.com/reviews/album/michael-kiwanuka-fudge-review-3973478",
+          "published_at": null
+        },
+        {
+          "publication": "Mojo",
+          "rating_10": 8.0,
+          "url": "https://www.mojo4music.com/articles/new-music/michael-kiwanuka-fudge-reviewed/",
+          "published_at": null
+        },
+        {
+          "publication": "The Independent",
+          "rating_10": 8.0,
+          "url": "https://www.independent.co.uk/arts-entertainment/music/reviews/michael-kiwanuka-fudge-review-stroke-health-b3070655.html",
+          "published_at": null
+        },
+        {
+          "publication": "The Guardian",
+          "rating_10": 8.0,
+          "url": "https://www.theguardian.com/music/2026/oct/19/michael-kiwanuka-fudge-review-rough-and-instinctive-but-also-lush-and-alive-with-melody",
+          "published_at": null
+        },
+        {
+          "publication": "Rolling Stone UK",
+          "rating_10": 8.0,
+          "url": "https://www.rollingstone.co.uk/music/album-reviews/michael-kiwanuka-fudge-review-a-beautiful-but-bittersweet-reminder-of-his-brilliance-65320/",
+          "published_at": null
+        },
+        {
+          "publication": "Northern Transmissions",
+          "rating_10": 7.5,
+          "url": "https://northerntransmissions.com/michael-kiwanuka-fudge/",
+          "published_at": null
+        },
+        {
+          "publication": "Paste Magazine",
+          "rating_10": 7.5,
+          "url": "https://www.pastemagazine.com/music/michael-kiwanuka/michael-kiwanuka-fudge-review",
+          "published_at": null
+        },
+        {
+          "publication": "Exclaim",
+          "rating_10": 7.0,
+          "url": "https://exclaim.ca/music/article/michael-kiwanuka-fudge-album-review",
+          "published_at": null
+        },
+        {
+          "publication": "Uncut",
+          "rating_10": 7.0,
+          "url": null,
+          "published_at": null
+        },
+        {
+          "publication": "The Line Of Best Fit",
+          "rating_10": 7.0,
+          "url": "https://www.thelineofbestfit.com/albums/on-fudge-michael-kiwanuka-makes-peace-with-taking-his-time",
+          "published_at": null
+        },
+        {
+          "publication": "Far Out",
+          "rating_10": 6.5,
+          "url": "https://faroutmagazine.co.uk/michael-kiwanuka-fudge-album-review/",
+          "published_at": null
+        }
+      ],
+      "listen_url": "https://open.spotify.com/album/4Qy4QeE6QL941JsIyEVqF2",
+      "status": "recent",
+      "reason": null,
+      "known_to_peel": true,
+      "feedback_label": "meh",
+      "local_sources": [
+        "clash_album_reviews",
+        "guardian_music_albums"
+      ]
+    },
+    {
+      "artist": "Rachel Chinouriri",
+      "album": "I Think I Spoke Too Soon",
+      "adm_url": "http://www.anydecentmusic.com/review/15762/Rachel-Chinouriri-I-Think-I-Spoke-Too-Soon.aspx",
+      "adm_urls": [
+        "http://www.anydecentmusic.com/review/15762/Rachel-Chinouriri-I-Think-I-Spoke-Too-Soon.aspx"
+      ],
+      "discovered_via": [
+        "http://www.anydecentmusic.com/chart/JustOut.aspx"
+      ],
+      "release_uk": "2026-10-16",
+      "release_us": "2026-10-16",
+      "release_date": "2026-10-16",
+      "adm_rating_10": 7.5,
+      "reviews": [
+        {
+          "publication": "Still Listening",
+          "rating_10": 8.5,
+          "url": "https://www.stilllisteningmagazine.com/reviews/rachel-chinouriri-i-think-i-spoke-too-soon-review",
+          "published_at": null
+        },
+        {
+          "publication": "DIY",
+          "rating_10": 8.0,
+          "url": "https://diymag.com/review/album/rachel-chinouriri-i-think-i-spoke-too-soon",
+          "published_at": null
+        },
+        {
+          "publication": "The Line Of Best Fit",
+          "rating_10": 8.0,
+          "url": "https://www.thelineofbestfit.com/albums/rachel-chinouriri-is-a-sad-party-girl-on-i-think-i-spoke-too-soon",
+          "published_at": null
+        },
+        {
+          "publication": "NME",
+          "rating_10": 8.0,
+          "url": "https://www.nme.com/reviews/album/rachel-chinouriri-i-think-i-spoke-too-soon-review-3972932",
+          "published_at": null
+        },
+        {
+          "publication": "Rolling Stone",
+          "rating_10": 8.0,
+          "url": "https://www.rollingstone.co.uk/music/album-reviews/rachel-chinouriri-i-think-i-spoke-too-soon-review-65139/",
+          "published_at": null
+        },
+        {
+          "publication": "Rolling Stone UK",
+          "rating_10": 8.0,
+          "url": "https://www.rollingstone.co.uk/music/album-reviews/rachel-chinouriri-i-think-i-spoke-too-soon-review-65139/",
+          "published_at": null
+        },
+        {
+          "publication": "Paste Magazine",
+          "rating_10": 7.5,
+          "url": "https://www.pastemagazine.com/music/rachel-chinouriri/rachel-chinouriri-i-think-i-spoke-too-soon-review",
+          "published_at": null
+        },
+        {
+          "publication": "Pitchfork",
+          "rating_10": 7.3,
+          "url": "https://pitchfork.com/reviews/albums/rachel-chinouriri-i-think-i-spoke-too-soon/",
+          "published_at": null
+        },
+        {
+          "publication": "musicOMH",
+          "rating_10": 7.0,
+          "url": "https://www.musicomh.com/reviews/albums/rachel-chinouriri-i-think-i-spoke-too-soon",
+          "published_at": null
+        },
+        {
+          "publication": "Exclaim",
+          "rating_10": 7.0,
+          "url": "https://exclaim.ca/music/article/rachel-chinouriri-i-think-i-spoke-too-soon-album-review",
+          "published_at": null
+        }
+      ],
+      "listen_url": "https://open.spotify.com/album/354hclDfb4GX3gIXwYknTL",
+      "status": "recent",
+      "reason": null,
+      "known_to_peel": true,
+      "feedback_label": "like",
+      "local_sources": [
+        "clash_album_reviews",
+        "diy_album_reviews",
+        "pitchfork_album_reviews"
+      ]
+    },
+    {
+      "artist": "Richard Thompson",
+      "album": "Hippies, Thugs And Heroes",
+      "adm_url": "http://www.anydecentmusic.com/review/15761/Richard-Thompson-Hippies-Thugs-And-Heroes.aspx",
+      "adm_urls": [
+        "http://www.anydecentmusic.com/review/15761/Richard-Thompson-Hippies-Thugs-And-Heroes.aspx"
+      ],
+      "discovered_via": [
+        "http://www.anydecentmusic.com/chart/JustOut.aspx"
+      ],
+      "release_uk": "2026-10-16",
+      "release_us": "2026-10-16",
+      "release_date": "2026-10-16",
+      "adm_rating_10": 8.4,
+      "reviews": [
+        {
+          "publication": "Mojo",
+          "rating_10": 10.0,
+          "url": null,
+          "published_at": null
+        },
+        {
+          "publication": "Record Collector",
+          "rating_10": 10.0,
+          "url": null,
+          "published_at": null
+        },
+        {
+          "publication": "Uncut",
+          "rating_10": 9.0,
+          "url": null,
+          "published_at": null
+        },
+        {
+          "publication": "Louder Than War",
+          "rating_10": 9.0,
+          "url": "https://louderthanwar.com/richard-thompson-hippies-thugs-and-heroes-album-review/",
+          "published_at": null
+        },
+        {
+          "publication": "PopMatters",
+          "rating_10": 9.0,
+          "url": "https://www.popmatters.com/richard-thompson-hippies-thugs",
+          "published_at": null
+        },
+        {
+          "publication": "musicOMH",
+          "rating_10": 8.0,
+          "url": "https://www.musicomh.com/reviews/albums/richard-thompson-hippies-thugs-and-heroes",
+          "published_at": null
+        },
+        {
+          "publication": "Spectrum Culture",
+          "rating_10": 6.6,
+          "url": "https://spectrumculture.com/2026/10/19/richard-thompson-hippies-thugs-and-heroes-review/",
+          "published_at": null
+        }
+      ],
+      "listen_url": "https://open.spotify.com/album/4fourLlwRgWXLg9qpirYw9",
+      "status": "recent",
+      "reason": null,
+      "known_to_peel": false,
+      "feedback_label": null,
+      "local_sources": []
+    },
+    {
+      "artist": "The Avalanches",
+      "album": "No Bad Memories",
+      "adm_url": "http://www.anydecentmusic.com/review/15760/The-Avalanches-No-Bad-Memories-.aspx",
+      "adm_urls": [
+        "http://www.anydecentmusic.com/review/15760/The-Avalanches-No-Bad-Memories-.aspx"
+      ],
+      "discovered_via": [
+        "http://www.anydecentmusic.com/chart/JustOut.aspx"
+      ],
+      "release_uk": "2026-10-16",
+      "release_us": "2026-10-16",
+      "release_date": "2026-10-16",
+      "adm_rating_10": 7.8,
+      "reviews": [
+        {
+          "publication": "DIY",
+          "rating_10": 10.0,
+          "url": "https://diymag.com/review/album/the-avalanches-no-bad-memories",
+          "published_at": null
+        },
+        {
+          "publication": "Slant Magazine",
+          "rating_10": 9.0,
+          "url": "https://www.slantmagazine.com/music/the-avalanches-no-bad-memories-album-review/",
+          "published_at": null
+        },
+        {
+          "publication": "Clash",
+          "rating_10": 9.0,
+          "url": "https://www.clashmusic.com/reviews/the-avalanches-no-bad-memories/",
+          "published_at": null
+        },
+        {
+          "publication": "Pitchfork",
+          "rating_10": 8.2,
+          "url": "https://pitchfork.com/reviews/albums/the-avalanches-no-bad-memories/",
+          "published_at": null
+        },
+        {
+          "publication": "Far Out",
+          "rating_10": 8.0,
+          "url": "https://faroutmagazine.co.uk/the-avalanches-no-bad-memories-album-review/",
+          "published_at": null
+        },
+        {
+          "publication": "The Quietus",
+          "rating_10": 8.0,
+          "url": "https://thequietus.com/quietus-reviews/the-avalanches-no-bad-memories-review/",
+          "published_at": null
+        },
+        {
+          "publication": "The Arts Desk",
+          "rating_10": 8.0,
+          "url": "https://www.theartsdesk.com/new-music/avalanches-take-sharp-stylistic-left-turn-no-bad-memories",
+          "published_at": null
+        },
+        {
+          "publication": "Still Listening",
+          "rating_10": 7.9,
+          "url": "https://www.stilllisteningmagazine.com/reviews/the-avalanches-no-bad-memories-review",
+          "published_at": null
+        },
+        {
+          "publication": "Northern Transmissions",
+          "rating_10": 7.9,
+          "url": "https://northerntransmissions.com/the-avalanches-no-bad-memories/#google_vignette",
+          "published_at": null
+        },
+        {
+          "publication": "Paste Magazine",
+          "rating_10": 7.5,
+          "url": "https://www.pastemagazine.com/music/the-avalanches/the-avalanches-no-bad-memories-review",
+          "published_at": null
+        },
+        {
+          "publication": "musicOMH",
+          "rating_10": 7.0,
+          "url": "https://www.musicomh.com/reviews/albums/the-avalanches-no-bad-memories",
+          "published_at": null
+        },
+        {
+          "publication": "Spectrum Culture",
+          "rating_10": 6.7,
+          "url": "https://spectrumculture.com/2026/10/22/the-avalanches-no-bad-memories-review/",
+          "published_at": null
+        },
+        {
+          "publication": "NME",
+          "rating_10": 6.0,
+          "url": "https://www.nme.com/reviews/album/the-avalanches-no-bad-memories-review-3973070",
+          "published_at": null
+        }
+      ],
+      "listen_url": "https://open.spotify.com/album/3De7Ues320SIjGCaz5b6fX",
+      "status": "recent",
+      "reason": null,
+      "known_to_peel": true,
+      "feedback_label": "love",
+      "local_sources": [
+        "clash_album_reviews",
+        "diy_album_reviews",
+        "pitchfork_album_reviews",
+        "thequietus"
+      ]
+    },
+    {
+      "artist": "Jess Williamson",
+      "album": "A Mile South Of Heaven",
+      "adm_url": "http://www.anydecentmusic.com/review/15759/Jess-Williamson-A-Mile-South-Of-Heaven.aspx",
+      "adm_urls": [
+        "http://www.anydecentmusic.com/review/15759/Jess-Williamson-A-Mile-South-Of-Heaven.aspx"
+      ],
+      "discovered_via": [
+        "http://www.anydecentmusic.com/chart/JustOut.aspx"
+      ],
+      "release_uk": "2026-10-16",
+      "release_us": "2026-10-16",
+      "release_date": "2026-10-16",
+      "adm_rating_10": 7.5,
+      "reviews": [
+        {
+          "publication": "DIY",
+          "rating_10": 9.0,
+          "url": "https://diymag.com/review/album/jess-williamson-a-mile-south-of-heaven",
+          "published_at": null
+        },
+        {
+          "publication": "Pitchfork",
+          "rating_10": 8.4,
+          "url": "https://pitchfork.com/reviews/albums/jess-williamson-a-mile-south-of-heaven/",
+          "published_at": null
+        },
+        {
+          "publication": "Paste Magazine",
+          "rating_10": 8.3,
+          "url": "https://www.pastemagazine.com/music/jess-williamson/jess-williamson-takes-her-boldest-journey-yet-on-a-mile-south-of-heaven",
+          "published_at": null
+        },
+        {
+          "publication": "Mojo",
+          "rating_10": 8.0,
+          "url": null,
+          "published_at": null
+        },
+        {
+          "publication": "Uncut",
+          "rating_10": 8.0,
+          "url": null,
+          "published_at": null
+        },
+        {
+          "publication": "The Line Of Best Fit",
+          "rating_10": 7.0,
+          "url": "https://www.thelineofbestfit.com/albums/on-a-mile-south-of-heaven-jess-williamson-yields-to-diminished-returns",
+          "published_at": null
+        },
+        {
+          "publication": "The Guardian",
+          "rating_10": 6.0,
+          "url": "https://www.theguardian.com/music/2026/oct/09/jess-williamson-a-mile-south-of-heaven-review",
+          "published_at": null
+        }
+      ],
+      "listen_url": "https://open.spotify.com/album/5gtnnY39j0QRzGXqAVJbd7",
+      "status": "recent",
+      "reason": null,
+      "known_to_peel": true,
+      "feedback_label": null,
+      "local_sources": [
+        "guardian_music_albums",
+        "pitchfork_best_albums"
+      ]
+    },
+    {
+      "artist": "Pet Shop Boys",
+      "album": "A Man from the Future",
+      "adm_url": "http://www.anydecentmusic.com/review/15758/Pet-Shop-Boys-A-Man-from-the-Future.aspx",
+      "adm_urls": [
+        "http://www.anydecentmusic.com/review/15758/Pet-Shop-Boys-A-Man-from-the-Future.aspx"
+      ],
+      "discovered_via": [
+        "http://www.anydecentmusic.com/chart/JustOut.aspx"
+      ],
+      "release_uk": "2026-10-09",
+      "release_us": "2026-10-09",
+      "release_date": "2026-10-09",
+      "adm_rating_10": 8.4,
+      "reviews": [
+        {
+          "publication": "God Is In The TV",
+          "rating_10": 10.0,
+          "url": "https://www.godisinthetvzine.co.uk/2026/10/09/pet-shop-boys-a-man-from-the-future-parlophone/",
+          "published_at": null
+        },
+        {
+          "publication": "The Arts Desk",
+          "rating_10": 10.0,
+          "url": "https://www.theartsdesk.com/new-music/career-high-pet-shop-boys-alan-turing-revisited-and-revitalised-man-future",
+          "published_at": null
+        },
+        {
+          "publication": "DIY",
+          "rating_10": 8.0,
+          "url": "https://diymag.com/review/album/pet-shop-boys-a-man-from-the-future",
+          "published_at": null
+        },
+        {
+          "publication": "The Irish Times",
+          "rating_10": 8.0,
+          "url": "https://www.irishtimes.com/culture/music/review/2026/10/09/a-man-from-the-future-review-what-took-pet-shop-boys-so-long-to-release-this-wonderful-album/",
+          "published_at": null
+        },
+        {
+          "publication": "musicOMH",
+          "rating_10": 8.0,
+          "url": "https://www.musicomh.com/reviews/albums/pet-shop-boys-a-man-from-the-future",
+          "published_at": null
+        }
+      ],
+      "listen_url": "https://open.spotify.com/album/1oooasjRIwxQRUUb0xNiN1",
+      "status": "recent",
+      "reason": null,
+      "known_to_peel": false,
+      "feedback_label": null,
+      "local_sources": []
+    },
+    {
+      "artist": "Fontaines D.C.",
+      "album": "Dopamine Chamber",
+      "adm_url": "http://www.anydecentmusic.com/review/15757/Fontaines-DC-Dopamine-Chamber-.aspx",
+      "adm_urls": [
+        "http://www.anydecentmusic.com/review/15757/Fontaines-DC-Dopamine-Chamber-.aspx"
+      ],
+      "discovered_via": [
+        "http://www.anydecentmusic.com/chart/JustOut.aspx"
+      ],
+      "release_uk": "2026-10-16",
+      "release_us": "2026-10-16",
+      "release_date": "2026-10-16",
+      "adm_rating_10": 8.2,
+      "reviews": [
+        {
+          "publication": "Rolling Stone UK",
+          "rating_10": 10.0,
+          "url": "https://www.rollingstone.co.uk/music/album-reviews/fontaines-d-c-dopamine-chamber-review-album-65050/",
+          "published_at": null
+        },
+        {
+          "publication": "NME",
+          "rating_10": 10.0,
+          "url": "https://www.nme.com/reviews/album/fontaines-d-c-dopamine-chamber-album-review-3972863",
+          "published_at": null
+        },
+        {
+          "publication": "Dork",
+          "rating_10": 10.0,
+          "url": "https://readdork.com/reviews/fontaines-d-c-dopamine-chamber",
+          "published_at": null
+        },
+        {
+          "publication": "The Guardian",
+          "rating_10": 10.0,
+          "url": "https://www.theguardian.com/music/2026/oct/12/fontaines-dc-dopamine-chamber-album-review-xl-grian-chatten",
+          "published_at": null
+        },
+        {
+          "publication": "The Independent",
+          "rating_10": 10.0,
+          "url": "https://www.independent.co.uk/arts-entertainment/music/reviews/fontaines-dc-review-dopamine-chamber-b3066646.html",
+          "published_at": null
+        },
+        {
+          "publication": "The Arts Desk",
+          "rating_10": 10.0,
+          "url": "https://www.theartsdesk.com/new-music/sweeping-sorrowful-surging-triumph-fontaines-dc-knock-it-out-park-once-more-dopamine-chamber",
+          "published_at": null
+        },
+        {
+          "publication": "musicOMH",
+          "rating_10": 10.0,
+          "url": "https://www.musicomh.com/reviews/albums/fontaines-dc-dopamine-chamber",
+          "published_at": null
+        },
+        {
+          "publication": "DIY",
+          "rating_10": 10.0,
+          "url": "https://diymag.com/review/album/fontaines-d-c-dopamine-chamber",
+          "published_at": null
+        },
+        {
+          "publication": "The Skinny",
+          "rating_10": 10.0,
+          "url": "https://www.theskinny.co.uk/music/reviews/albums/fontaines-d-c-dopamine-chamber",
+          "published_at": null
+        },
+        {
+          "publication": "Under The Radar",
+          "rating_10": 9.0,
+          "url": "https://www.undertheradarmag.com/reviews/dopamine_chamber_fontaines_dc",
+          "published_at": null
+        },
+        {
+          "publication": "Still Listening",
+          "rating_10": 9.0,
+          "url": "https://www.stilllisteningmagazine.com/reviews/fontaines-dc-dopamine-chamber-review",
+          "published_at": null
+        },
+        {
+          "publication": "Far Out",
+          "rating_10": 9.0,
+          "url": "https://faroutmagazine.co.uk/fontaines-dc-dopamine-chamber-album-review/",
+          "published_at": null
+        },
+        {
+          "publication": "Spill Magazine",
+          "rating_10": 9.0,
+          "url": "https://spillmagazine.com/spill-album-review-fontaines-d-c-dopamine-chamber/",
+          "published_at": null
+        },
+        {
+          "publication": "Hot Press",
+          "rating_10": 9.0,
+          "url": "https://www.hotpress.com/music/album-review-fontaines-d-c-dopamine-chamber-23164708",
+          "published_at": null
+        },
+        {
+          "publication": "Earmilk",
+          "rating_10": 8.5,
+          "url": "https://earmilk.com/album-reviews/fontaines-d-c-dopamine-chamber-album-review/",
+          "published_at": null
+        },
+        {
+          "publication": "Consequence Of Sound",
+          "rating_10": 8.3,
+          "url": "https://consequence.net/2026/10/fontaines-dc-dopamine-chamber-review/",
+          "published_at": null
+        },
+        {
+          "publication": "Rolling Stone",
+          "rating_10": 8.0,
+          "url": "https://www.rollingstone.com/music/music-album-reviews/fontaines-d-c-dopamine-chamber-album-review-1235637810/",
+          "published_at": null
+        },
+        {
+          "publication": "Exclaim",
+          "rating_10": 8.0,
+          "url": "https://exclaim.ca/music/article/fontaines-d-c-dopamine-chamber-album-review",
+          "published_at": null
+        },
+        {
+          "publication": "Mojo",
+          "rating_10": 8.0,
+          "url": "https://www.mojo4music.com/articles/new-music/fontaines-d-c-dopamine-chamber-reviewed/",
+          "published_at": null
+        },
+        {
+          "publication": "Clash",
+          "rating_10": 8.0,
+          "url": "https://www.clashmusic.com/reviews/fontaines-d-c-dopamine-chamber/",
+          "published_at": null
+        },
+        {
+          "publication": "All Music",
+          "rating_10": 8.0,
+          "url": "https://www.allmusic.com/album/dopamine-chamber-mw0004868007",
+          "published_at": null
+        },
+        {
+          "publication": "The Irish Times",
+          "rating_10": 8.0,
+          "url": "https://www.irishtimes.com/culture/music/review/2026/10/12/dopamine-chamber-is-the-sound-of-fontaines-dc-becoming-megastars-is-bigger-always-better/",
+          "published_at": null
+        },
+        {
+          "publication": "Record Collector",
+          "rating_10": 8.0,
+          "url": "https://recordcollectormag.com/reviews/fontaines-dc-dopamine-chamber-review",
+          "published_at": null
+        },
+        {
+          "publication": "Northern Transmissions",
+          "rating_10": 7.8,
+          "url": "https://northerntransmissions.com/fontaines-d-c-dopamine-chamber/#google_vignette",
+          "published_at": null
+        },
+        {
+          "publication": "Pitchfork",
+          "rating_10": 7.8,
+          "url": "https://pitchfork.com/reviews/albums/fontaines-dc-dopamine-chamber/",
+          "published_at": null
+        },
+        {
+          "publication": "Beats Per Minute",
+          "rating_10": 7.7,
+          "url": "https://beatsperminute.com/album-review-fontaines-d-c-dopamine-chamber/",
+          "published_at": null
+        },
+        {
+          "publication": "Uncut",
+          "rating_10": 7.0,
+          "url": "https://www.uncut.co.uk/reviews/fontaines-dcs-dopamine-chamber-reviewed-commanding-fifth-album-from-irelands-unstoppable-rock-stars-156708/",
+          "published_at": null
+        },
+        {
+          "publication": "PopMatters",
+          "rating_10": 7.0,
+          "url": "https://www.popmatters.com/fontaines-d-c-dopamine-chamber",
+          "published_at": null
+        },
+        {
+          "publication": "Sputnik Music (staff)",
+          "rating_10": 7.0,
+          "url": "https://www.sputnikmusic.com/review/91348/Fontaines-D.C.-Dopamine-Chamber/",
+          "published_at": null
+        },
+        {
+          "publication": "A.V. Club",
+          "rating_10": 6.5,
+          "url": "https://www.noripcord.com/fontaines-d-c-dopamine-chamber/",
+          "published_at": null
+        },
+        {
+          "publication": "The Line Of Best Fit",
+          "rating_10": 6.0,
+          "url": "https://www.thelineofbestfit.com/albums/on-dopamine-chamber-fontaines-d.c.-are-left-fumbling-for-direction",
+          "published_at": null
+        },
+        {
+          "publication": "Paste Magazine",
+          "rating_10": 5.8,
+          "url": "https://www.pastemagazine.com/music/fontaines-d-c/fontaines-d-c-dopamine-chamber-review",
+          "published_at": null
+        },
+        {
+          "publication": "God Is In The TV",
+          "rating_10": 5.0,
+          "url": "https://www.godisinthetvzine.co.uk/2026/10/15/fontaines-d-c-dopamine-chamber-xl-recordings/",
+          "published_at": null
+        },
+        {
+          "publication": "Spectrum Culture",
+          "rating_10": 5.0,
+          "url": "https://spectrumculture.com/2026/10/18/fontaines-d-c-dopamine-chamber-review/",
+          "published_at": null
+        },
+        {
+          "publication": "Slant Magazine",
+          "rating_10": 5.0,
+          "url": "https://www.slantmagazine.com/music/fontaines-dc-dopamine-chamber-album-review/",
+          "published_at": null
+        }
+      ],
+      "listen_url": "https://open.spotify.com/album/0JICUfSKOdGqzE9FJSrNci",
+      "status": "recent",
+      "reason": null,
+      "known_to_peel": true,
+      "feedback_label": "love",
+      "local_sources": [
+        "beats_per_minute_album_reviews",
+        "clash_album_reviews",
+        "diy_album_reviews",
+        "guardian_music_albums",
+        "pitchfork_album_reviews"
+      ]
+    },
+    {
+      "artist": "Remi Wolf",
+      "album": "Mud",
+      "adm_url": "http://www.anydecentmusic.com/review/15756/Remi-Wolf-Mud.aspx",
+      "adm_urls": [
+        "http://www.anydecentmusic.com/review/15756/Remi-Wolf-Mud.aspx"
+      ],
+      "discovered_via": [
+        "http://www.anydecentmusic.com/chart/JustOut.aspx"
+      ],
+      "release_uk": "2026-10-09",
+      "release_us": "2026-10-09",
+      "release_date": "2026-10-09",
+      "adm_rating_10": 7.3,
+      "reviews": [
+        {
+          "publication": "DIY",
+          "rating_10": 9.0,
+          "url": "https://diymag.com/review/album/remi-wolf-mud",
+          "published_at": null
+        },
+        {
+          "publication": "Northern Transmissions",
+          "rating_10": 8.6,
+          "url": "https://northerntransmissions.com/remi-wolf-mud/",
+          "published_at": null
+        },
+        {
+          "publication": "Exclaim",
+          "rating_10": 8.0,
+          "url": "https://exclaim.ca/music/article/remi-wolf-mud-album-review",
+          "published_at": null
+        },
+        {
+          "publication": "Paste Magazine",
+          "rating_10": 7.5,
+          "url": "https://www.pastemagazine.com/music/remi-wolf/remi-wolf-mud-review",
+          "published_at": null
+        },
+        {
+          "publication": "Pitchfork",
+          "rating_10": 7.3,
+          "url": "https://pitchfork.com/reviews/albums/remi-wolf-mud/",
+          "published_at": null
+        },
+        {
+          "publication": "All Music",
+          "rating_10": 7.0,
+          "url": "https://www.allmusic.com/album/mud-mw0004869496",
+          "published_at": null
+        },
+        {
+          "publication": "NME",
+          "rating_10": 7.0,
+          "url": "https://www.nme.com/reviews/album/remi-wolf-mud-review-3972721",
+          "published_at": null
+        },
+        {
+          "publication": "Spectrum Culture",
+          "rating_10": 6.5,
+          "url": "https://spectrumculture.com/2026/10/20/remi-wolf-mud-review/",
+          "published_at": null
+        }
+      ],
+      "listen_url": "https://open.spotify.com/album/19cvoEE5d3pMkxLFL5TsAG",
+      "status": "recent",
+      "reason": null,
+      "known_to_peel": true,
+      "feedback_label": null,
+      "local_sources": [
+        "pitchfork_album_reviews"
+      ]
+    },
+    {
+      "artist": "Cameron Winter",
+      "album": "Live at Carnegie Hall",
+      "adm_url": "http://www.anydecentmusic.com/review/15755/Cameron-Winter-Live-at-Carnegie-Hall-.aspx",
+      "adm_urls": [
+        "http://www.anydecentmusic.com/review/15755/Cameron-Winter-Live-at-Carnegie-Hall-.aspx"
+      ],
+      "discovered_via": [
+        "http://www.anydecentmusic.com/chart/JustOut.aspx"
+      ],
+      "release_uk": "2026-10-09",
+      "release_us": "2026-10-09",
+      "release_date": "2026-10-09",
+      "adm_rating_10": 8.2,
+      "reviews": [
+        {
+          "publication": "Paste Magazine",
+          "rating_10": 10.0,
+          "url": "https://www.pastemagazine.com/music/cameron-winter/cameron-winter-live-at-carnegie-hall-review",
+          "published_at": null
+        },
+        {
+          "publication": "Still Listening",
+          "rating_10": 10.0,
+          "url": "https://www.stilllisteningmagazine.com/reviews/cameron-winter-live-at-carnegie-hall-review",
+          "published_at": null
+        },
+        {
+          "publication": "The Line Of Best Fit",
+          "rating_10": 9.0,
+          "url": "https://www.thelineofbestfit.com/albums/on-live-at-carnegie-hall-we-benefit-from-an-extra-concentrated-dose-of-cameron-winter",
+          "published_at": null
+        },
+        {
+          "publication": "Clash",
+          "rating_10": 9.0,
+          "url": "https://www.clashmusic.com/reviews/cameron-winter-live-at-carnegie-hall/",
+          "published_at": null
+        },
+        {
+          "publication": "Pitchfork",
+          "rating_10": 8.9,
+          "url": "https://pitchfork.com/reviews/albums/cameron-winter-live-at-carnegie-hall/",
+          "published_at": null
+        },
+        {
+          "publication": "Northern Transmissions",
+          "rating_10": 8.7,
+          "url": "https://northerntransmissions.com/cameron-winter-live-at-carnegie-hall/#google_vignette",
+          "published_at": null
+        },
+        {
+          "publication": "Beats Per Minute",
+          "rating_10": 8.5,
+          "url": "https://beatsperminute.com/album-review-cameron-winter-live-at-carnegie-hall/",
+          "published_at": null
+        },
+        {
+          "publication": "Spectrum Culture",
+          "rating_10": 8.0,
+          "url": "https://spectrumculture.com/2026/10/20/cameron-winter-live-at-carnegie-hall-review/",
+          "published_at": null
+        },
+        {
+          "publication": "Slant Magazine",
+          "rating_10": 8.0,
+          "url": "https://www.slantmagazine.com/music/cameron-winter-live-at-carnegie-hall-album-review/",
+          "published_at": null
+        },
+        {
+          "publication": "Exclaim",
+          "rating_10": 7.0,
+          "url": "https://exclaim.ca/music/article/cameron-winter-live-at-carnegie-hall-album-review",
+          "published_at": null
+        },
+        {
+          "publication": "No Ripcord",
+          "rating_10": 5.5,
+          "url": "https://www.noripcord.com/cameron-winter-live-at-carnegie-hall/",
+          "published_at": null
+        }
+      ],
+      "listen_url": "https://open.spotify.com/album/5FjFRlo7diqzHNpVz5wJCt",
+      "status": "recent",
+      "reason": null,
+      "known_to_peel": true,
+      "feedback_label": "like",
+      "local_sources": [
+        "beats_per_minute_album_reviews",
+        "clash_album_reviews",
+        "pitchfork_best_albums"
+      ]
+    },
+    {
+      "artist": "Troye Sivan",
+      "album": "She's The Best",
+      "adm_url": "http://www.anydecentmusic.com/review/15754/Troye-Sivan-Shes-The-Best.aspx",
+      "adm_urls": [
+        "http://www.anydecentmusic.com/review/15754/Troye-Sivan-Shes-The-Best.aspx"
+      ],
+      "discovered_via": [
+        "http://www.anydecentmusic.com/chart/JustOut.aspx"
+      ],
+      "release_uk": "2026-10-09",
+      "release_us": "2026-10-09",
+      "release_date": "2026-10-09",
+      "adm_rating_10": 7.6,
+      "reviews": [
+        {
+          "publication": "All Music",
+          "rating_10": 9.0,
+          "url": "https://www.allmusic.com/album/shes-the-best-mw0004864341",
+          "published_at": null
+        },
+        {
+          "publication": "Still Listening",
+          "rating_10": 9.0,
+          "url": "https://www.stilllisteningmagazine.com/reviews/troye-sivan-shes-the-best-review",
+          "published_at": null
+        },
+        {
+          "publication": "The Guardian",
+          "rating_10": 8.0,
+          "url": "https://www.theguardian.com/music/2026/oct/09/troye-sivan-shes-the-best-album-review",
+          "published_at": null
+        },
+        {
+          "publication": "NME",
+          "rating_10": 8.0,
+          "url": "https://www.nme.com/reviews/album/troye-sivan-shes-the-best-review-3972714",
+          "published_at": null
+        },
+        {
+          "publication": "The Line Of Best Fit",
+          "rating_10": 8.0,
+          "url": "https://www.thelineofbestfit.com/albums/troye-sivan-strips-himself-bare-on-the-yearning-shes-the-best",
+          "published_at": null
+        },
+        {
+          "publication": "musicOMH",
+          "rating_10": 8.0,
+          "url": "https://www.musicomh.com/reviews/albums/troye-sivan-shes-the-best-review",
+          "published_at": null
+        },
+        {
+          "publication": "Clash",
+          "rating_10": 8.0,
+          "url": "https://www.clashmusic.com/reviews/troye-sivan-shes-the-best/",
+          "published_at": null
+        },
+        {
+          "publication": "PopMatters",
+          "rating_10": 8.0,
+          "url": "https://www.popmatters.com/troye-sivan-shes-the-best",
+          "published_at": null
+        },
+        {
+          "publication": "Beats Per Minute",
+          "rating_10": 7.9,
+          "url": "https://beatsperminute.com/album-review-troye-sivan-shes-the-best/",
+          "published_at": null
+        },
+        {
+          "publication": "Spectrum Culture",
+          "rating_10": 7.3,
+          "url": "https://spectrumculture.com/2026/11/03/troye-sivan-shes-the-best-review/",
+          "published_at": null
+        },
+        {
+          "publication": "Pitchfork",
+          "rating_10": 7.3,
+          "url": "https://pitchfork.com/reviews/albums/troye-sivan-shes-the-best/",
+          "published_at": null
+        },
+        {
+          "publication": "Exclaim",
+          "rating_10": 7.0,
+          "url": "https://exclaim.ca/music/article/troye-sivan-she-s-the-best-album-review",
+          "published_at": null
+        },
+        {
+          "publication": "Slant Magazine",
+          "rating_10": 6.0,
+          "url": "https://www.slantmagazine.com/music/troye-sivan-shes-the-best-album-review/",
+          "published_at": null
+        },
+        {
+          "publication": "Paste Magazine",
+          "rating_10": 5.8,
+          "url": "https://www.pastemagazine.com/music/troye-sivan/troye-sivan-shes-the-best-review",
+          "published_at": null
+        }
+      ],
+      "listen_url": "https://open.spotify.com/album/5lxMKFdNAshWkJZsqr1FYD",
+      "status": "recent",
+      "reason": null,
+      "known_to_peel": true,
+      "feedback_label": "meh",
+      "local_sources": [
+        "beats_per_minute_album_reviews",
+        "clash_album_reviews",
+        "guardian_music_albums"
+      ]
+    }
+  ],
+  "local_requested": true,
+  "local_available": true,
+  "local_observed_at": "2026-11-10T13:30:59.696350+00:00",
+  "local_error": null,
+  "coverage": "Current Just In/Unlisted pages only; not an exhaustive release catalogue.",
+  "evidence": "Dates and scores as indexed by ADM at observed_at. Original articles, playability, format and first-recording release are not verified. ADM is not an extra independent publication or a personal taste score.",
+  "partial": false
+}

@@ -33,7 +33,9 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
 
+from peel import adm_radar
 from peel.affinity import build_affinity_profile
 from peel.album_discovery import AlbumDiscoveryError, discover_album_mentions
 from peel.albums import CANONICAL_ALBUM_QUEUE_SINCE, select_album_queue
@@ -1705,6 +1707,120 @@ def report(
                 webbrowser.open(html_path.resolve().as_uri())
     finally:
         db.close()
+
+
+@app.command(rich_help_panel=PANEL_BROWSE)
+def radar(
+    limit: Annotated[
+        int, typer.Option("--limit", min=1, max=50, help="Máximo de fichas ADM a consultar")
+    ] = 30,
+    include_all: Annotated[
+        bool, typer.Option("--all", help="Inclui antigos, futuros e não confirmados")
+    ] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Inventário completo em JSON")
+    ] = False,
+    no_local: Annotated[bool, typer.Option("--no-local", help="Não lê a base local")] = False,
+    snapshot: Annotated[
+        Path | None, typer.Option("--snapshot", help="Guarda JSON novo, sem substituir ficheiros")
+    ] = None,
+) -> None:
+    """Consulta o radar ADM, só de leitura; não escolhe nem entrega a semana."""
+    protected = (PROJECT_ROOT / "data", PROJECT_ROOT / ".git", PROJECT_ROOT.parent / "peel-sept")
+    database = _resolve_path(settings.db_path)
+    if snapshot is not None:
+        try:
+            adm_radar.snapshot_destination(
+                snapshot, protected_roots=protected, protected_files=(database,)
+            )
+        except (OSError, ValueError) as exc:
+            raise typer.BadParameter(str(exc), param_hint="--snapshot") from exc
+    try:
+        result = adm_radar.collect_radar(limit=limit)
+    except adm_radar.RadarError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
+    if not no_local:
+        result = adm_radar.annotate_local(result, database)
+    if snapshot is not None:
+        try:
+            adm_radar.save_snapshot(
+                result, snapshot, protected_roots=protected, protected_files=(database,)
+            )
+        except (OSError, ValueError) as exc:
+            typer.echo(f"Não foi possível guardar a snapshot: {exc}", err=True)
+            raise typer.Exit(1) from exc
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {**result.model_dump(mode="json"), "partial": result.partial},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+    recent = [item for item in result.albums if item.status == "recent"]
+    new = sum(item.known_to_peel is False for item in recent)
+    console.print(f"ADM radar · observado em {result.observed_at}")
+    console.print(
+        f"{len(recent)} edições com data recente (até {result.window_days} dias). "
+        "Não é uma seleção personalizada."
+    )
+    if result.local_available:
+        console.print(
+            f"{new} ainda não encontrados na base local; {len(recent) - new} já presentes."
+        )
+    elif not no_local:
+        console.print(Text(f"Comparação local indisponível: {result.local_error}", style="yellow"))
+    if result.partial:
+        console.print(
+            Text(
+                f"Consulta parcial · {result.details_requested}/{result.discovered_count} "
+                "fichas ADM consultadas; ver avisos.",
+                style="yellow",
+            )
+        )
+    for error in result.errors:
+        console.print(Text(error, style="yellow"))
+    table = Table(title="ADM inventory — release dates, not taste ranking")
+    for label in (
+        "Artist",
+        "Album",
+        "UK / US release",
+        "ADM",
+        "Reviews",
+        "Known",
+        "Feedback",
+        "Status",
+        "Link",
+    ):
+        table.add_column(label)
+    visible = result.albums if include_all else recent
+    for item in visible:
+        table.add_row(
+            Text(item.artist),
+            Text(item.album),
+            f"{item.release_uk or '?'} / {item.release_us or '?'}",
+            f"{item.adm_rating_10:.1f}" if item.adm_rating_10 is not None else "?",
+            str(len(item.reviews)) if item.reviews is not None else "?",
+            "yes" if item.known_to_peel is True else "no" if item.known_to_peel is False else "?",
+            Text(item.feedback_label or "—"),
+            item.status,
+            Text("ADM", style=f"link {item.adm_url}"),
+        )
+        if include_all and item.reason:
+            console.print(Text(f"{item.artist} — {item.album}: {item.reason}", style="dim"))
+    console.print(table)
+    console.print(
+        "Datas/notas indexadas pelo ADM; formato, primeira edição e disponibilidade "
+        "para ouvir não verificados."
+    )
+    console.print(
+        "Known = álbum já encontrado pelo Peel. Críticas originais e links completos: --json. "
+        "Added não é data de lançamento."
+    )
+    if snapshot is not None:
+        console.print(Text(f"Snapshot guardada: {snapshot}"))
 
 
 @app.command(rich_help_panel=PANEL_MAINTENANCE)
