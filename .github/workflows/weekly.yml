@@ -45,6 +45,7 @@ jobs:
       - name: run peel
         run: uv run peel run
         env:
+          PEEL_CAPTURE_DISCOVERY: "1"
           SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
           SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
           SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
@@ -52,6 +53,18 @@ jobs:
           PEEL_REVIEW_PLAYLIST_ID: ${{ secrets.PEEL_REVIEW_PLAYLIST_ID }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+      # Retain the current attempt even when discovery/delivery/reporting fails.
+      # Diagnostics must never turn a successful musical delivery into a failure.
+      - name: upload discovery trace
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: discovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: data/reports/discovery/**/run-${{ github.run_id }}-${{ github.run_attempt }}-*.jsonl
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: generate report
         run: uv run peel report

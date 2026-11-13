@@ -24,6 +24,7 @@ from peel.albums import (
     top_album_recommendations,
 )
 from peel.db import DB, SourceQuality, iso_week, rank_window_uris
+from peel.discovery_trace import capture
 from peel.matcher import normalize, score
 from peel.models import AlbumQueueItem
 from peel.playlists import canonical_playlist_id
@@ -55,6 +56,13 @@ def make_album_resolver(sp: Any, threshold: int = 85) -> AlbumResolver:
                 "site_export.album_resolve_failed", artist=artist, album=album, error=str(exc)
             )
             return None
+        capture(
+            "albums.spotify_search",
+            artist=artist,
+            album=album,
+            candidates=candidates,
+            threshold=threshold,
+        )
         norm_artist, norm_album = normalize(artist), normalize(album)
         for cand in candidates:
             cand_artist = normalize(", ".join(cand.get("artists") or []))
@@ -62,7 +70,15 @@ def make_album_resolver(sp: Any, threshold: int = 85) -> AlbumResolver:
             artist_ok = score(norm_artist, cand_artist) >= threshold
             album_ok = score(norm_album, cand_album) >= threshold
             if artist_ok and album_ok:
+                capture(
+                    "albums.spotify_match",
+                    artist=artist,
+                    album=album,
+                    listen_url=cand.get("url"),
+                    matched=True,
+                )
                 return cand.get("url")
+        capture("albums.spotify_match", artist=artist, album=album, matched=False)
         return None
 
     return resolve

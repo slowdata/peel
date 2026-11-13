@@ -20,6 +20,7 @@ from spotipy.cache_handler import MemoryCacheHandler
 from spotipy.oauth2 import SpotifyOAuth, SpotifyOauthError
 
 from peel.config import settings
+from peel.discovery_trace import capture
 
 log = structlog.get_logger()
 
@@ -201,6 +202,7 @@ class SpotifyClient:
 
         except Exception as e:
             log.exception("spotify.search_failed", query=query, error=str(e))
+            capture("tracks.spotify_search_failed", query=query, error_type=type(e).__name__)
             return []
 
     def search_album(self, artist: str, album: str, limit: int = 5) -> list[dict]:
@@ -226,6 +228,12 @@ class SpotifyClient:
             ]
         except Exception as e:
             log.exception("spotify.album_search_failed", artist=artist, album=album, error=str(e))
+            capture(
+                "albums.spotify_search_failed",
+                artist=artist,
+                album=album,
+                error_type=type(e).__name__,
+            )
             return []
 
     def playlist_track_uris(self, playlist_id: str, *, strict: bool = False) -> list[str]:

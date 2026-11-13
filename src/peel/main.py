@@ -23,6 +23,7 @@ from collections import Counter
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from urllib.parse import urlparse
 
 import structlog
@@ -36,9 +37,11 @@ from peel.albums import (
 )
 from peel.config import settings
 from peel.db import DB, iso_week
+from peel.discovery_trace import DiscoveryTrace, capture, observe
 from peel.matcher import artist_identity_key, best_match, normalize
 from peel.models import AlbumQueueItem, Track
 from peel.novelty import (
+    MAX_RELEASE_AGE_DAYS,
     NoveltyCheck,
     NoveltyFilter,
     TrackReleaseFilter,
@@ -46,6 +49,7 @@ from peel.novelty import (
     make_track_release_filter,
     track_release_reason,
 )
+from peel.releases import MIN_ALBUM_TRACKS
 from peel.scoring import SourceScore, build_source_scores
 from peel.site_export import make_album_resolver
 from peel.sources.bandcamp import fetch_release_details
@@ -139,6 +143,31 @@ class SourceRunStats:
 
 
 def run(dry_run: bool = False) -> None:
+    """Run normally, optionally observing without changing any selection input."""
+    if os.getenv("PEEL_CAPTURE_DISCOVERY", "").lower() not in {"1", "true", "yes"}:
+        return _run_pipeline(dry_run)
+    try:
+        trace = DiscoveryTrace(
+            Path(settings.db_path).resolve().parent / "reports/discovery", dry_run=dry_run
+        )
+    except Exception as exc:
+        log.warning("discovery.capture_setup_failed", error_type=type(exc).__name__)
+        return _run_pipeline(dry_run)
+    with observe(trace):
+        status, error_type = "returned", None
+        try:
+            return _run_pipeline(dry_run)
+        except BaseException as exc:
+            status, error_type = "raised", type(exc).__name__
+            raise
+        finally:
+            try:
+                trace.finish(status, error_type=error_type)
+            except Exception as exc:
+                log.warning("discovery.capture_finish_failed", error_type=type(exc).__name__)
+
+
+def _run_pipeline(dry_run: bool = False) -> None:
     """Executa uma run semanal do Peel.
 
     - Fetch de sources (Pitchfork, etc.)
@@ -150,6 +179,24 @@ def run(dry_run: bool = False) -> None:
 
     # Timestamp de início (para duration logging)
     start_time = datetime.now(UTC)
+    capture(
+        "run.started",
+        started_at=start_time,
+        week=iso_week(start_time),
+        db_path=settings.db_path,
+        config={
+            "track_limit": settings.peel_max_tracks_per_run,
+            "album_limit": MAX_ALBUM_QUEUE_ITEMS,
+            "album_resolution_limit": MAX_ALBUM_RESOLUTION_CANDIDATES,
+            "source_item_age_days": settings.peel_max_source_item_age_days,
+            "per_source_track_limit": settings.peel_max_tracks_per_source,
+            "match_threshold": settings.match_threshold,
+            "review_window_weeks": settings.peel_review_playlist_window_weeks,
+            "unmatched_retry_days": settings.unmatched_retry_days,
+            "release_age_days": MAX_RELEASE_AGE_DAYS,
+            "minimum_album_tracks": MIN_ALBUM_TRACKS,
+        },
+    )
 
     # Dry run: opera numa CÓPIA descartável da DB, não escreve playlists nem
     # envia Telegram. As escritas (record_track, etc.) vão para a cópia e são
@@ -216,6 +263,14 @@ def run(dry_run: bool = False) -> None:
         )
         source_quality = _source_quality_map(source_scores)
         affinity_profile = _load_affinity_profile(db)
+        capture(
+            "run.selection_inputs",
+            source_scores=source_scores,
+            source_quality=source_quality,
+            source_slot_caps=source_slot_caps,
+            affinity_profile=affinity_profile,
+            banned_track_keys=banned_track_keys,
+        )
 
         # 0. Retry de tracks unmatched recentes — muitos blogs publicam picks
         # antes do release global de sexta, ou os tracks chegam ao Spotify com
@@ -246,6 +301,23 @@ def run(dry_run: bool = False) -> None:
             try:
                 # 1. Fetch da source
                 tracks = fetch_source(db, source)
+                capture(
+                    "source.collected",
+                    source_id=source.id,
+                    source_kind=source.kind,
+                    raw_entries=getattr(source, "last_raw_entries", None),
+                    items=[
+                        {
+                            "artist": t.artist,
+                            "title": t.title,
+                            "source_url": t.source_url,
+                            "published_at": t.published_at,
+                            "kind": t.kind or source.kind,
+                            "spotify_album_uri": t.spotify_album_uri,
+                        }
+                        for t in tracks
+                    ],
+                )
                 if getattr(source, "last_raw_entries", None) == 0:
                     empty_sources.append(source.name)
                     log.warning("source.empty_feed", source_id=source.id)
@@ -281,6 +353,7 @@ def run(dry_run: bool = False) -> None:
                     tracks_added += added
                     tracks_unmatched += unmatched
                 if not album_items and not track_items and fresh_tracks:
+                    capture("source.unsupported_kind", source_id=source.id, source_kind=source.kind)
                     log.info(
                         "source.skipped_non_playlist_kind",
                         source_id=source.id,
@@ -291,6 +364,7 @@ def run(dry_run: bool = False) -> None:
                 # Atualiza estado da source como OK
                 db.update_source_state(source.id, "ok")
                 source_stats.record(db, "ok")
+                capture("source.completed", source_id=source.id, stats=source_stats)
                 log.info("source.completed", source_id=source.id, status="ok")
 
             except Exception as e:
@@ -303,10 +377,17 @@ def run(dry_run: bool = False) -> None:
                 db.update_source_state(source.id, "error", str(e))
                 source_stats.record(db, "error", str(e))
                 failed_sources.append(source.name)
+                capture(
+                    "source.failed",
+                    source_id=source.id,
+                    error_type=type(e).__name__,
+                    stats=source_stats,
+                )
                 continue
 
         # 2.5 Prune rows unmatched expiradas (desistimos após a janela de retry)
         pruned = db.prune_unmatched(settings.unmatched_retry_days)
+        capture("tracks.retry_pruned", count=pruned, retry_days=settings.unmatched_retry_days)
         if pruned:
             log.info("unmatched.pruned", count=pruned, max_age_days=settings.unmatched_retry_days)
 
@@ -338,6 +419,7 @@ def run(dry_run: bool = False) -> None:
             )
         except Exception as e:
             log.exception("playlist.triage_selection_failed", error=str(e))
+            capture("tracks.selection_failed", error_type=type(e).__name__)
             raise RuntimeError("Triagem não seleccionada; entrega cancelada") from e
         try:
             album_queue_items = _select_album_queue_items(
@@ -346,7 +428,16 @@ def run(dry_run: bool = False) -> None:
             album_queue_ready = True
         except Exception as e:
             log.exception("albums.recommendations_failed", error=str(e))
+            capture("albums.selection_failed", error_type=type(e).__name__)
 
+        capture(
+            "selection.planned",
+            week=current_week,
+            tracks=window_uris,
+            albums=album_queue_items,
+            tracks_ready=triage_ready,
+            albums_ready=album_queue_ready,
+        )
         if not triage_ready:
             raise RuntimeError("Triagem não seleccionada; entrega cancelada")
         elif dry_run:
@@ -358,7 +449,19 @@ def run(dry_run: bool = False) -> None:
             )
         else:
             try:
+                capture(
+                    "delivery.spotify_started",
+                    week=current_week,
+                    uris=window_uris,
+                    is_review=bool(review_id),
+                )
                 sp.replace_playlist_items(target_playlist, window_uris)
+                capture(
+                    "delivery.spotify_verified",
+                    week=current_week,
+                    uris=window_uris,
+                    is_review=bool(review_id),
+                )
                 db.replace_review_queue(target_playlist, triage_entries, week=current_week)
                 playlist_updated = True
                 if album_queue_ready:
@@ -366,8 +469,16 @@ def run(dry_run: bool = False) -> None:
                         db.replace_album_queue(current_week, album_queue_items)
                     except Exception as exc:  # never announce unpersisted candidates
                         log.exception("albums.snapshot_persist_failed", error=str(exc))
+                        capture("albums.persistence_failed", error_type=type(exc).__name__)
                 confirmed = db.album_queue(current_week)
                 persisted_album_queue = confirmed if confirmed is not None else []
+                capture(
+                    "delivery.persisted",
+                    week=current_week,
+                    tracks=triage_entries,
+                    albums=persisted_album_queue,
+                    album_selection_ready=album_queue_ready,
+                )
                 log.info(
                     "playlist.rotated",
                     playlist_id=target_playlist,
@@ -402,8 +513,9 @@ def run(dry_run: bool = False) -> None:
                     album_recommendations=_album_queue_digest_items(persisted_album_queue),
                     notice=source_health_notice(empty_sources, failed_sources),
                 )
-            except Exception:
+            except Exception as exc:
                 log.exception("digest.crashed")
+                capture("delivery.telegram_failed", error_type=type(exc).__name__)
 
         # 5. Fecha DB (sempre, mesmo com erros)
         db.close()
@@ -433,6 +545,13 @@ def _filter_fresh_source_items(source_id: str, tracks: list[Track], now: datetim
     for track in tracks:
         if track.published_at is None:
             fresh_tracks.append(track)
+            capture(
+                "source.freshness",
+                source_id=source_id,
+                artist=track.artist,
+                title=track.title,
+                decision="accepted_editorial_date_unknown",
+            )
             continue
 
         published_at = track.published_at
@@ -440,6 +559,16 @@ def _filter_fresh_source_items(source_id: str, tracks: list[Track], now: datetim
             published_at = published_at.replace(tzinfo=UTC)
 
         if published_at < cutoff or published_at > now:
+            capture(
+                "source.freshness",
+                source_id=source_id,
+                artist=track.artist,
+                title=track.title,
+                published_at=published_at,
+                cutoff=cutoff,
+                reference=now,
+                decision="future_editorial_date" if published_at > now else "stale_editorial_date",
+            )
             log.info(
                 "source.item_skipped_age",
                 source_id=source_id,
@@ -451,6 +580,16 @@ def _filter_fresh_source_items(source_id: str, tracks: list[Track], now: datetim
             )
             continue
         fresh_tracks.append(track)
+        capture(
+            "source.freshness",
+            source_id=source_id,
+            artist=track.artist,
+            title=track.title,
+            published_at=published_at,
+            cutoff=cutoff,
+            reference=now,
+            decision="accepted",
+        )
     return fresh_tracks
 
 
@@ -492,6 +631,15 @@ def _select_triage(
         source_quality,
         affinity_profile,
     )
+    capture(
+        "tracks.rotation_pool",
+        week=current_week,
+        window_weeks=rotation_weeks,
+        ranked_uris=window_uris,
+        current_week_uris=current_week_uris,
+        new_uris=new_track_uris,
+        metadata=candidate_metadata,
+    )
     window_uris = select_review_playlist_uris(
         window_uris,
         current_week_uris,
@@ -510,6 +658,13 @@ def _select_triage(
         affinity_profile,
     )
     triage_ready = len(triage_entries) == len(window_uris)
+    capture(
+        "tracks.selection_result",
+        week=current_week,
+        uris=window_uris,
+        items=triage_entries,
+        metadata_complete=triage_ready,
+    )
     if triage_ready:
         distribution = dict(sorted(Counter(item.source_id for item in triage_entries).items()))
         new_distribution = dict(
@@ -580,6 +735,13 @@ def _process_album_items(
                 track.source_url,
                 spotify_album_uri=track.spotify_album_uri,
             )
+            capture(
+                "albums.mention_recorded",
+                source_id=source.id,
+                artist=track.artist,
+                album=track.title,
+                is_new=is_new,
+            )
 
             if is_new:
                 albums_added += 1
@@ -592,6 +754,13 @@ def _process_album_items(
                 )
 
         except Exception as e:
+            capture(
+                "albums.processing_failed",
+                source_id=source.id,
+                artist=track.artist,
+                album=track.title,
+                error_type=type(e).__name__,
+            )
             log.exception(
                 "album.processing_failed",
                 source_id=source.id,
@@ -629,9 +798,23 @@ def _process_track_items(
     )
     source_candidates = fresh_tracks[:source_cap]
     source_stats.skipped_cap_count += max(0, len(fresh_tracks) - len(source_candidates))
+    capture(
+        "tracks.source_cap",
+        source_id=source.id,
+        limit=source_cap,
+        considered=[(t.artist, t.title) for t in source_candidates],
+        not_evaluated=[(t.artist, t.title) for t in fresh_tracks[source_cap:]],
+    )
     for track in source_candidates:
         try:
             if _track_key(track.artist, track.title) in banned_track_keys:
+                capture(
+                    "tracks.ingest_decision",
+                    source_id=source.id,
+                    artist=track.artist,
+                    title=track.title,
+                    decision="blocked_artist_title_item",
+                )
                 log.info(
                     "track.skipped_banned",
                     source_id=source.id,
@@ -658,7 +841,23 @@ def _process_track_items(
                 threshold=settings.match_threshold,
             )
 
+            capture(
+                "tracks.search",
+                source_id=source.id,
+                artist=track.artist,
+                title=track.title,
+                candidates=candidates,
+                matched_uri=uri,
+                threshold=settings.match_threshold,
+            )
             if uri is None:
+                capture(
+                    "tracks.ingest_decision",
+                    source_id=source.id,
+                    artist=track.artist,
+                    title=track.title,
+                    decision="no_match",
+                )
                 # Não encontrou match
                 db.record_unmatched(
                     source.id,
@@ -690,7 +889,23 @@ def _process_track_items(
                 )
                 uri = canonical_uri
 
+            capture(
+                "tracks.identity",
+                source_id=source.id,
+                artist=track.artist,
+                title=track.title,
+                matched_uri=matched_candidate.get("uri"),
+                canonical_uri=uri,
+            )
             if db.is_banned_uri(uri):
+                capture(
+                    "tracks.ingest_decision",
+                    source_id=source.id,
+                    artist=track.artist,
+                    title=track.title,
+                    uri=uri,
+                    decision="blocked_uri_item",
+                )
                 log.info(
                     "track.skipped_banned",
                     source_id=source.id,
@@ -702,7 +917,19 @@ def _process_track_items(
                 continue
 
             source_stats.matched_count += 1
-            decision = check_track_release(matched_candidate, candidates, datetime.now(UTC).date())
+            release_reference = datetime.now(UTC).date()
+            decision = check_track_release(matched_candidate, candidates, release_reference)
+            capture(
+                "tracks.release_check",
+                source_id=source.id,
+                artist=track.artist,
+                title=track.title,
+                uri=uri,
+                reason=decision.reason,
+                retryable=decision.retryable,
+                metadata=matched_candidate,
+                reference_date=release_reference,
+            )
             if decision.reason:
                 if decision.retryable and not db.already_added(uri):
                     # Retry future/unconfirmed dates without consuming slots or
@@ -720,6 +947,14 @@ def _process_track_items(
             already = db.already_added(uri)
 
             if already:
+                capture(
+                    "tracks.ingest_decision",
+                    source_id=source.id,
+                    artist=track.artist,
+                    title=track.title,
+                    uri=uri,
+                    decision="existing_uri_attribution",
+                )
                 # Consenso: atribui uma fonte nova a um URI já conhecido.
                 # Sempre registado — não conta para o cap de novidades.
                 inserted = db.record_track(
@@ -744,6 +979,14 @@ def _process_track_items(
             # e unmatched não queimam slots (o search já aconteceu acima).
             # Serão redescobertas numa run futura se ainda forem frescas.
             if _track_cap_reached(playlist_slots_used):
+                capture(
+                    "tracks.ingest_decision",
+                    source_id=source.id,
+                    artist=track.artist,
+                    title=track.title,
+                    uri=uri,
+                    decision="new_track_limit",
+                )
                 source_stats.skipped_cap_count += 1
                 log.info(
                     "track.skipped_global_cap",
@@ -776,6 +1019,14 @@ def _process_track_items(
             source_stats.new_unique_count += 1
             new_track_uris.append(uri)
             new_track_entries.append((source.id, track.artist, track.title, track.source_url))
+            capture(
+                "tracks.ingest_decision",
+                source_id=source.id,
+                artist=track.artist,
+                title=track.title,
+                uri=uri,
+                decision="new_uri_recorded",
+            )
 
             log.info(
                 "track.matched_and_added",
@@ -786,6 +1037,13 @@ def _process_track_items(
             )
 
         except Exception as e:
+            capture(
+                "tracks.processing_failed",
+                source_id=source.id,
+                artist=track.artist,
+                title=track.title,
+                error_type=type(e).__name__,
+            )
             log.exception(
                 "track.processing_failed",
                 source_id=source.id,
@@ -839,6 +1097,15 @@ def select_review_playlist_uris(
     de source sofrem diminishing returns no score secundário; não há quotas,
     caps ou filtros de source.
     """
+    capture(
+        "tracks.selection_inputs",
+        ranked_uris=ranked_uris,
+        current_week_uris=current_week_uris,
+        new_uris=new_track_uris,
+        limit=limit,
+        metadata=candidate_metadata,
+        pending_release_check_enabled=pending_release_filter is not None,
+    )
     if limit <= 0:
         return []
 
@@ -846,18 +1113,43 @@ def select_review_playlist_uris(
     new_uris = list(dict.fromkeys(uri for uri in current_week_uris if uri in new_uri_set))
     if len(new_uris) > limit:
         log.warning("playlist.new_tracks_exceed_cap", new_tracks=len(new_uris), limit=limit)
+        capture("tracks.selection_cap", selected=new_uris[:limit], not_evaluated=new_uris[limit:])
         return new_uris[:limit]
 
     selected_set = set(new_uris)
-    pending_uris = [
-        uri for uri in dict.fromkeys(ranked_uris) if uri not in selected_set and is_unrated(uri)
-    ]
+    pending_uris = []
+    for uri in dict.fromkeys(ranked_uris):
+        if uri in selected_set:
+            capture("tracks.pool_decision", uri=uri, decision="new_priority")
+            continue
+        unrated = is_unrated(uri)
+        capture(
+            "tracks.pool_decision",
+            uri=uri,
+            decision="pending_candidate" if unrated else "feedback_present",
+        )
+        if unrated:
+            pending_uris.append(uri)
     remaining_slots = limit - len(new_uris)
     if pending_release_filter is not None:
         eligible: list[str] = []
         budget = max(14, remaining_slots * 2) if remaining_slots else 0
+        for uri in pending_uris[budget:]:
+            capture(
+                "tracks.pending_decision",
+                uri=uri,
+                decision="not_evaluated_lookup_budget"
+                if remaining_slots
+                else "not_evaluated_queue_full",
+            )
         for uri in pending_uris[:budget]:
             reason = pending_release_filter(uri)
+            capture(
+                "tracks.pending_decision",
+                uri=uri,
+                release_reason=reason,
+                decision="release_held" if reason else "release_eligible",
+            )
             if reason:
                 log.info("playlist.pending_release_skipped", uri=uri, reason=reason)
             else:
@@ -869,6 +1161,13 @@ def select_review_playlist_uris(
         limit=remaining_slots,
     )
     result = new_uris + selected_pending
+    capture(
+        "tracks.final_choice",
+        new_uris=new_uris,
+        pending_uris=selected_pending,
+        uris=result,
+        eligible_not_selected=[u for u in pending_uris if u not in selected_pending],
+    )
     log.info(
         "playlist.triage_selected",
         new_tracks=len(new_uris),
@@ -895,9 +1194,17 @@ def _select_diverse_pending_uris(
     if limit <= 0:
         return []
     if not candidate_metadata:
+        capture("tracks.pending_fallback", reason="no_metadata", uris=pending_uris, limit=limit)
         return pending_uris[:limit]
     missing_uris = [uri for uri in pending_uris if uri not in candidate_metadata]
     if missing_uris:
+        capture(
+            "tracks.pending_fallback",
+            reason="missing_metadata",
+            missing_uris=missing_uris,
+            uris=pending_uris,
+            limit=limit,
+        )
         log.warning(
             "playlist.triage_metadata_incomplete_fallback",
             missing_tracks=len(missing_uris),
@@ -918,7 +1225,7 @@ def _select_diverse_pending_uris(
             candidate = candidate_metadata[uri]
             repeat_penalty = SOURCE_REPEAT_PENALTY * source_counts[candidate.source_id]
             adjusted_source_score = candidate.source_score - repeat_penalty
-            return (
+            sort_key = (
                 -float(candidate.source_count),
                 -adjusted_source_score,
                 -candidate.affinity,
@@ -926,12 +1233,21 @@ def _select_diverse_pending_uris(
                 original_index,
                 uri,
             )
+            capture(
+                "tracks.pending_score",
+                uri=uri,
+                iteration=len(selected),
+                repeat_penalty=repeat_penalty,
+                sort_key=sort_key,
+            )
+            return sort_key
 
         selected_index = min(
             range(len(remaining)), key=lambda index: selection_key(remaining[index])
         )
         _, uri = remaining.pop(selected_index)
         selected.append(uri)
+        capture("tracks.pending_pick", uri=uri, position=len(selected))
         source_counts[candidate_metadata[uri].source_id] += 1
 
     return selected
@@ -948,6 +1264,7 @@ def _load_review_candidate_metadata(
         return _review_candidate_metadata(db, uris, source_quality, affinity_profile)
     except Exception as exc:  # noqa: BLE001 - a triagem pode usar ranking base
         log.warning("playlist.triage_metadata_failed_fallback", error=str(exc))
+        capture("tracks.metadata_failed", error_type=type(exc).__name__)
         return None
 
 
@@ -991,6 +1308,7 @@ def _review_candidate_metadata(
             affinity=affinity_profile.score(str(artist)),
             latest_at=latest_at,
         )
+        capture("tracks.candidate_metadata", uri=uri, mentions=rows, metadata=metadata[uri])
     return metadata
 
 
@@ -1127,8 +1445,13 @@ def _album_queue_snapshot_items(
         (artist_identity_key(artist_key), album_key): listen
         for (artist_key, album_key), listen in (cached_listen_urls or {}).items()
     }
-    for item, is_new in selected:
+    for index, (item, is_new) in enumerate(selected):
         if len(snapshots) >= limit:
+            capture(
+                "albums.not_evaluated",
+                reason="queue_full",
+                items=[(a.artist_key, a.album_key) for a, _ in selected[index:]],
+            )
             break
         urls = tuple(url for _, url in item.source_urls)
         listen_url: str | None = None
@@ -1147,16 +1470,43 @@ def _album_queue_snapshot_items(
             try:
                 resolved = album_resolver(item.artist, item.album)
             except Exception as exc:  # noqa: BLE001 - queue remains usable offline
+                capture(
+                    "albums.resolver_failed",
+                    artist=item.artist,
+                    album=item.album,
+                    error_type=type(exc).__name__,
+                )
                 log.warning(
                     "albums.resolver_failed", artist=item.artist, album=item.album, error=str(exc)
                 )
             else:
                 if resolved and _is_direct_album_listen_url(resolved):
                     listen_url, listen_kind = resolved, "spotify"
+        capture(
+            "albums.resolved",
+            artist_key=item.artist_key,
+            album_key=item.album_key,
+            listen_url=listen_url,
+            listen_kind=listen_kind,
+        )
         if not listen_url:
+            capture(
+                "albums.queue_decision",
+                artist_key=item.artist_key,
+                album_key=item.album_key,
+                decision="no_direct_listen_link",
+            )
             log.info("albums.unplayable_skipped", artist=item.artist, album=item.album)
             continue
         reason = novelty(item.artist, item.album, listen_url, week) if novelty else None
+        capture(
+            "albums.release_check",
+            artist_key=item.artist_key,
+            album_key=item.album_key,
+            listen_url=listen_url,
+            reason=reason,
+            checked=novelty is not None,
+        )
         if reason:
             log.info("albums.not_new_skipped", artist=item.artist, album=item.album, reason=reason)
             continue
@@ -1177,6 +1527,15 @@ def _album_queue_snapshot_items(
                 is_new=is_new,
             )
         )
+        capture(
+            "albums.queue_decision",
+            artist_key=item.artist_key,
+            album_key=item.album_key,
+            decision="selected",
+            position=len(snapshots),
+            is_new=is_new,
+        )
+    capture("albums.final_choice", items=snapshots, limit=limit)
     return snapshots
 
 
@@ -1242,6 +1601,12 @@ def _retry_unmatched(
     if not rows:
         return 0, 0
 
+    capture(
+        "tracks.retry_pool",
+        rows=rows,
+        retry_days=settings.unmatched_retry_days,
+        new_track_limit=max_new_tracks,
+    )
     total = len(rows)
     matched = 0
     banned_track_keys = banned_track_keys or _load_banned_track_keys(db)
@@ -1251,6 +1616,13 @@ def _retry_unmatched(
     for source_id, artist, title, source_url in rows:
         try:
             if _track_key(artist, title) in banned_track_keys:
+                capture(
+                    "tracks.retry_decision",
+                    source_id=source_id,
+                    artist=artist,
+                    title=title,
+                    decision="blocked_artist_title_item",
+                )
                 db.delete_unmatched(source_id, artist, title)
                 log.info(
                     "track.skipped_banned",
@@ -1263,13 +1635,42 @@ def _retry_unmatched(
                 continue
 
             candidates = sp.search_track(artist, title, limit=5)
+            capture(
+                "tracks.retry_search",
+                source_id=source_id,
+                artist=artist,
+                title=title,
+                candidates=candidates,
+                threshold=settings.match_threshold,
+            )
             if not candidates:
+                capture(
+                    "tracks.retry_decision",
+                    source_id=source_id,
+                    artist=artist,
+                    title=title,
+                    decision="no_candidates",
+                )
                 continue
 
             # Usa Track temporário só para alimentar o matcher
             track = Track(source_id=source_id, artist=artist, title=title)
             uri = best_match(track, candidates, threshold=settings.match_threshold)
+            capture(
+                "tracks.retry_match",
+                source_id=source_id,
+                artist=artist,
+                title=title,
+                matched_uri=uri,
+            )
             if uri is None:
+                capture(
+                    "tracks.retry_decision",
+                    source_id=source_id,
+                    artist=artist,
+                    title=title,
+                    decision="no_match",
+                )
                 continue
 
             matched_candidate = next(c for c in candidates if c.get("uri") == uri)
@@ -1278,6 +1679,14 @@ def _retry_unmatched(
                 uri = canonical_uri
 
             if db.is_banned_uri(uri):
+                capture(
+                    "tracks.retry_decision",
+                    source_id=source_id,
+                    artist=artist,
+                    title=title,
+                    uri=uri,
+                    decision="blocked_uri_item",
+                )
                 db.delete_unmatched(source_id, artist, title)
                 log.info(
                     "track.skipped_banned",
@@ -1290,7 +1699,18 @@ def _retry_unmatched(
                 )
                 continue
 
-            reason = track_release_reason(matched_candidate, candidates, datetime.now(UTC).date())
+            release_reference = datetime.now(UTC).date()
+            reason = track_release_reason(matched_candidate, candidates, release_reference)
+            capture(
+                "tracks.retry_release_check",
+                source_id=source_id,
+                artist=artist,
+                title=title,
+                uri=uri,
+                metadata=matched_candidate,
+                reason=reason,
+                reference_date=release_reference,
+            )
             if reason:
                 log.info(
                     "unmatched.retry_release_skipped",
@@ -1307,6 +1727,14 @@ def _retry_unmatched(
                 and max_new_tracks is not None
                 and len(new_track_entries) >= max_new_tracks
             ):
+                capture(
+                    "tracks.retry_decision",
+                    source_id=source_id,
+                    artist=artist,
+                    title=title,
+                    uri=uri,
+                    decision="new_track_limit",
+                )
                 log.info(
                     "unmatched.retry_skipped_cap",
                     source_id=source_id,
@@ -1318,6 +1746,14 @@ def _retry_unmatched(
 
             inserted = db.record_track(uri, source_id, artist, title, source_url)
             db.delete_unmatched(source_id, artist, title)
+            capture(
+                "tracks.retry_decision",
+                source_id=source_id,
+                artist=artist,
+                title=title,
+                uri=uri,
+                decision="existing_uri_attribution" if already else "new_uri_recorded",
+            )
 
             if already:
                 log.debug(
@@ -1343,6 +1779,13 @@ def _retry_unmatched(
                 uri=uri,
             )
         except Exception as e:
+            capture(
+                "tracks.retry_failed",
+                source_id=source_id,
+                artist=artist,
+                title=title,
+                error_type=type(e).__name__,
+            )
             log.exception(
                 "unmatched.retry_failed",
                 source_id=source_id,

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from peel.db import SourceQuality
+from peel.discovery_trace import capture
 from peel.matcher import artist_identity_key, normalize
 from peel.sources.families import source_family
 
@@ -138,12 +139,28 @@ def select_album_queue(
     # never leak backwards into W29 as fresh, pending, or consensus.
     rows = _load_all_album_mentions(db, through_week=current_week)
     adjusted_quality = _album_feedback_quality(db, source_quality)
+    capture(
+        "albums.inputs",
+        week=current_week,
+        mentions=rows,
+        adjusted_source_quality=adjusted_quality,
+        resolution_limit=limit,
+    )
     ranked = rank_album_recommendations(rows, source_quality=adjusted_quality, limit=len(rows))
     # Archiving an old listening queue is not rejecting its albums. In
     # particular, fresh editorial consensus can revive an unrated recent LP.
-    eligible = [
-        item for item in ranked if db.album_feedback_for_identity(item.artist, item.album) is None
-    ]
+    eligible = []
+    for item in ranked:
+        feedback = db.album_feedback_for_identity(item.artist, item.album)
+        capture(
+            "albums.feedback_check",
+            artist_key=item.artist_key,
+            album_key=item.album_key,
+            feedback_label=feedback[1] if feedback else None,
+            decision="already_rated_or_control" if feedback is not None else "unrated",
+        )
+        if feedback is None:
+            eligible.append(item)
     fresh = [item for item in eligible if item.newest_source_week == current_week]
     # An old discovery can resurface when another publication covers it now;
     # otherwise don't use months-old unrated albums just to fill the queue.
@@ -159,6 +176,26 @@ def select_album_queue(
             )
         )
     fresh_keys = {(item.artist_key, item.album_key) for item in fresh}
+    pending_keys = {(item.artist_key, item.album_key) for item in pending}
+    selected_keys = {(item.artist_key, item.album_key) for item in selected}
+    for item in eligible:
+        identity = (item.artist_key, item.album_key)
+        capture(
+            "albums.pool_decision",
+            artist_key=item.artist_key,
+            album_key=item.album_key,
+            phase="fresh"
+            if identity in fresh_keys
+            else "pending"
+            if identity in pending_keys
+            else "outside_pending_window",
+            decision="resolution_candidate"
+            if identity in selected_keys
+            else "not_evaluated_resolution_cap"
+            if identity in fresh_keys | pending_keys
+            else "outside_pending_window",
+        )
+    capture("albums.resolution_pool", items=selected, limit=limit)
     return [(item, (item.artist_key, item.album_key) in fresh_keys) for item in selected]
 
 
@@ -194,16 +231,29 @@ def rank_album_recommendations(
     quality = source_quality or {}
     buckets: dict[tuple[str, str], _AlbumBucket] = {}
     for row in rows:
-        if (
-            not is_album_url(row.source_url)
-            or is_archival_album_title(row.album)
-            or is_compilation_release(row.artist, row.album)
-        ):
+        reason = (
+            "single_url"
+            if not is_album_url(row.source_url)
+            else "archival_title"
+            if is_archival_album_title(row.album)
+            else "compilation"
+            if is_compilation_release(row.artist, row.album)
+            else None
+        )
+        if reason:
+            capture(
+                "albums.mention_excluded",
+                artist=row.artist,
+                album=row.album,
+                source_id=row.source_id,
+                reason=reason,
+            )
             continue
         key = (artist_identity_key(row.artist_key), row.album_key)
         buckets.setdefault(key, _AlbumBucket(row.artist, row.album, *key)).add(row, quality)
     ranked = [bucket.to_recommendation(quality) for bucket in buckets.values()]
     ranked.sort(key=_recommendation_sort_key)
+    capture("albums.base_ranking", items=ranked, limit=limit)
     return ranked[:limit]
 
 
@@ -270,6 +320,13 @@ def _affinity_tier(affinity: Callable[[str], float] | None, artist: str) -> int:
     if affinity is None:
         return 0
     score = affinity(artist)
+    capture(
+        "albums.artist_affinity",
+        artist=artist,
+        score=score,
+        loved_threshold=LOVED_ARTIST_AFFINITY,
+        rejected_threshold=REJECTED_ARTIST_AFFINITY,
+    )
     if score >= LOVED_ARTIST_AFFINITY:
         return 1
     if score <= REJECTED_ARTIST_AFFINITY:
@@ -326,7 +383,7 @@ def _softly_diverse(
             penalty = SOURCE_REPEAT_PENALTY * repeats / (repeats + 1)
             adjusted = combined - penalty
             fresh_at = item.newest_source_at or item.latest_seen_at
-            return (
+            sort_key = (
                 -item.source_count,
                 -_affinity_tier(affinity, item.artist),
                 -adjusted,
@@ -335,10 +392,28 @@ def _softly_diverse(
                 item.artist.lower(),
                 item.album.lower(),
             )
+            capture(
+                "albums.ranking_score",
+                phase="pending" if already is not None else "fresh",
+                iteration=len(selected),
+                artist_key=item.artist_key,
+                album_key=item.album_key,
+                primary_family=family,
+                repeat_penalty=penalty,
+                sort_key=sort_key,
+            )
+            return sort_key
 
         chosen = min(remaining, key=key)
         remaining.remove(chosen)
         selected.append(chosen)
+        capture(
+            "albums.ranked_pick",
+            artist_key=chosen.artist_key,
+            album_key=chosen.album_key,
+            phase="pending" if already is not None else "fresh",
+            position=len(selected),
+        )
         if chosen.sources:
             counts[source_family(chosen.sources[0])] += 1
     return selected

@@ -21,6 +21,7 @@ import httpx
 import structlog
 
 from peel.albums import is_archival_album_title
+from peel.discovery_trace import capture
 from peel.matcher import normalize
 from peel.musicbrainz import MUSICBRAINZ_ARTIST_SEARCH_URL, MUSICBRAINZ_USER_AGENT
 from peel.releases import (
@@ -143,8 +144,16 @@ def make_track_release_filter(
                     "isrc": (data.get("external_ids") or {}).get("isrc"),
                 }
                 cache[uri] = track_release_reason(candidate, [candidate], reference)
+                capture(
+                    "tracks.pending_release_metadata",
+                    uri=uri,
+                    metadata=candidate,
+                    reference_date=reference,
+                    reason=cache[uri],
+                )
             except Exception as exc:  # noqa: BLE001 - hold backfill, preserve historical state
                 log.warning("novelty.track_failed", uri=uri, error=str(exc))
+                capture("tracks.pending_lookup_failed", uri=uri, error_type=type(exc).__name__)
                 cache[uri] = "metadados de lançamento da faixa não confirmados"
         return cache[uri]
 
@@ -220,9 +229,27 @@ class NoveltyCheck:
             data = self.spotify_album(album_id)
         except Exception as exc:  # noqa: BLE001 - novelty is best-effort
             log.warning("novelty.spotify_failed", album_id=album_id, error=str(exc))
+            capture(
+                "albums.spotify_lookup_failed", album_id=album_id, error_type=type(exc).__name__
+            )
             return "metadados de lançamento Spotify não confirmados"
         if not isinstance(data, dict):
             return "metadados de lançamento Spotify não confirmados"
+        capture(
+            "albums.spotify_metadata",
+            album_id=album_id,
+            reference_date=reference,
+            metadata={
+                k: data.get(k)
+                for k in (
+                    "name",
+                    "total_tracks",
+                    "album_type",
+                    "release_date",
+                    "release_date_precision",
+                )
+            },
+        )
         name = str(data.get("name") or "")
         if is_archival_album_title(name):
             return f"edição de arquivo no Spotify ({name})"
@@ -247,7 +274,18 @@ class NoveltyCheck:
             details = self.bandcamp_release(listen_url)
         except Exception as exc:  # noqa: BLE001 - withhold, never fabricate a release date
             log.warning("novelty.bandcamp_failed", url=listen_url, error=str(exc))
+            capture(
+                "albums.bandcamp_lookup_failed",
+                listen_url=listen_url,
+                error_type=type(exc).__name__,
+            )
             return "metadados de lançamento Bandcamp não confirmados"
+        capture(
+            "albums.bandcamp_metadata",
+            listen_url=listen_url,
+            metadata=details,
+            reference_date=reference,
+        )
         if details.archival_reason:
             return details.archival_reason
         if details.preorder:
@@ -267,11 +305,29 @@ class NoveltyCheck:
                 self.sleep(wait)
             self._last_mb_call = time.monotonic()
             try:
-                self._artist_cache[key] = artist_ended_on(artist, self.artist_search(artist))
+                payload = self.artist_search(artist)
+                self._artist_cache[key] = artist_ended_on(artist, payload)
+                capture(
+                    "albums.artist_search",
+                    artist=artist,
+                    candidates=[
+                        {k: item.get(k) for k in ("name", "score", "life-span")}
+                        for item in payload.get("artists") or []
+                        if isinstance(item, dict)
+                    ],
+                )
             except Exception as exc:  # noqa: BLE001 - novelty is best-effort
                 log.warning("novelty.musicbrainz_failed", artist=artist, error=str(exc))
+                capture("albums.artist_lookup_failed", artist=artist, error_type=type(exc).__name__)
                 self._artist_cache[key] = None
         ended = self._artist_cache[key]
+        capture(
+            "albums.artist_archive_check",
+            artist=artist,
+            ended_on=ended,
+            reference_week=week_start,
+            grace_years=ARTIST_ENDED_GRACE_YEARS,
+        )
         if ended and (week_start.year - ended.year) > ARTIST_ENDED_GRACE_YEARS:
             return f"artista terminou em {ended.year} (gravação de arquivo)"
         return None

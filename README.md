@@ -178,6 +178,44 @@ e mantido com a mesma identidade/link não é requalificado como novidade meses
 depois; extras novos ou com novo link voltam a ser verificados. Continuam a ser
 necessárias a escolha explícita e a confirmação de publicação.
 
+## Discovery trace
+
+A execução semanal ativa `PEEL_CAPTURE_DISCOVERY=1` e guarda um registo técnico
+JSONL por tentativa em:
+
+```text
+data/reports/discovery/<ISO-week>/run-<run-id>-<attempt>-<UTC>-<unique-id>.jsonl
+```
+
+É observação passiva, não um novo critério: entradas recebidas dos parsers,
+inspeções Bandcamp dentro do orçamento existente, pools locais de faixas/álbuns,
+sinais e chaves de ordenação já calculados, caps, motivos de exclusão, candidatos
+não avaliados e filas escolhidas/persistidas. Não acrescenta consultas às fontes,
+Spotify ou MusicBrainz, não preenche vagas e não altera a seleção, feedback,
+publicações ou limites.
+
+O cabeçalho identifica versão do formato, revisão de código, hash da DB inicial,
+semana, tentativa e configuração. Datas editoriais, de observação e de lançamento
+ficam distintas. Candidatos que ficaram fora do orçamento de resolução/consultas
+não são classificados como rejeições musicais, lançamentos antigos ou links
+mortos sem terem sido avaliados.
+
+Em sucesso, o ficheiro acompanha o commit semanal de `data/reports/`. O workflow
+também tenta guardar um artifact `discovery-<run-id>-<attempt>` durante **sete dias**,
+mesmo se a execução falhar, sem bloquear uma entrega bem-sucedida se o upload
+falhar. Só inclui ficheiros da tentativa atual, nunca backups ou credenciais.
+
+**Limites honestos:** não é todo o catálogo das publicações nem o universo de
+música disponível. Outros filtros internos dos parsers não são reconstruídos.
+Não resolve candidatos extra só para completar o registo. Orçamento de 50 mil
+registos/20 MiB por tentativa, com cabeçalho e indicadores de limite/fecho;
+truncagem, falhas de captura e erros observados ficam explícitos. Um stream sem footer é incompleto. Sem comentários de escuta,
+HTML/respostas HTTP brutas, tokens ou mensagens de exceção; URLs são higienizados.
+
+Fora do workflow, o registo é opt-in. `--dry-run` nunca cria estes ficheiros;
+falhas de disco/serialização não mudam as escolhas nem interrompem a pipeline.
+Não há captura retroativa das semanas anteriores nem publicação no site.
+
 ## Automated Weekly Run
 
 O projeto corre automaticamente à sexta-feira (17:17 UTC, fora do início da hora para reduzir atrasos do GitHub) via [GitHub Actions](/.github/workflows/weekly.yml).

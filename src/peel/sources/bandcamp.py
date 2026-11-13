@@ -23,6 +23,7 @@ import structlog
 from selectolax.parser import HTMLParser
 
 from peel.albums import is_archival_album_title, is_compilation_release
+from peel.discovery_trace import capture
 from peel.matcher import artist_identity_key, normalize
 from peel.models import Track
 from peel.releases import MAX_RELEASE_AGE_DAYS, MIN_ALBUM_TRACKS, release_date_reason
@@ -89,13 +90,29 @@ class BandcampLabel(Source):
         self.last_raw_entries = len(items)
         releases: list[Track] = []
         inspected = 0
-        for candidate in self._parse_items(items, self.max_candidates):
+        candidates = self._parse_items(items, self.max_candidates)
+        capture(
+            "bandcamp.inspection_pool",
+            source_id=self.id,
+            items=candidates,
+            catalogue_size=len(items),
+            candidate_budget=self.max_candidates,
+            output_limit=self.max_items,
+        )
+        for candidate in candidates:
             inspected += 1
             release = self._with_details(candidate, now=reference)
             if release is not None:
                 releases.append(release)
                 if len(releases) >= self.max_items:
                     break
+        capture(
+            "bandcamp.inspection_completed",
+            source_id=self.id,
+            inspected=inspected,
+            admitted=len(releases),
+            not_evaluated=candidates[inspected:],
+        )
         log.info(
             "bandcamp.fetched",
             source_id=self.id,
@@ -111,6 +128,13 @@ class BandcampLabel(Source):
         try:
             details = self._release_details(str(candidate.source_url))
         except (httpx.HTTPError, ValueError) as exc:
+            capture(
+                "bandcamp.lookup_failed",
+                source_id=self.id,
+                artist=candidate.artist,
+                title=candidate.title,
+                error_type=type(exc).__name__,
+            )
             log.warning(
                 "bandcamp.release_details_failed",
                 source_id=self.id,
@@ -118,7 +142,22 @@ class BandcampLabel(Source):
                 error=str(exc),
             )
             return None
+        capture(
+            "bandcamp.release_metadata",
+            source_id=self.id,
+            artist=candidate.artist,
+            title=candidate.title,
+            source_url=candidate.source_url,
+            metadata=details,
+        )
         if details.archival_reason:
+            capture(
+                "bandcamp.decision",
+                source_id=self.id,
+                artist=candidate.artist,
+                title=candidate.title,
+                reason=details.archival_reason,
+            )
             log.info(
                 "bandcamp.archive_skipped",
                 source_id=self.id,
@@ -127,9 +166,23 @@ class BandcampLabel(Source):
             )
             return None
         if details.preorder:
+            capture(
+                "bandcamp.decision",
+                source_id=self.id,
+                artist=candidate.artist,
+                title=candidate.title,
+                reason="preorder",
+            )
             log.info("bandcamp.preorder_skipped", source_id=self.id, title=candidate.title)
             return None
         if details.track_count < 1 or details.released_at is None:
+            capture(
+                "bandcamp.decision",
+                source_id=self.id,
+                artist=candidate.artist,
+                title=candidate.title,
+                reason="incomplete_metadata",
+            )
             log.warning("bandcamp.incomplete_release", source_id=self.id, title=candidate.title)
             return None
         # Match the outer editorial-age filter too: an old release must not
@@ -142,6 +195,13 @@ class BandcampLabel(Source):
             max_age_days=min(MAX_RELEASE_AGE_DAYS, settings.peel_max_source_item_age_days),
         )
         if reason or details.released_at > now:
+            capture(
+                "bandcamp.decision",
+                source_id=self.id,
+                artist=candidate.artist,
+                title=candidate.title,
+                reason=reason or "future_release_timestamp",
+            )
             log.info(
                 "bandcamp.date_skipped",
                 source_id=self.id,
@@ -151,7 +211,22 @@ class BandcampLabel(Source):
             return None
         if candidate.kind == "track" or details.track_count < MIN_ALBUM_TRACKS:
             if not details.lead_track:
+                capture(
+                    "bandcamp.decision",
+                    source_id=self.id,
+                    artist=candidate.artist,
+                    title=candidate.title,
+                    reason="no_lead_track",
+                )
                 return None
+            capture(
+                "bandcamp.decision",
+                source_id=self.id,
+                artist=candidate.artist,
+                title=candidate.title,
+                lead_track=details.lead_track,
+                reason="routed_to_track",
+            )
             return candidate.model_copy(
                 update={
                     "kind": "track",
@@ -160,10 +235,31 @@ class BandcampLabel(Source):
                 }
             )
         if is_archival_album_title(candidate.title):
+            capture(
+                "bandcamp.decision",
+                source_id=self.id,
+                artist=candidate.artist,
+                title=candidate.title,
+                reason="archival_title",
+            )
             log.info("bandcamp.archive_skipped", source_id=self.id, title=candidate.title)
             return None
         if is_compilation_release(candidate.artist, candidate.title):
+            capture(
+                "bandcamp.decision",
+                source_id=self.id,
+                artist=candidate.artist,
+                title=candidate.title,
+                reason="compilation",
+            )
             return None
+        capture(
+            "bandcamp.decision",
+            source_id=self.id,
+            artist=candidate.artist,
+            title=candidate.title,
+            reason="routed_to_album",
+        )
         return candidate.model_copy(update={"kind": "album", "published_at": details.released_at})
 
     def _release_details(self, url: str) -> ReleaseDetails:
