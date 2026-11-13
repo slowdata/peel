@@ -30,6 +30,7 @@ from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 import typer
+from pydantic import TypeAdapter
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -51,20 +52,24 @@ from peel.main import (
     configure_logging,
 )
 from peel.main import run as run_pipeline
-from peel.matcher import normalize
+from peel.matcher import artist_identity_key, normalize
 from peel.models import AlbumQueueItem, ReviewQueueItem
 from peel.musicbrainz import fetch_musicbrainz_artist_genres
 from peel.novelty import NoveltyCheck
 from peel.playlists import canonical_playlist_id
 from peel.publication import (
+    MAX_PUBLIC_PICKS,
+    AdditionalAlbum,
     Candidate,
     PublicationPlan,
+    additional_album_candidates,
     album_candidates,
     build_plan,
     default_picks,
     parse_positions,
     prepare_publication,
     track_candidates,
+    verify_additional_releases,
 )
 from peel.report import generate_weekly_html_report, generate_weekly_report
 from peel.scoring import SourceScore, build_source_overview, build_source_scores
@@ -257,7 +262,12 @@ def finalize(
         saved = db.finalized_week_selection(target_week, snapshot_playlist_id)
         selected = saved
         if plan is not None:
-            if saved and saved["plan"] != plan.model_dump(mode="json") and not refresh:
+            if (
+                saved
+                and PublicationPlan.model_validate(saved["plan"]).model_dump(mode="json")
+                != plan.model_dump(mode="json")
+                and not refresh
+            ):
                 raise typer.BadParameter(
                     "Edição já finalizada; usa --refresh para mudar a selecção"
                 )
@@ -286,6 +296,34 @@ def finalize(
             sp = SpotifyClient()
         except SpotifyReauthRequired as exc:
             _abort_spotify_reauth(exc)
+        if plan and plan.additional_albums:
+            previous_plan = PublicationPlan.model_validate(saved["plan"]) if saved else None
+            try:
+                checks = verify_additional_releases(
+                    plan,
+                    previous_plan,
+                    spotify_album=sp.sp.album,
+                    bandcamp_release=fetch_release_details,
+                    reference_date=datetime.now(UTC).date(),
+                )
+            except ValueError as exc:
+                raise typer.BadParameter(str(exc), param_hint="--selection") from exc
+            keys = {
+                (artist_identity_key(a.key[0]), a.key[1], a.listen_url)
+                for a in plan.additional_albums
+            }
+            retained = [
+                check
+                for check in (saved or {}).get("additional_album_checks", []) + checks
+                if (
+                    artist_identity_key(check["artist_key"]),
+                    check["album_key"],
+                    check["listen_url"],
+                )
+                in keys
+            ]
+            if retained:
+                selected = {**selected, "additional_album_checks": retained}
         sp.replace_playlist_items(settings.peel_playlist_id, keepers)
         db.replace_finalized_week_tracks(
             target_week, snapshot_playlist_id, keepers, selection=selected
@@ -784,6 +822,10 @@ def publicar(
     refazer: Annotated[
         bool, typer.Option("--refazer", help="Reabrir uma edição já publicada")
     ] = False,
+    album_extras: Annotated[
+        Path | None,
+        typer.Option("--album-extras", help="JSON explícito de álbuns avaliados fora da fila"),
+    ] = None,
     semana: Annotated[
         str | None, typer.Option("--semana", help="Semana a refazer (default: a activa)")
     ] = None,
@@ -791,11 +833,26 @@ def publicar(
     """Escolhe e publica a edição da fila activa: Spotify, site e estado."""
     if semana and not refazer:
         raise typer.BadParameter("--semana só se usa com --refazer", param_hint="--semana")
-    _auto_sync_state("publicar")
+    supplied = []
+    if album_extras is not None:
+        try:
+            supplied = TypeAdapter(list[AdditionalAlbum]).validate_json(
+                album_extras.read_text(encoding="utf-8")
+            )
+            if len(supplied) > MAX_PUBLIC_PICKS or len({a.key for a in supplied}) != len(supplied):
+                raise ValueError("No máximo sete álbuns adicionais, sem duplicados")
+            if any(a.metadata_captured_at is not None or a.source_ids for a in supplied):
+                raise ValueError("O ficheiro de entrada não pode declarar proveniência interna")
+        except (OSError, ValueError) as exc:
+            raise typer.BadParameter(str(exc), param_hint="--album-extras") from exc
+    if not dry_run:
+        _auto_sync_state("publicar")
     review_id = settings.peel_review_playlist_id or settings.peel_playlist_id
-    db = DB(str(_resolve_path(settings.db_path)))
+    db_path = _resolve_path(settings.db_path)
+    db = DB.open_readonly(db_path) if dry_run else DB(str(db_path))
     try:
-        db.init_schema()
+        if not dry_run:
+            db.init_schema()
         week = _normalize_week_option(semana) if semana else db.active_review_week(review_id)
         if week is None:
             console.print("Sem fila activa confirmada.")
@@ -807,8 +864,19 @@ def publicar(
         if published is None and refazer:
             console.print(f"{week} ainda não foi publicada. Usa: uv run peel publicar")
             raise typer.Exit(code=1)
+        previous_extras = (
+            PublicationPlan.model_validate(published["plan"]).additional_albums if published else []
+        )
+        # A supplied file may explicitly replace metadata on republication.
+        additions = {extra.key: extra for extra in previous_extras}
+        additions.update({extra.key: extra for extra in supplied})
+        extra_list = list(additions.values())
+        try:
+            extra_pool = additional_album_candidates(db, week, extra_list)
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc), param_hint="--album-extras") from exc
         track_pool = track_candidates(db, review_id, week)
-        album_pool = album_candidates(db, week)
+        album_pool = album_candidates(db, week) + extra_pool
         current_tracks = current_albums = None
         if published is not None:
             current_tracks = _published_picks(published["plan"]["tracks"], track_pool, "faixa")
@@ -825,6 +893,7 @@ def publicar(
             review_playlist_id=review_id,
             tracks=tracks,
             albums=albums,
+            additional_albums=extra_list,
             note=(
                 "Selecção refeita com peel publicar --refazer."
                 if refazer
@@ -846,8 +915,12 @@ def publicar(
         db.close()
 
     console.print(f"\n[bold]{week}[/bold]: {len(tracks)} faixas · {len(albums)} álbuns")
+    if plan.additional_albums:
+        console.print(
+            "Álbuns Outside queue: lançamento/formato serão verificados antes da publicação."
+        )
     if dry_run:
-        console.print("Dry-run: nada publicado.")
+        console.print("Dry-run: nada publicado; sem sync ou alterações à base de dados.")
         return
     if not typer.confirm("Publicar no Spotify e no site?", default=False):
         console.print("Cancelado; nada publicado.")
@@ -890,10 +963,15 @@ def _choose_picks(
     console.print(f"\n[bold]{title}[/bold] — proposta ✓ ({origin})")
     for candidate in candidates:
         mark = "✓" if candidate.position in chosen else " "
+        origin_tag = " · Outside queue" if candidate.origin == "outside_queue" else ""
         console.print(
-            f" {mark} #{candidate.position:<3} {candidate.rating:<4} "
-            f"{candidate.artist} — {candidate.title}"
+            Text(
+                f" {mark} #{candidate.position:<3} {candidate.rating:<4} "
+                f"{candidate.artist} — {candidate.title}{origin_tag}"
+            )
         )
+        if candidate.origin == "outside_queue":
+            console.print(Text(f"      {candidate.listen_url}"))
     while True:
         answer = typer.prompt(
             "Enter aceita ✓; ou escreve as posições pela ordem pública (ex.: 5 13 28)",

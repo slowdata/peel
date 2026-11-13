@@ -108,6 +108,8 @@ das médias musicais; `meh` deixa de penalizar a afinidade. As comparações ent
 semanas devem ter em conta que o Dias afinou a distinção Love/Like durante o uso.
 
 O `publicar` mostra só candidatos `love/like` com a posição original na fila.
+`--album-extras` permite acrescentar explicitamente álbuns avaliados fora dessa
+fila; aparecem identificados como `Outside queue`, sem alterar a fila privada.
 Enter aceita a proposta ✓; ou escreve as posições pela ordem pública, por
 exemplo `5 13 15 16 20 24 28`. Reedições e álbuns sem link directo não entram.
 Antes de escrever no Spotify confirma que o site está limpo e actualizado;
@@ -128,6 +130,53 @@ Para mudar apenas o comentário, escolhe explicitamente a mesma nota. No `--refa
 mantém a selecção publicada; itens que deixaram de ser love/like saem com aviso
 e as correcções de nome de artista mantêm-se. A republicação reescreve a playlist
 pública com verificação e actualiza o site.
+
+### Publication extras
+
+Para incluir álbuns ouvidos no radar ou fora da fila semanal, fornece um JSON
+com, no máximo, sete candidatos explícitos. Não há pesquisa nem inclusão
+automática de todos os álbuns avaliados. Exemplo de ficheiro:
+
+```json
+[
+  {
+    "artist": "PISS",
+    "album": "You Made Me / Skin on Linen",
+    "listen_url": "https://open.spotify.com/album/4L3aQdOW11hKFGRbpkw3wN",
+    "listen_kind": "spotify"
+  }
+]
+```
+
+```bash
+uv run peel publicar --album-extras /tmp/album-extras.json --dry-run
+uv run peel publicar --album-extras /tmp/album-extras.json
+```
+
+Só aparecem candidatos com Love/Like atual, sem títulos de arquivo/compilação e
+com link direto Spotify/Bandcamp. Os números extra são códigos de escolha da
+interface, **não posições inventadas na fila**. A seleção combinada mantém o
+máximo de sete álbuns, sem enchimento, pela ordem confirmada pelo Dias. Um álbum
+já na fila não pode voltar a entrar como extra, nem se aceitam aliases ou links
+duplicados. O ficheiro não pode declarar proveniência interna: essa informação
+é congelada a partir das menções locais; sem menções, o crédito é `Personal pick`,
+com zero famílias, não um voto adicional ADM.
+
+Antes de escrever no Spotify, os **novos extras** passam pela validação de
+lançamento/formato Spotify/Bandcamp (35 dias, sem pré-venda/arquivo identificado),
+com confirmação de identidade para Spotify. A pré-visualização não faz esses
+pedidos: avisa que a verificação final está pendente e abre SQLite só de leitura,
+sem auto-sync, schema/migrações ou serviços. Os links externos são explícitos,
+não resultados de pesquisa aproximada.
+
+A seleção pública guarda identidades, ordem, links, proveniência e a origem
+`outside_queue`, sem inserir álbuns nas filas históricas. Reexportar uma edição
+continua a usar essa seleção congelada, mesmo se entretanto houver novas opiniões
+ou fontes. `publicar --refazer` recupera também os extras publicados sem exigir o
+ficheiro original; volta a excluir o que já não for Love/Like. Um extra publicado
+e mantido com a mesma identidade/link não é requalificado como novidade meses
+depois; extras novos ou com novo link voltam a ser verificados. Continuam a ser
+necessárias a escolha explícita e a confirmação de publicação.
 
 ## Automated Weekly Run
 

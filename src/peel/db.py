@@ -222,6 +222,19 @@ class DB:
         self.conn.create_function("artist_identity_key", 1, artist_identity_key, deterministic=True)
         log.info("db.connected", path=path)
 
+    @classmethod
+    def open_readonly(cls, path: str | Path) -> DB:
+        """Open existing state without mkdir, schema initialization or migrations."""
+        instance = object.__new__(cls)
+        resolved = Path(path).resolve()
+        instance.path = str(resolved)
+        instance.conn = sqlite3.connect(resolved.as_uri() + "?mode=ro", uri=True)
+        instance.conn.create_function(
+            "artist_identity_key", 1, artist_identity_key, deterministic=True
+        )
+        instance.conn.execute("PRAGMA query_only=ON")
+        return instance
+
     def _ensure_column(self, table: str, column: str, sql_type: str) -> bool:
         """Adiciona coluna se não existir. Retorna True se adicionada (migração).
 

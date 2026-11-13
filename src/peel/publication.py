@@ -2,16 +2,78 @@
 
 from __future__ import annotations
 
+import re
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, date, datetime
+from typing import Literal
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from peel.albums import is_archival_album_title, is_compilation_release
 from peel.db import DB
+from peel.matcher import artist_identity_key, normalize
+from peel.novelty import NoveltyCheck, spotify_album_id
 from peel.playlists import canonical_playlist_id
 from peel.site_export import _snapshot_album_to_json, spotify_track_url
+from peel.sources.families import source_family
 from peel.sources.registry import source_label
+
+
+class AdditionalAlbum(BaseModel):
+    """Explicit album metadata, never inserted into a private listening queue."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    artist: str = Field(min_length=1)
+    album: str = Field(min_length=1)
+    listen_url: str
+    listen_kind: Literal["spotify", "bandcamp"]
+    editorial_url: str | None = None
+    source_ids: tuple[str, ...] = ()
+    metadata_captured_at: str | None = None
+
+    @field_validator("artist", "album")
+    @classmethod
+    def nonempty_name(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Nome de artista/álbum vazio")
+        return value.strip()
+
+    @field_validator("listen_url")
+    @classmethod
+    def canonical_listen_url(cls, value: str) -> str:
+        parsed = urlparse(value)
+        return parsed._replace(path=parsed.path.rstrip("/"), query="", fragment="").geturl()
+
+    @field_validator("editorial_url")
+    @classmethod
+    def public_editorial_url(cls, value: str | None) -> str | None:
+        if value is not None:
+            parsed = urlparse(value)
+            if (
+                parsed.scheme not in {"http", "https"}
+                or not parsed.hostname
+                or parsed.username is not None
+                or parsed.password is not None
+            ):
+                raise ValueError("URL editorial inválido")
+        return value
+
+    @field_validator("metadata_captured_at")
+    @classmethod
+    def aware_observation(cls, value: str | None) -> str | None:
+        if value is not None and datetime.fromisoformat(value).tzinfo is None:
+            raise ValueError("Data de observação sem timezone")
+        return value
+
+    @property
+    def key(self) -> tuple[str, str]:
+        return normalize(self.artist), normalize(self.album)
+
+
+def _album_identity(key: tuple[str, str]) -> tuple[str, str]:
+    return artist_identity_key(key[0]), normalize(key[1])
 
 
 class PublicationPlan(BaseModel):
@@ -24,6 +86,7 @@ class PublicationPlan(BaseModel):
     album_snapshot_at: str
     tracks: list[str] = Field(min_length=1, max_length=7)
     albums: list[tuple[str, str]] = Field(max_length=7)
+    additional_albums: list[AdditionalAlbum] = Field(default_factory=list, max_length=7)
     artist_overrides: dict[str, str] = Field(default_factory=dict)
     note: str = ""
 
@@ -52,6 +115,11 @@ def prepare_publication(db: DB, plan: PublicationPlan) -> dict:
     queue = db.review_queue_snapshot(plan.review_playlist_id, plan.week) or []
     positions = {item.spotify_uri: (n, item) for n, item in enumerate(queue, 1)}
     albums = {(item.artist_key, item.album_key): item for item in db.album_queue(plan.week) or []}
+    additions = _validate_additions(db, plan.week, plan.additional_albums)
+    if set(additions) - set(plan.albums):
+        raise ValueError("Metadados de álbum adicional fora da selecção")
+    if len({_album_identity(key) for key in plan.albums}) != len(plan.albums):
+        raise ValueError("Selecção contém aliases do mesmo álbum")
     tracks, selected_albums, track_positions, album_positions = [], [], [], []
     for rank, uri in enumerate(plan.tracks, 1):
         if uri not in positions:
@@ -77,15 +145,27 @@ def prepare_publication(db: DB, plan: PublicationPlan) -> dict:
         track_positions.append(position)
     for rank, key in enumerate(plan.albums, 1):
         item = albums.get(key)
-        if item is None:
+        extra = additions.get(key)
+        if item is None and extra is None:
             raise ValueError(f"Álbum fora da fila aprovada: {key}")
-        feedback = db.album_feedback_for_identity(item.artist, item.album)
+        artist, title = (
+            (item.artist, item.album) if item is not None else (extra.artist, extra.album)
+        )
+        feedback = db.album_feedback_for_identity(artist, title)
         if not feedback or feedback[1] not in {"love", "like"}:
-            raise ValueError(f"Álbum sem avaliação positiva: {item.artist} — {item.album}")
-        if not is_direct_album_link(item.listen_url, item.listen_kind):
-            raise ValueError(f"Álbum sem link directo: {item.album}")
-        selected_albums.append(_snapshot_album_to_json(item.model_copy(update={"position": rank})))
-        album_positions.append(item.position)
+            raise ValueError(f"Álbum sem avaliação positiva: {artist} — {title}")
+        if extra is not None:
+            if extra.metadata_captured_at is None:
+                raise ValueError("Metadados adicionais não congelados; prepara a selecção")
+            selected_albums.append(_additional_album_to_json(extra, rank))
+            album_positions.append(None)  # never invent a private queue position
+        else:
+            if not is_direct_album_link(item.listen_url, item.listen_kind):
+                raise ValueError(f"Álbum sem link directo: {item.album}")
+            selected_albums.append(
+                _snapshot_album_to_json(item.model_copy(update={"position": rank}))
+            )
+            album_positions.append(item.position)
     return {
         "week": plan.week,
         "playlist_id": canonical_playlist_id(plan.playlist_id),
@@ -112,6 +192,9 @@ def is_direct_album_link(url: str | None, kind: str | None) -> bool:
     return (
         parsed.scheme == "https"
         and platform
+        and parsed.username is None
+        and parsed.password is None
+        and parsed.port in {None, 443}
         and parsed.path.startswith("/album/")
         and bool(parsed.path.removeprefix("/album/"))
     )
@@ -126,6 +209,160 @@ class Candidate:
     artist: str
     title: str
     rating: str
+    origin: Literal["queue", "outside_queue"] = "queue"
+    listen_url: str | None = None
+
+
+def _validate_additions(db: DB, week: str, additions: list[AdditionalAlbum]) -> dict:
+    if len(additions) > MAX_PUBLIC_PICKS:
+        raise ValueError(f"No máximo {MAX_PUBLIC_PICKS} álbuns adicionais")
+    queued = {_album_identity((a.artist_key, a.album_key)) for a in db.album_queue(week) or []}
+    seen: set[tuple[str, str]] = set()
+    urls = {
+        urlparse(a.listen_url)._replace(query="", fragment="").geturl()
+        for a in db.album_queue(week) or []
+        if a.listen_url
+    }
+    result = {}
+    for extra in additions:
+        identity = _album_identity(extra.key)
+        if identity in queued:
+            raise ValueError(f"Álbum adicional já pertence à fila: {extra.album}")
+        if identity in seen:
+            raise ValueError(f"Álbum adicional repetido: {extra.album}")
+        if is_archival_album_title(extra.album) or is_compilation_release(
+            extra.artist, extra.album
+        ):
+            raise ValueError(f"Álbum adicional de arquivo/compilação: {extra.album}")
+        if not is_direct_album_link(extra.listen_url, extra.listen_kind) or (
+            extra.listen_kind == "spotify"
+            and not re.fullmatch(r"/album/[A-Za-z0-9]{22}", urlparse(extra.listen_url).path)
+        ):
+            raise ValueError(f"Álbum adicional sem link directo: {extra.album}")
+        if extra.listen_url in urls:
+            raise ValueError(f"Link de álbum adicional repetido: {extra.album}")
+        seen.add(identity)
+        urls.add(extra.listen_url)
+        result[extra.key] = extra
+    return result
+
+
+def additional_album_candidates(
+    db: DB, week: str, additions: list[AdditionalAlbum]
+) -> list[Candidate]:
+    """Only explicitly supplied, positively rated albums; numbers are UI codes."""
+    validated = _validate_additions(db, week, additions)
+    start = max((a.position for a in db.album_queue(week) or []), default=0)
+    result = []
+    for number, extra in enumerate(validated.values(), start + 1):
+        feedback = db.album_feedback_for_identity(extra.artist, extra.album)
+        if feedback and feedback[1] in _POSITIVE:
+            result.append(
+                Candidate(
+                    number,
+                    extra.key,
+                    extra.artist,
+                    extra.album,
+                    feedback[1],
+                    "outside_queue",
+                    extra.listen_url,
+                )
+            )
+    return result
+
+
+def _freeze_additional_album(db: DB, extra: AdditionalAlbum) -> AdditionalAlbum:
+    if extra.metadata_captured_at is not None:
+        return extra  # explicit republication preserves already frozen metadata
+    rows = db.conn.execute(
+        "SELECT source_id, source_url FROM album_mentions "
+        "WHERE artist_identity_key(artist_key)=? AND album_key=? ORDER BY seen_at, source_id",
+        _album_identity(extra.key),
+    ).fetchall()
+    return extra.model_copy(
+        update={
+            "source_ids": tuple(sorted({str(row[0]) for row in rows})),
+            "editorial_url": extra.editorial_url or next((row[1] for row in rows if row[1]), None),
+            "metadata_captured_at": datetime.now(UTC).isoformat(),
+        }
+    )
+
+
+def _additional_album_to_json(extra: AdditionalAlbum, rank: int) -> dict:
+    return {
+        "rank": rank,
+        "artist": extra.artist,
+        "title": extra.album,
+        "source": ", ".join(dict.fromkeys(source_label(s) for s in extra.source_ids))
+        or "Personal pick",
+        "source_count": len({source_family(s) for s in extra.source_ids}),
+        "link": extra.editorial_url,
+        "listen_url": extra.listen_url,
+        "listen_kind": extra.listen_kind,
+        "spotify_url": extra.listen_url if extra.listen_kind == "spotify" else None,
+        "spotify_match": "direct" if extra.listen_kind == "spotify" else None,
+        "selection_origin": "outside_queue",
+    }
+
+
+def verify_additional_releases(
+    plan: PublicationPlan,
+    previous: PublicationPlan | None,
+    *,
+    spotify_album: Callable[[str], dict],
+    bandcamp_release: Callable,
+    reference_date: date,
+) -> list[dict]:
+    """Live checks before public writes; unchanged published picks are not re-admitted."""
+    approved = (
+        {(_album_identity(a.key), a.listen_url) for a in previous.additional_albums}
+        if previous
+        else set()
+    )
+    pending = [
+        a for a in plan.additional_albums if (_album_identity(a.key), a.listen_url) not in approved
+    ]
+    if any(
+        a.listen_kind == "spotify"
+        and not re.fullmatch(r"/album/[A-Za-z0-9]{22}", urlparse(a.listen_url).path)
+        for a in pending
+    ):
+        raise ValueError("URL Spotify adicional sem ID de álbum válido")
+    expected = {spotify_album_id(a.listen_url): a for a in pending if a.listen_kind == "spotify"}
+
+    def lookup(album_id: str) -> dict:
+        extra = expected[album_id]
+        data = spotify_album(album_id)
+        if not isinstance(data, dict):
+            raise ValueError("Metadados Spotify inválidos")
+        artists = data.get("artists") or []
+        if normalize(str(data.get("name") or "")) != normalize(extra.album) or not any(
+            artist_identity_key(str(a.get("name") or "")) == artist_identity_key(extra.artist)
+            for a in artists
+            if isinstance(a, dict)
+        ):
+            raise ValueError("A identidade Spotify difere do álbum aprovado")
+        return data
+
+    novelty = NoveltyCheck(
+        spotify_album=lookup, bandcamp_release=bandcamp_release, reference_date=reference_date
+    )
+    checked = []
+    for extra in pending:
+        reason = novelty(extra.artist, extra.album, extra.listen_url, plan.week)
+        if reason:
+            raise ValueError(
+                f"Álbum adicional não elegível: {extra.artist} — {extra.album}: {reason}"
+            )
+        checked.append(
+            {
+                "artist_key": extra.key[0],
+                "album_key": extra.key[1],
+                "listen_url": extra.listen_url,
+                "checked_at": datetime.now(UTC).isoformat(),
+            }
+        )
+    return checked
 
 
 def track_candidates(db: DB, review_playlist_id: str, week: str) -> list[Candidate]:
@@ -192,6 +429,7 @@ def build_plan(
     tracks: list[Candidate],
     albums: list[Candidate],
     note: str = "",
+    additional_albums: list[AdditionalAlbum] | None = None,
 ) -> PublicationPlan:
     """Freeze the chosen identities against the exact snapshots that were heard."""
     track_header = db.conn.execute(
@@ -204,6 +442,10 @@ def build_plan(
     if not track_header or not album_header:
         raise ValueError(f"Sem snapshots confirmados para {week}")
     album_keys = [album.key for album in albums if isinstance(album.key, tuple)]
+    supplied = _validate_additions(db, week, additional_albums or [])
+    selected_additions = [
+        _freeze_additional_album(db, supplied[key]) for key in album_keys if key in supplied
+    ]
     return PublicationPlan(
         week=week,
         playlist_id=playlist_id,
@@ -212,5 +454,6 @@ def build_plan(
         album_snapshot_at=album_header[0],
         tracks=[str(track.key) for track in tracks],
         albums=album_keys,
+        additional_albums=selected_additions,
         note=note,
     )
