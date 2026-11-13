@@ -240,6 +240,31 @@ def test_artist_alias_and_link_duplicates_are_rejected(state):
         additional_album_candidates(db, WEEK, [queued])
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://OPEN.SPOTIFY.COM/album/0000000000000000000001/",
+        "https://open.spotify.com:443/album/0000000000000000000001",
+    ],
+)
+def test_equivalent_links_cannot_publish_the_same_album_twice(state, url):
+    db, _ = state
+    a = extra(db)
+    b = extra(db, 2, listen_url=url)
+    with pytest.raises(ValueError, match="Link.*repetido"):
+        additional_album_candidates(db, WEEK, [a, b])
+
+
+def test_equivalent_link_already_in_queue_cannot_be_added_under_a_different_name(state):
+    db, _ = state
+    queued = db.album_queue(WEEK)[0]
+    item = extra(
+        db, listen_url=queued.listen_url.replace("open.spotify.com", "OPEN.SPOTIFY.COM:443") + "/"
+    )
+    with pytest.raises(ValueError, match="Link.*repetido"):
+        additional_album_candidates(db, WEEK, [item])
+
+
 def test_extra_metadata_must_be_selected_and_frozen(state):
     db, _ = state
     a, b = extra(db, 1), extra(db, 2)

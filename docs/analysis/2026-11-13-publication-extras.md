@@ -64,8 +64,8 @@ canónica, relatórios e JSONs das edições públicas são comparados com a cap
 anterior. Não se atualizam essas edições, a fila privada, Spotify ou Telegram
 para preparar a proposta.
 
-Resultados locais: **913 testes passaram em modo plain e 913 em ANSI**; o grupo
-focado passou 205 testes. Ruff, formatação e `git diff --check` passaram. A build
+Resultados locais: **916 testes passaram em modo plain e 916 em ANSI**; o grupo
+focado passou 208 testes. Ruff, formatação e `git diff --check` passaram. A build
 isolada gerou 24 páginas em 6,39 s. O preview real da CLI apresentou sete faixas e
 cinco álbuns, sem escrever estado; os 54 ficheiros protegidos (DB, relatórios e
 JSONs públicos) mantiveram os hashes anteriores.

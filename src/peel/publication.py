@@ -202,7 +202,7 @@ def is_direct_album_link(url: str | None, kind: str | None) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class Candidate:
-    """A positively rated item, identified by its original queue position."""
+    """A positive item with a selection code and an explicit queue/outside origin."""
 
     position: int
     key: str | tuple[str, str]
@@ -213,16 +213,17 @@ class Candidate:
     listen_url: str | None = None
 
 
+def _album_link_identity(url: str) -> tuple[str | None, str]:
+    parsed = urlparse(url)
+    return parsed.hostname, parsed.path.rstrip("/")
+
+
 def _validate_additions(db: DB, week: str, additions: list[AdditionalAlbum]) -> dict:
     if len(additions) > MAX_PUBLIC_PICKS:
         raise ValueError(f"No máximo {MAX_PUBLIC_PICKS} álbuns adicionais")
     queued = {_album_identity((a.artist_key, a.album_key)) for a in db.album_queue(week) or []}
     seen: set[tuple[str, str]] = set()
-    urls = {
-        urlparse(a.listen_url)._replace(query="", fragment="").geturl()
-        for a in db.album_queue(week) or []
-        if a.listen_url
-    }
+    urls = {_album_link_identity(a.listen_url) for a in db.album_queue(week) or [] if a.listen_url}
     result = {}
     for extra in additions:
         identity = _album_identity(extra.key)
@@ -239,10 +240,10 @@ def _validate_additions(db: DB, week: str, additions: list[AdditionalAlbum]) -> 
             and not re.fullmatch(r"/album/[A-Za-z0-9]{22}", urlparse(extra.listen_url).path)
         ):
             raise ValueError(f"Álbum adicional sem link directo: {extra.album}")
-        if extra.listen_url in urls:
+        if _album_link_identity(extra.listen_url) in urls:
             raise ValueError(f"Link de álbum adicional repetido: {extra.album}")
         seen.add(identity)
-        urls.add(extra.listen_url)
+        urls.add(_album_link_identity(extra.listen_url))
         result[extra.key] = extra
     return result
 
