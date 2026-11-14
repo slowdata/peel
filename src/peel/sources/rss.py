@@ -22,6 +22,7 @@ import httpx
 import structlog
 from selectolax.parser import HTMLParser, Node
 
+from peel.discovery_trace import capture
 from peel.models import Track
 from peel.sources.base import Source
 
@@ -80,6 +81,12 @@ class RSSSource(Source):
                 if page == 1:
                     log.exception("rss.fetch_failed", source_id=self.id, url=page_url, error=str(e))
                     raise
+                capture(
+                    "source.pagination_failed",
+                    source_id=self.id,
+                    page=page,
+                    error_type=type(e).__name__,
+                )
                 log.warning(
                     "rss.pagination_page_failed",
                     source_id=self.id,
@@ -653,6 +660,17 @@ class TrebleAlbumReviews(RSSSource):
     kind = "album"
     lookback_days = 14
 
+    def _parse_feed(self, url: str):
+        feed = super()._parse_feed(url)
+        status = feed.get("status")
+        if isinstance(status, int) and status >= 400:
+            raise ValueError(f"Treble RSS returned HTTP {status}")
+        # A valid empty feed is different from an unparsable/error response.
+        # Keep tolerant parsing when usable entries exist (e.g. namespace noise).
+        if feed.get("bozo") and not feed.entries:
+            raise ValueError("Treble RSS response could not be parsed; not a healthy empty feed")
+        return feed
+
     def _parse_entry(self, entry: dict) -> Track | None:
         terms = {str(tag.get("term", "")).strip().casefold() for tag in entry.get("tags", [])}
         if "album reviews" not in terms:
@@ -992,6 +1010,66 @@ def _extract_release_news_artist_title(title: str) -> tuple[str, str] | None:
     return None
 
 
+def _entry_credits_artist(entry: dict, artist: str) -> bool:
+    """Corroborate a shorter name via publisher artist tags, never a new fetch."""
+    target = artist.casefold().strip()
+    if not target:
+        return False
+    if any(
+        str(tag.get("term", "")).casefold().strip() == target
+        for tag in entry.get("tags") or []
+        if isinstance(tag, dict)
+    ):
+        return True
+    bodies = [entry.get("summary"), entry.get("description")]
+    bodies.extend(
+        item.get("value") for item in entry.get("content") or [] if isinstance(item, dict)
+    )
+    for body in bodies:
+        if not isinstance(body, str):
+            continue
+        for anchor in HTMLParser(body).css("a[href]"):
+            try:
+                path = urlparse(anchor.attributes.get("href", "")).path
+            except ValueError:
+                continue
+            if (
+                re.match(r"^/(?:tag|artists?)/", path)
+                and anchor.text().strip().casefold() == target
+            ):
+                return True
+    return False
+
+
+def _stereogum_artist(artist: str, entry: dict) -> str:
+    """Remove explicit headline prose, not arbitrary artist-name suffixes."""
+    renamed = re.fullmatch(
+        r".+?\s+Rebrands?\s+As\s+(?P<name>.+?)(?:\s+(?:Following|After)\s+.+)?",
+        artist,
+        flags=re.IGNORECASE,
+    )
+    if renamed:
+        artist = renamed["name"].strip()
+    membership = re.fullmatch(r"(?P<name>.+?)\s+\((?P<context>[^()]+)\)", artist)
+    if membership:
+        context = membership["context"].strip()
+        explicit = re.match(r"^(?:(?:of|from)\s+\S|ex[- ]\S)", context, re.IGNORECASE)
+        multiple_groups = len([s for s in context.split(",") if s.strip()]) >= 3
+        guests = re.match(r"^(?:feat\.?|ft\.?|featuring|with)(?:\s|$)", context, re.IGNORECASE)
+        if (
+            (explicit or multiple_groups)
+            and not guests
+            and not _entry_credits_artist(entry, artist)
+        ):
+            artist = membership["name"].strip()
+    # This prefix was observed in W45. Require publisher corroboration so a
+    # real act named e.g. NYC's Finest is never shortened merely by location.
+    location = re.fullmatch(r"NYC['’]s\s+(?P<name>.+)", artist, re.IGNORECASE)
+    if location and _entry_credits_artist(entry, location["name"]):
+        artist = location["name"]
+    return artist
+
+
 class StereogumNewMusic(RSSSource):
     """Stereogum — New Music.
 
@@ -1051,7 +1129,7 @@ class StereogumNewMusic(RSSSource):
         match = re.match(pattern, title)
 
         if match:
-            artist = match.group("artist").strip()
+            artist = _stereogum_artist(match.group("artist").strip(), entry)
             track_title = match.group("track").strip()
             if artist and track_title:
                 return artist, track_title
@@ -1063,7 +1141,8 @@ class StereogumNewMusic(RSSSource):
         if "/music/" in link:
             narrative = _extract_release_news_artist_title(title)
             if narrative is not None:
-                return narrative
+                artist, track_title = narrative
+                return _stereogum_artist(artist, entry), track_title
 
         # Narrativa, não é track review
         log.warning(
@@ -2162,6 +2241,9 @@ class GorillaVsBear(RSSSource):
             return None
 
         title = _strip_html_tags(raw)
+        title = re.sub(
+            r"^(?:video(?:\s+premiere)?|premiere)\s*:\s*", "", title, flags=re.IGNORECASE
+        )
 
         # Listas editoriais com o nome da publicação
         if title.lower().startswith("gorilla vs. bear"):

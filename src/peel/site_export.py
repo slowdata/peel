@@ -8,6 +8,8 @@ idempotente.
 from __future__ import annotations
 
 import json
+import re
+import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -40,6 +42,13 @@ MAX_PUBLISHED_ALBUMS = 7
 CANONICAL_PUBLIC_SELECTION_SINCE = "2026-W38"
 
 
+def _album_edition_key(title: str) -> str:
+    """Compare title words without erasing edition qualifiers like normalize()."""
+    text = unicodedata.normalize("NFKD", title.casefold())
+    text = "".join(c for c in text if unicodedata.category(c) != "Mn")
+    return re.sub(r"[\W_]+", " ", text).strip()
+
+
 def make_album_resolver(sp: Any, threshold: int = 85) -> AlbumResolver:
     """Cria um resolver que procura o álbum no Spotify e confirma o match.
 
@@ -64,22 +73,33 @@ def make_album_resolver(sp: Any, threshold: int = 85) -> AlbumResolver:
             threshold=threshold,
         )
         norm_artist, norm_album = normalize(artist), normalize(album)
+        requested_edition = _album_edition_key(album)
+        matches: list[tuple[dict, bool]] = []
         for cand in candidates:
             cand_artist = normalize(", ".join(cand.get("artists") or []))
             cand_album = normalize(cand.get("name") or "")
             artist_ok = score(norm_artist, cand_artist) >= threshold
             album_ok = score(norm_album, cand_album) >= threshold
-            if artist_ok and album_ok:
-                capture(
-                    "albums.spotify_match",
-                    artist=artist,
-                    album=album,
-                    listen_url=cand.get("url"),
-                    matched=True,
+            if artist_ok and album_ok and isinstance(cand.get("url"), str) and cand["url"]:
+                matches.append(
+                    (cand, _album_edition_key(cand.get("name") or "") == requested_edition)
                 )
-                return cand.get("url")
-        capture("albums.spotify_match", artist=artist, album=album, matched=False)
-        return None
+        if not matches:
+            capture("albums.spotify_match", artist=artist, album=album, matched=False)
+            return None
+        # Prefer the requested edition within this one response. A broad fuzzy
+        # match on Deluxe/Remaster must not hide an exact standard-title match.
+        # Explicit requests for a named edition still get their exact match.
+        chosen, exact = next((match for match in matches if match[1]), matches[0])
+        capture(
+            "albums.spotify_match",
+            artist=artist,
+            album=album,
+            listen_url=chosen["url"],
+            matched=True,
+            choice_rule="exact_album_title" if exact else "first_threshold_match",
+        )
+        return chosen["url"]
 
     return resolve
 
