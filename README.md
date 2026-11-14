@@ -78,8 +78,8 @@ uv run peel musicas --site              # abre a semana em peel.sept.pt
 uv run peel albums --open 3             # abre o álbum nº 3
 ```
 
-A ajuda (`peel --help`) mostra só estes comandos; os internos (`run`, `finalize`,
-`site`, `triage`, `feedback`, `status`, `affinity`) continuam a funcionar.
+A ajuda (`peel --help`) mostra os comandos de uso e manutenção; os internos
+(`run`, `finalize`, `site`, `triage`, `feedback`, `status`, `affinity`) continuam a funcionar.
 
 No `ouvir`, a escala é igual para faixas e álbuns:
 
@@ -130,6 +130,56 @@ Para mudar apenas o comentário, escolhe explicitamente a mesma nota. No `--refa
 mantém a selecção publicada; itens que deixaram de ser love/like saem com aviso
 e as correcções de nome de artista mantêm-se. A republicação reescreve a playlist
 pública com verificação e actualiza o site.
+
+### Comment soundcheck
+
+No fim de `ouvir` ou `ouvir --rever`, antes do envio, podes rever **só os
+comentários novos ou alterados nessa sessão**. Os originais são gravados logo;
+a revisão é opcional, em lote, e só aparece num terminal interativo. Desliga com
+`ouvir --no-polish`. Uma sessão que já estava aberta não é reiniciada nem recebe
+a funcionalidade a meio.
+
+> Afino o português. A opinião continua por tua conta.
+
+Instala uma vez o motor local (Java necessário; descarga de cerca de 252 MB):
+
+```bash
+uv run peel comments setup
+```
+
+Usa LanguageTool 6.6 fixado por SHA-256, em PT-PT, apenas em `127.0.0.1`, sem
+proxy nem redirecionamentos para a consulta de comentários. Não usa API paga,
+cloud ou regras de IA premium. O Java arranca só para analisar o lote e termina
+antes de mostrar as sugestões; não há serviço permanente. A instalação
+vive na cache do utilizador e **nunca é descarregada automaticamente ao ouvir**.
+
+Vês `Original`/`Suggestion`, com diferenças destacadas. `Review` permite `Apply`,
+`Edit` ou `Keep original` por comentário; `Apply safe` deixa os casos duvidosos
+para confirmação individual. Nomes, termos musicais, hesitações, palavrões,
+risos e entusiasmo não são polidos para parecerem uma crítica de jornal.
+Alterações de negação e texto danificado exigem revisão manual. O corretor local
+não deteta todos os erros de contexto (por exemplo, nem sempre distingue `e`/`é`):
+isto são sugestões, não uma garantia de português perfeito.
+
+Só a coluna `comment` é alterada: **notas, labels, chaves e datas dos votos ficam
+intactas**. Antes da escrita é guardado um backup privado em
+`data/.peel-backups/comment-soundcheck-*/comments.json`. Se a opinião mudar enquanto
+revês, o lote é recusado, sem sobrepor a alteração. Recusar, cancelar ou uma falha
+do corretor mantém as avaliações e deixa o envio normal continuar. Não há hooks
+Git nem prompts na execução semanal/CI.
+
+Para uma sessão antiga, ou a que já tinhas aberta, escolhe explicitamente a
+semana local a rever. Este comando não faz auto-sync, não envia o resultado e
+não reescreve filas, relatórios ou edições públicas:
+
+```bash
+uv run peel comments polish --week 2026-W46
+uv run peel sync push                    # quando quiseres enviar as correções
+uv run peel comments undo /caminho/para/comments.json
+```
+
+O undo também exige confirmação e só restaura se texto, nota e timestamp ainda
+corresponderem ao lote; não apaga uma opinião revista entretanto.
 
 ### Publication extras
 

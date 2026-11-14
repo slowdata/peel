@@ -36,10 +36,12 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from peel import adm_radar
+from peel import adm_radar, comment_polish, language_tool
 from peel.affinity import build_affinity_profile
 from peel.album_discovery import AlbumDiscoveryError, discover_album_mentions
 from peel.albums import CANONICAL_ALBUM_QUEUE_SINCE, select_album_queue
+from peel.comment_soundcheck import interactive as _comment_interactive
+from peel.comment_soundcheck import soundcheck as _comment_soundcheck
 from peel.config import settings
 from peel.db import ALBUM_FEEDBACK_RATINGS, DB, FEEDBACK_RATINGS, iso_week
 from peel.doctor_sources import inspect_registered_sources
@@ -114,6 +116,7 @@ app = typer.Typer(
     invoke_without_command=True,
     help="Peel — música curada, sincronizada e visível. Sem comando, mostra o estado.",
 )
+comments_app = typer.Typer(add_completion=False, help="Local PT-PT comment proofreading.")
 sync_app = typer.Typer(add_completion=False, help="Sincronização local/GitHub.")
 doctor_app = typer.Typer(add_completion=False, help="Diagnósticos do Peel.")
 triage_app = typer.Typer(
@@ -130,6 +133,7 @@ PANEL_WEEK = "Semana"
 PANEL_BROWSE = "Consultar"
 PANEL_MAINTENANCE = "Manutenção"
 app.add_typer(albums_app, name="albums", rich_help_panel=PANEL_BROWSE)
+app.add_typer(comments_app, name="comments", rich_help_panel=PANEL_MAINTENANCE)
 app.add_typer(sync_app, name="sync", rich_help_panel=PANEL_MAINTENANCE)
 app.add_typer(doctor_app, name="doctor", rich_help_panel=PANEL_MAINTENANCE)
 # Internos: continuam a funcionar (GitHub, publicar, diagnóstico), mas fora da ajuda.
@@ -655,6 +659,10 @@ def ouvir(
         bool,
         typer.Option("--tocar/--sem-tocar", help="Tocar cada faixa/álbum no Spotify ao aparecer"),
     ] = True,
+    polish: Annotated[
+        bool,
+        typer.Option("--polish/--no-polish", help="Offer a local comment soundcheck before sync"),
+    ] = True,
 ) -> None:
     """Avalia faixas e depois álbuns da fila activa, e envia tudo no fim."""
     global _AUTOPLAY
@@ -662,6 +670,7 @@ def ouvir(
     week_option = _normalize_week_option(semana) if semana else None
     _auto_sync_state("ouvir")
     db = DB(str(_resolve_path(settings.db_path)))
+    session = comment_polish.FeedbackSession(db)
     try:
         db.init_schema()
         if rever:
@@ -671,11 +680,18 @@ def ouvir(
                 console.print("Sem fila activa confirmada.")
                 saved = 0
             else:
-                saved = _review_ratings(db, week)
+                saved = _review_ratings(session, week)
         else:
-            saved = _rate_unrated(db, week_option)
+            saved = _rate_unrated(session, week_option)
     finally:
         db.close()
+    if saved and polish:
+        if session.capture_failed:
+            console.print("Comentários guardados sem revisão; não foi possível isolar este lote.")
+        else:
+            _comment_soundcheck(
+                _resolve_path(settings.db_path), list(session.comments.values()), console
+            )
     if not saved:
         console.print("Nada novo para enviar.")
     elif not push:
@@ -2267,6 +2283,89 @@ def sync_pull() -> None:
         console.print("Estado remoto inalterado; a DB local contém alterações por enviar.")
     else:
         console.print(f"Estado já actual ({result.local_week or '-'}).")
+
+
+@comments_app.command("setup")
+def comments_setup(
+    yes: Annotated[bool, typer.Option("--yes", help="Confirm the 252 MB local download")] = False,
+    archive: Annotated[
+        Path | None,
+        typer.Option(
+            "--archive",
+            exists=True,
+            dir_okay=False,
+            help="Install the pinned official archive already downloaded",
+        ),
+    ] = None,
+) -> None:
+    """Install the optional pinned local proofreader. No database or cloud API."""
+    if language_tool.available():
+        console.print("Local PT-PT proofreader ready.")
+        return
+    if not shutil.which("java"):
+        console.print("Java is required for the optional local proofreader; nothing installed.")
+        raise typer.Exit(code=2)
+    if not yes and not typer.confirm("Install local LanguageTool (252 MB)?", default=False):
+        return
+    try:
+        with console.status("Installing local LanguageTool…"):
+            directory = language_tool.install(archive)
+    except Exception as exc:
+        console.print(Text(f"Setup failed ({type(exc).__name__}); no comments changed."))
+        raise typer.Exit(code=1) from exc
+    console.print(Text(f"Local proofreader installed: {directory}"))
+    console.print("Os comentários ficam neste computador. Nada foi enviado para revisão.")
+
+
+@comments_app.command("polish")
+def comments_polish(
+    week: Annotated[
+        str, typer.Option("--week", help="Explicit confirmed queue week, e.g. 2026-W46")
+    ],
+) -> None:
+    """Review comments linked to one explicit local week; no auto-sync or history rewrite."""
+    week = _normalize_week_option(week)
+    if not _comment_interactive():
+        console.print("Interactive review requires a terminal.")
+        raise typer.Exit(code=2)
+    path = _resolve_path(settings.db_path)
+    try:
+        db = DB.open_readonly(path)
+    except (OSError, sqlite3.Error) as exc:
+        console.print("Local database unavailable. Nothing created or changed.")
+        raise typer.Exit(code=2) from exc
+    try:
+        refs = comment_polish.week_comments(
+            db, settings.peel_review_playlist_id or settings.peel_playlist_id, week
+        )
+    finally:
+        db.close()
+    if not refs:
+        console.print("No comments found in this confirmed local week.")
+        return
+    changed = _comment_soundcheck(path, refs, console, offer=False)
+    if changed:
+        console.print("Comentários guardados. Envia quando quiseres: uv run peel sync push")
+
+
+@comments_app.command("undo")
+def comments_undo(
+    backup: Annotated[
+        Path, typer.Argument(exists=True, dir_okay=False, help="Soundcheck comments.json")
+    ],
+) -> None:
+    """Restore originals only if current text, vote and timestamp still match the backup."""
+    if not _comment_interactive():
+        console.print("Interactive undo requires a terminal.")
+        raise typer.Exit(code=2)
+    if not typer.confirm("Restore original comments from this soundcheck?", default=False):
+        return
+    try:
+        journal = comment_polish.undo_comments(_resolve_path(settings.db_path), backup)
+    except Exception as exc:
+        console.print(Text(f"Undo refused ({type(exc).__name__}); no automatic retry."))
+        raise typer.Exit(code=1) from exc
+    console.print(Text(f"Original comments restored. Reverse backup: {journal}"))
 
 
 @sync_app.command("push")
