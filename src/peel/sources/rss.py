@@ -645,6 +645,10 @@ class BeatsPerMinuteAlbumReviews(RSSSource):
         return _split_artist_title_dash(title[len("Album Review: ") :])
 
 
+class TrebleFeedChallenge(ValueError):
+    """Cloudflare returned a challenge instead of the publisher's RSS feed."""
+
+
 class TrebleAlbumReviews(RSSSource):
     """Treble — album reviews from the general feed.
 
@@ -663,11 +667,15 @@ class TrebleAlbumReviews(RSSSource):
     def _parse_feed(self, url: str):
         feed = super()._parse_feed(url)
         status = feed.get("status")
+        mitigation = feed.get("headers", {}).get("cf-mitigated", "")
+        if mitigation.strip().casefold() == "challenge":
+            detail = f" (HTTP {status})" if isinstance(status, int) else ""
+            raise TrebleFeedChallenge(f"Treble RSS blocked by a Cloudflare challenge{detail}")
         if isinstance(status, int) and status >= 400:
             raise ValueError(f"Treble RSS returned HTTP {status}")
         # A valid empty feed is different from an unparsable/error response.
         # Keep tolerant parsing when usable entries exist (e.g. namespace noise).
-        if feed.get("bozo") and not feed.entries:
+        if not feed.entries and (feed.get("bozo") or not feed.get("version")):
             raise ValueError("Treble RSS response could not be parsed; not a healthy empty feed")
         return feed
 

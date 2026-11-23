@@ -61,6 +61,22 @@ Avisos de parsing **com entradas utilizáveis** continuam tolerados. Uma falha n
 página secundária conserva o que já foi lido e fica explícita no discovery trace,
 marcando a captura como parcial. Não há retries adicionais.
 
+### Diagnóstico de 23 de novembro
+
+Na W47, o RSS geral devolveu HTTP 403. Um [diagnóstico só de leitura em GitHub Actions](https://github.com/slowdata/peel/actions/runs/45186385917),
+com o mesmo `feedparser` e Ubuntu 24.04, reproduziu HTTP 403 com
+`cf-mitigated: challenge` nos dois endpoints oficiais: `/feed/` e
+`/category/album-reviews/feed/`. Ambos devolveram HTML em vez de RSS; ambos
+responderam com RSS válido a partir do computador local. Não sabemos qual a
+regra que disparou o desafio nem se explica o erro da W46.
+
+O Peel passa a identificar o desafio explicitamente (`TrebleFeedChallenge`)
+e a rejeitar também HTML sem entradas que o parser não marque como inválido.
+Não tenta contornar o desafio nem altera a fonte, a agenda ou o ranking.
+A recolha automática depende de um endpoint público utilizável no runner ou
+de um ajuste no serviço do editor; a melhoria no diagnóstico não desbloqueia
+o feed.
+
 ## Verificação
 
 Fixtures reduzidas: os dois resultados Spotify efetivamente observados em W46 e

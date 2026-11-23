@@ -14,7 +14,12 @@ from peel.discovery_trace import DiscoveryTrace, observe
 from peel.main import _album_queue_snapshot_items
 from peel.novelty import NoveltyCheck
 from peel.site_export import make_album_resolver
-from peel.sources.rss import GorillaVsBear, StereogumNewMusic, TrebleAlbumReviews
+from peel.sources.rss import (
+    GorillaVsBear,
+    StereogumNewMusic,
+    TrebleAlbumReviews,
+    TrebleFeedChallenge,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 NOW = datetime(2026, 11, 14, 12, tzinfo=UTC)
@@ -272,6 +277,24 @@ def test_treble_http_error_cannot_be_reported_as_empty_success(monkeypatch, stat
     feed["status"] = status
     monkeypatch.setattr("peel.sources.rss.feedparser.parse", lambda *a, **kw: feed)
     with pytest.raises(ValueError, match=f"HTTP {status}"):
+        TrebleAlbumReviews().fetch()
+
+
+@pytest.mark.parametrize("status", [403, 200])
+def test_treble_challenge_is_reported_without_retries(monkeypatch, status):
+    response = feedparser.parse(b"<html><title>Just a moment...</title></html>")
+    response.update(status=status, headers={"cf-mitigated": "challenge"})
+    parser = MagicMock(return_value=response)
+    monkeypatch.setattr("peel.sources.rss.feedparser.parse", parser)
+    with pytest.raises(TrebleFeedChallenge, match=f"Cloudflare challenge.*HTTP {status}"):
+        TrebleAlbumReviews().fetch()
+    parser.assert_called_once()
+
+
+def test_treble_well_formed_html_is_not_a_valid_empty_feed(monkeypatch):
+    response = feedparser.parse(b"<html><title>Not a feed</title></html>")
+    monkeypatch.setattr("peel.sources.rss.feedparser.parse", lambda *a, **kw: response)
+    with pytest.raises(ValueError, match="could not be parsed"):
         TrebleAlbumReviews().fetch()
 
 
